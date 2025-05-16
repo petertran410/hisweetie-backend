@@ -1,0 +1,223 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model applicant {
+  id           BigInt        @id @default(autoincrement())
+  email        String?       @db.VarChar(255)
+  name         String?       @db.VarChar(255)
+  phone_number String?       @db.VarChar(255)
+  resume_url   String?       @db.VarChar(255)
+  application  application[]
+}
+
+model application {
+  id           BigInt     @id @default(autoincrement())
+  created_by   String?    @db.VarChar(255)
+  created_date DateTime?  @db.DateTime(6)
+  updated_by   String?    @db.VarChar(255)
+  updated_date DateTime?  @db.DateTime(6)
+  note         String?    @db.VarChar(255)
+  status       String?    @db.VarChar(255)
+  applicant_id BigInt?
+  job_post_id  BigInt?
+  job_post     job_post?  @relation(fields: [job_post_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKqhppc6ebpi0j94530ftuuyldn")
+  applicant    applicant? @relation(fields: [applicant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKrc3gxkxtsq5jqx764drr3wug5")
+
+  @@index([job_post_id], map: "FKqhppc6ebpi0j94530ftuuyldn")
+  @@index([applicant_id], map: "FKrc3gxkxtsq5jqx764drr3wug5")
+}
+
+model authority {
+  id      BigInt  @id
+  role    String? @db.VarChar(255)
+  user_id String? @db.VarChar(255)
+  user    user?   @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKr1wgeo077ok1nr1shx0t70tg8")
+
+  @@index([user_id], map: "FKr1wgeo077ok1nr1shx0t70tg8")
+}
+
+model category {
+  id                 BigInt               @id @default(autoincrement())
+  created_by         String?              @db.VarChar(255)
+  created_date       DateTime?            @db.DateTime(6)
+  updated_by         String?              @db.VarChar(255)
+  updated_date       DateTime?            @db.DateTime(6)
+  description        String?              @db.LongText
+  images_url         String?              @db.LongText
+  name               String?              @db.VarChar(255)
+  parent_id          BigInt?
+  priority           Int?
+  product_categories product_categories[]
+}
+
+model code_forgot_pass {
+  id          BigInt    @id @default(autoincrement())
+  code        String?   @db.VarChar(255)
+  expire_date DateTime? @db.DateTime(6)
+  user_id     String?   @db.VarChar(255)
+  user        user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKapo65ffi8pncggievbnk4qxha")
+
+  @@index([user_id], map: "FKapo65ffi8pncggievbnk4qxha")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
+model hibernate_sequence {
+  next_val BigInt?
+
+  @@ignore
+}
+
+model job_post {
+  id                   BigInt        @id @default(autoincrement())
+  created_by           String?       @db.VarChar(255)
+  created_date         DateTime?     @db.DateTime(6)
+  updated_by           String?       @db.VarChar(255)
+  updated_date         DateTime?     @db.DateTime(6)
+  application_deadline DateTime?     @db.Date
+  employment_type      String?       @db.VarChar(255)
+  job_description      String?       @db.LongText
+  location             String?       @db.VarChar(255)
+  title                String?       @db.VarChar(255)
+  vacancies            Int
+  work_mode            String?       @db.VarChar(255)
+  working_hours        String?       @db.LongText
+  salary_ranges        String?       @db.LongText
+  application          application[]
+}
+
+model news {
+  id           BigInt    @id @default(autoincrement())
+  created_by   String?   @db.VarChar(255)
+  created_date DateTime? @db.DateTime(6)
+  updated_by   String?   @db.VarChar(255)
+  updated_date DateTime? @db.DateTime(6)
+  description  String?   @db.LongText
+  html_content String?   @db.LongText
+  images_url   String?   @db.LongText
+  title        String?   @db.VarChar(255)
+  view         Int?
+  user_id      String?   @db.VarChar(255)
+  type         String?   @db.VarChar(255)
+  user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FK4538gbwfa03nwr9edl3fdloo9")
+
+  @@index([user_id], map: "FK4538gbwfa03nwr9edl3fdloo9")
+}
+
+model orders {
+  id               BigInt         @id @default(autoincrement())
+  created_by       String?        @db.VarChar(255)
+  created_date     DateTime?      @db.DateTime(6)
+  updated_by       String?        @db.VarChar(255)
+  updated_date     DateTime?      @db.DateTime(6)
+  quantity         Int?
+  product_id       BigInt?
+  product_order_id BigInt?
+  product          product?       @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FK787ibr3guwp6xobrpbofnv7le")
+  product_order    product_order? @relation(fields: [product_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKt9pocabfq29dvm6ybbygxly7q")
+
+  @@index([product_id], map: "FK787ibr3guwp6xobrpbofnv7le")
+  @@index([product_order_id], map: "FKt9pocabfq29dvm6ybbygxly7q")
+}
+
+model product {
+  id                  BigInt               @id @default(autoincrement())
+  created_by          String?              @db.VarChar(255)
+  created_date        DateTime?            @db.DateTime(6)
+  updated_by          String?              @db.VarChar(255)
+  updated_date        DateTime?            @db.DateTime(6)
+  description         String?              @db.LongText
+  general_description String?              @db.LongText
+  images_url          String?              @db.LongText
+  instruction         String?              @db.LongText
+  is_featured         Boolean?             @db.Bit(1)
+  price               BigInt?
+  quantity            BigInt?
+  rate                Float?
+  title               String?              @db.VarChar(255)
+  type                String?              @db.VarChar(255)
+  featured_thumbnail  String?              @db.VarChar(255)
+  recipe_thumbnail    String?              @db.VarChar(255)
+  orders              orders[]
+  product_categories  product_categories[]
+  review              review[]
+}
+
+model product_categories {
+  product_id    BigInt
+  categories_id BigInt
+  category      category @relation(fields: [categories_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FK86pfomapgvxb87x9nnxuc0pdj")
+  product       product  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKppc5s0f38pgb35a32dlgyhorc")
+
+  @@id([product_id, categories_id])
+  @@index([categories_id], map: "FK86pfomapgvxb87x9nnxuc0pdj")
+}
+
+model product_order {
+  id                 BigInt    @id @default(autoincrement())
+  created_by         String?   @db.VarChar(255)
+  created_date       DateTime? @db.DateTime(6)
+  updated_by         String?   @db.VarChar(255)
+  updated_date       DateTime? @db.DateTime(6)
+  address_detail     String?   @db.VarChar(255)
+  email              String?   @db.VarChar(255)
+  html_content       String?   @db.LongText
+  note               String?   @db.VarChar(255)
+  phone_number       String?   @db.VarChar(255)
+  price              BigInt?
+  quantity           Int?
+  receiver_full_name String?   @db.VarChar(255)
+  status             String?   @db.VarChar(255)
+  type               String?   @db.VarChar(255)
+  user_id            String?   @db.VarChar(255)
+  orders             orders[]
+  user               user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKa9own0mc8gwle8cckiij9ubsl")
+
+  @@index([user_id], map: "FKa9own0mc8gwle8cckiij9ubsl")
+}
+
+model review {
+  id           BigInt    @id @default(autoincrement())
+  created_by   String?   @db.VarChar(255)
+  created_date DateTime? @db.DateTime(6)
+  updated_by   String?   @db.VarChar(255)
+  updated_date DateTime? @db.DateTime(6)
+  comment      String?   @db.VarChar(255)
+  rate         Int?
+  product_id   BigInt?
+  user_id      String?   @db.VarChar(255)
+  user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKiyf57dy48lyiftdrf7y87rnxi")
+  product      product?  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKiyof1sindb9qiqr9o8npj8klt")
+
+  @@index([user_id], map: "FKiyf57dy48lyiftdrf7y87rnxi")
+  @@index([product_id], map: "FKiyof1sindb9qiqr9o8npj8klt")
+}
+
+model user {
+  id               String             @id @db.VarChar(255)
+  created_by       String?            @db.VarChar(255)
+  created_date     DateTime?          @db.DateTime(6)
+  updated_by       String?            @db.VarChar(255)
+  updated_date     DateTime?          @db.DateTime(6)
+  address          String?            @db.VarChar(255)
+  ava_url          String?            @db.VarChar(255)
+  email            String?            @unique(map: "UK_ob8kqyqqgmefl0aco34akdtpe") @db.VarChar(255)
+  full_name        String?            @db.VarChar(255)
+  is_active        Boolean            @db.Bit(1)
+  password         String?            @db.VarChar(255)
+  phone            String?            @unique(map: "UK_589idila9li6a4arw1t8ht1gx") @db.VarChar(255)
+  authority        authority[]
+  code_forgot_pass code_forgot_pass[]
+  news             news[]
+  product_order    product_order[]
+  review           review[]
+
+  @@index([phone, email], map: "phone")
+  @@index([email], map: "userEmailIndex")
+  @@index([phone], map: "userPhoneIndex")
+}
