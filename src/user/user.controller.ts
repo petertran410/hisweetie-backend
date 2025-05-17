@@ -8,16 +8,16 @@ import {
   Param,
   Delete,
   UseInterceptors,
-  UploadedFile,
+  UploadedFiles,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 
-@ApiTags('user')
+// @ApiTags('user')
 @Controller('user')
 export class UserController {
   constructor(
@@ -25,26 +25,30 @@ export class UserController {
     private configService: ConfigService,
   ) {}
 
-  @UseInterceptors(
-    FileInterceptor('avatar', {
-      storage: diskStorage({
-        destination: process.cwd() + '/public/img',
-        filename: (req, file, callback) =>
-          callback(null, new Date().getTime() + '_' + file.originalname),
-      }),
-    }),
-  )
-  @Post('/upload')
-  upload(@UploadedFile() file) {
-    return file;
-  }
-
   @Get()
   findAll() {
     return this.userService.findAll();
   }
 
-  @Get('/search/:uName')
+  // @ApiConsumes('multipart/form-data')
+  // // @ApiBody({
+  // //   type: uploadDTO,
+  // // })
+  // @UseInterceptors(
+  //   FileInterceptor('avatar', {
+  //     storage: diskStorage({
+  //       destination: process.cwd() + '/public/img',
+  //       filename: (req, file, callback) =>
+  //         callback(null, new Date().getTime() + '_' + file.originalname),
+  //     }),
+  //   }),
+  // )
+  // @Post('upload')
+  // upload(@UploadedFiles() file: Express.Multer.File[]) {
+  //   return file;
+  // }
+
+  @Get('search/:uName')
   findName(@Param('uName') uName) {
     return this.userService.findName(uName);
   }

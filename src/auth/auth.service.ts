@@ -1,26 +1,56 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { CreateAuthDto } from './dto/create-auth.dto';
-import { UpdateAuthDto } from './dto/update-auth.dto';
+import { JwtService } from '@nestjs/jwt';
+import { PrismaClient } from '@prisma/client';
+import { LoginDTO } from './dto/login-auth.dto';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
-  create(createAuthDto: CreateAuthDto) {
-    return 'This action adds a new auth';
-  }
+  prisma = new PrismaClient();
 
-  findAll() {
-    return `This action returns all auth`;
-  }
+  constructor(private jwtService: JwtService) {}
 
-  findOne(id: number) {
-    return `This action returns a #${id} auth`;
-  }
+  async login(login: LoginDTO): Promise<{ token: string }> {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        phone: login.phone,
+      },
+      include: {
+        authority: true,
+      },
+    });
 
-  update(id: number, updateAuthDto: UpdateAuthDto) {
-    return `This action updates a #${id} auth`;
-  }
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
-  remove(id: number) {
-    return `This action removes a #${id} auth`;
+    const isPasswordValid = await bcrypt.compare(
+      login.password,
+      user.password!,
+    );
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const userAuthorities = user.authority.map((auth) => ({
+      role: auth.role,
+    }));
+
+    const roles = user.authority.map((auth) => auth.role).join(',');
+
+    const token = await this.jwtService.signAsync(
+      {
+        sub: user.id, // Keep the subject claim
+        roles: roles,
+      },
+      {
+        expiresIn: process.env.TOKEN_EXPIRES_IN,
+        secret: process.env.APP_SECRET_KEY,
+      },
+    );
+
+    return { token };
   }
 }

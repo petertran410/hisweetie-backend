@@ -1,10 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
+import { PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class CategoryService {
-  create(createCategoryDto: CreateCategoryDto) {
+  prisma = new PrismaClient();
+
+  postCategory(createCategoryDto: CreateCategoryDto) {
     return 'This action adds a new category';
   }
 

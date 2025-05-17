@@ -8,7 +8,7 @@ datasource db {
 }
 
 model applicant {
-  id           BigInt        @id @default(autoincrement())
+  id           Int        @id @default(autoincrement())
   email        String?       @db.VarChar(255)
   name         String?       @db.VarChar(255)
   phone_number String?       @db.VarChar(255)
@@ -17,15 +17,15 @@ model applicant {
 }
 
 model application {
-  id           BigInt     @id @default(autoincrement())
+  id           Int     @id @default(autoincrement())
   created_by   String?    @db.VarChar(255)
   created_date DateTime?  @db.DateTime(6)
   updated_by   String?    @db.VarChar(255)
   updated_date DateTime?  @db.DateTime(6)
   note         String?    @db.VarChar(255)
   status       String?    @db.VarChar(255)
-  applicant_id BigInt?
-  job_post_id  BigInt?
+  applicant_id Int?
+  job_post_id  Int?
   job_post     job_post?  @relation(fields: [job_post_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKqhppc6ebpi0j94530ftuuyldn")
   applicant    applicant? @relation(fields: [applicant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKrc3gxkxtsq5jqx764drr3wug5")
 
@@ -34,7 +34,7 @@ model application {
 }
 
 model authority {
-  id      BigInt  @id
+  id      Int  @id
   role    String? @db.VarChar(255)
   user_id String? @db.VarChar(255)
   user    user?   @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKr1wgeo077ok1nr1shx0t70tg8")
@@ -43,7 +43,7 @@ model authority {
 }
 
 model category {
-  id                 BigInt               @id @default(autoincrement())
+  id                 Int               @id @default(autoincrement())
   created_by         String?              @db.VarChar(255)
   created_date       DateTime?            @db.DateTime(6)
   updated_by         String?              @db.VarChar(255)
@@ -51,13 +51,13 @@ model category {
   description        String?              @db.LongText
   images_url         String?              @db.LongText
   name               String?              @db.VarChar(255)
-  parent_id          BigInt?
+  parent_id          Int?
   priority           Int?
   product_categories product_categories[]
 }
 
 model code_forgot_pass {
-  id          BigInt    @id @default(autoincrement())
+  id          Int    @id @default(autoincrement())
   code        String?   @db.VarChar(255)
   expire_date DateTime? @db.DateTime(6)
   user_id     String?   @db.VarChar(255)
@@ -68,13 +68,13 @@ model code_forgot_pass {
 
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
 model hibernate_sequence {
-  next_val BigInt?
+  next_val Int?
 
   @@ignore
 }
 
 model job_post {
-  id                   BigInt        @id @default(autoincrement())
+  id                   Int        @id @default(autoincrement())
   created_by           String?       @db.VarChar(255)
   created_date         DateTime?     @db.DateTime(6)
   updated_by           String?       @db.VarChar(255)
@@ -92,7 +92,7 @@ model job_post {
 }
 
 model news {
-  id           BigInt    @id @default(autoincrement())
+  id           Int    @id @default(autoincrement())
   created_by   String?   @db.VarChar(255)
   created_date DateTime? @db.DateTime(6)
   updated_by   String?   @db.VarChar(255)
@@ -110,14 +110,14 @@ model news {
 }
 
 model orders {
-  id               BigInt         @id @default(autoincrement())
+  id               Int         @id @default(autoincrement())
   created_by       String?        @db.VarChar(255)
   created_date     DateTime?      @db.DateTime(6)
   updated_by       String?        @db.VarChar(255)
   updated_date     DateTime?      @db.DateTime(6)
   quantity         Int?
-  product_id       BigInt?
-  product_order_id BigInt?
+  product_id       Int?
+  product_order_id Int?
   product          product?       @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FK787ibr3guwp6xobrpbofnv7le")
   product_order    product_order? @relation(fields: [product_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKt9pocabfq29dvm6ybbygxly7q")
 
@@ -126,7 +126,7 @@ model orders {
 }
 
 model product {
-  id                  BigInt               @id @default(autoincrement())
+  id                  Int               @id @default(autoincrement())
   created_by          String?              @db.VarChar(255)
   created_date        DateTime?            @db.DateTime(6)
   updated_by          String?              @db.VarChar(255)
@@ -136,8 +136,8 @@ model product {
   images_url          String?              @db.LongText
   instruction         String?              @db.LongText
   is_featured         Boolean?             @db.Bit(1)
-  price               BigInt?
-  quantity            BigInt?
+  price               Int?
+  quantity            Int?
   rate                Float?
   title               String?              @db.VarChar(255)
   type                String?              @db.VarChar(255)
@@ -149,8 +149,8 @@ model product {
 }
 
 model product_categories {
-  product_id    BigInt
-  categories_id BigInt
+  product_id    Int
+  categories_id Int
   category      category @relation(fields: [categories_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FK86pfomapgvxb87x9nnxuc0pdj")
   product       product  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKppc5s0f38pgb35a32dlgyhorc")
 
@@ -159,7 +159,7 @@ model product_categories {
 }
 
 model product_order {
-  id                 BigInt    @id @default(autoincrement())
+  id                 Int    @id @default(autoincrement())
   created_by         String?   @db.VarChar(255)
   created_date       DateTime? @db.DateTime(6)
   updated_by         String?   @db.VarChar(255)
@@ -169,7 +169,7 @@ model product_order {
   html_content       String?   @db.LongText
   note               String?   @db.VarChar(255)
   phone_number       String?   @db.VarChar(255)
-  price              BigInt?
+  price              Int?
   quantity           Int?
   receiver_full_name String?   @db.VarChar(255)
   status             String?   @db.VarChar(255)
@@ -182,14 +182,14 @@ model product_order {
 }
 
 model review {
-  id           BigInt    @id @default(autoincrement())
+  id           Int    @id @default(autoincrement())
   created_by   String?   @db.VarChar(255)
   created_date DateTime? @db.DateTime(6)
   updated_by   String?   @db.VarChar(255)
   updated_date DateTime? @db.DateTime(6)
   comment      String?   @db.VarChar(255)
   rate         Int?
-  product_id   BigInt?
+  product_id   Int?
   user_id      String?   @db.VarChar(255)
   user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKiyf57dy48lyiftdrf7y87rnxi")
   product      product?  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKiyof1sindb9qiqr9o8npj8klt")

@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+} from '@nestjs/common';
 import { NewsService } from './news.service';
 import { CreateNewsDto } from './dto/create-news.dto';
 import { UpdateNewsDto } from './dto/update-news.dto';
@@ -7,14 +15,13 @@ import { UpdateNewsDto } from './dto/update-news.dto';
 export class NewsController {
   constructor(private readonly newsService: NewsService) {}
 
+  @Get('get-all')
+  findAll() {
+    return this.newsService.findAll();
+  }
   @Post()
   create(@Body() createNewsDto: CreateNewsDto) {
     return this.newsService.create(createNewsDto);
-  }
-
-  @Get()
-  findAll() {
-    return this.newsService.findAll();
   }
 
   @Get(':id')
