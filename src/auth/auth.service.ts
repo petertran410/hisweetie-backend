@@ -34,10 +34,6 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const userAuthorities = user.authority.map((auth) => ({
-      role: auth.role,
-    }));
-
     const roles = user.authority.map((auth) => auth.role).join(',');
 
     const token = await this.jwtService.signAsync(

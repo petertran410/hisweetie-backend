@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+} from '@nestjs/common';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -7,14 +16,29 @@ import { UpdateProductDto } from './dto/update-product.dto';
 export class ProductController {
   constructor(private readonly productService: ProductService) {}
 
+  @Get('get-by-id/:id')
+  findById(@Param('id') id: string) {
+    return this.productService.findById(+id);
+  }
+
+  @Get('search')
+  search(
+    @Query('pageSize') pageSize: string = '10',
+    @Query('pageNumber') pageNumber: string = '0',
+    @Query('title') title?: string,
+    @Query('type') type?: string,
+  ) {
+    return this.productService.search({
+      pageSize: parseInt(pageSize),
+      pageNumber: parseInt(pageNumber),
+      title,
+      type,
+    });
+  }
+
   @Post()
   create(@Body() createProductDto: CreateProductDto) {
     return this.productService.create(createProductDto);
-  }
-
-  @Get()
-  findAll() {
-    return this.productService.findAll();
   }
 
   @Get(':id')
