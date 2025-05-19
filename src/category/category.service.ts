@@ -11,32 +11,26 @@ export class CategoryService {
     return 'This action adds a new category';
   }
 
-  async findAll(params: {
+  async getAllCategories(params: {
     pageSize: number;
     pageNumber: number;
     parentId?: string;
   }) {
     const { pageSize, pageNumber, parentId } = params;
 
-    const where: any = {};
+    const skip =
+      (pageNumber - 1) * pageSize > 0 ? (pageNumber - 1) * pageSize : 0;
+
+    const where = {};
     if (parentId) {
-      if (parentId === 'HOME') {
-        where.parent_id = null;
-      } else {
-        where.parent_id = BigInt(parentId);
-      }
+      where['parent_id'] = parentId === 'HOME' ? null : BigInt(parentId);
     }
 
     const categories = await this.prisma.category.findMany({
       where,
       take: pageSize,
-      skip: pageNumber * pageSize,
-      orderBy: {
-        priority: 'asc',
-      },
-      include: {
-        product_categories: true,
-      },
+      skip: skip,
+      orderBy: { priority: 'asc' },
     });
 
     return categories.map((category) => ({

@@ -3,10 +3,17 @@ import { AppModule } from './app.module';
 import * as express from 'express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { BigIntInterceptor } from './interceptors/bigint-interceptor';
+import { join } from 'path';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: true });
-  // app.enableCors();
+
+  const fs = require('fs');
+  const uploadDir = join(process.cwd(), 'public', 'img');
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+
   app.use(express.static('.'));
 
   app.useGlobalInterceptors(new BigIntInterceptor());

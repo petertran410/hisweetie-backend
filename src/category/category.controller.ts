@@ -22,12 +22,12 @@ export class CategoryController {
   }
 
   @Get('v2/get-all')
-  findAll(
+  getAllCategories(
     @Query('pageSize') pageSize: string = '1000',
     @Query('pageNumber') pageNumber: string = '0',
     @Query('parentId') parentId?: string,
   ) {
-    return this.categoryService.findAll({
+    return this.categoryService.getAllCategories({
       pageSize: parseInt(pageSize),
       pageNumber: parseInt(pageNumber),
       parentId,
