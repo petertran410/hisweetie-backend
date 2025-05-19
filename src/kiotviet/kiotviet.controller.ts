@@ -1,17 +1,23 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
-} from '@nestjs/common';
+import { Controller, Get, Post, Query } from '@nestjs/common';
 import { KiotvietService } from './kiotviet.service';
-import { CreateKiotvietDto } from './dto/create-kiotviet.dto';
-import { UpdateKiotvietDto } from './dto/update-kiotviet.dto';
 
 @Controller('kiotviet')
 export class KiotvietController {
   constructor(private readonly kiotvietService: KiotvietService) {}
+
+  @Post('sync')
+  async syncProducts() {
+    return this.kiotvietService.syncProducts();
+  }
+
+  @Get('products')
+  async getProducts(
+    @Query('page') page: string = '1',
+    @Query('pageSize') pageSize: string = '10',
+  ) {
+    return this.kiotvietService.getProductsFromDb(
+      parseInt(page),
+      parseInt(pageSize),
+    );
+  }
 }

@@ -12,6 +12,7 @@ import { JobpostModule } from './jobpost/jobpost.module';
 import { NewsModule } from './news/news.module';
 import { ProductModule } from './product/product.module';
 import { KiotvietModule } from './kiotviet/kiotviet.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { KiotvietModule } from './kiotviet/kiotviet.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    ScheduleModule.forRoot(),
     AdminModule,
     CategoryModule,
     FileModule,

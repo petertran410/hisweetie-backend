@@ -4,7 +4,6 @@ import { KiotvietController } from './kiotviet.controller';
 import { ConfigService } from '@nestjs/config';
 
 @Module({
-  imports: [ConfigService],
   controllers: [KiotvietController],
   providers: [KiotvietService],
 })

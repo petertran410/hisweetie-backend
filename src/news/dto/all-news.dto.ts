@@ -1,5 +1,5 @@
 export class NewsDTO {
-  id: number;
+  id: bigint;
   created_by: string | null;
   created_date: Date | null;
   updated_by: string | null;
