@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  Query,
 } from '@nestjs/common';
 import { CategoryService } from './category.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
@@ -20,9 +21,17 @@ export class CategoryController {
     return this.categoryService.postCategory(createCategoryDto);
   }
 
-  @Get()
-  findAll() {
-    return this.categoryService.findAll();
+  @Get('v2/get-all')
+  findAll(
+    @Query('pageSize') pageSize: string = '1000',
+    @Query('pageNumber') pageNumber: string = '0',
+    @Query('parentId') parentId?: string,
+  ) {
+    return this.categoryService.findAll({
+      pageSize: parseInt(pageSize),
+      pageNumber: parseInt(pageNumber),
+      parentId,
+    });
   }
 
   @Get(':id')

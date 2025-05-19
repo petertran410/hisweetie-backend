@@ -11,8 +11,42 @@ export class CategoryService {
     return 'This action adds a new category';
   }
 
-  findAll() {
-    return `This action returns all category`;
+  async findAll(params: {
+    pageSize: number;
+    pageNumber: number;
+    parentId?: string;
+  }) {
+    const { pageSize, pageNumber, parentId } = params;
+
+    const where: any = {};
+    if (parentId) {
+      if (parentId === 'HOME') {
+        where.parent_id = null;
+      } else {
+        where.parent_id = BigInt(parentId);
+      }
+    }
+
+    const categories = await this.prisma.category.findMany({
+      where,
+      take: pageSize,
+      skip: pageNumber * pageSize,
+      orderBy: {
+        priority: 'asc',
+      },
+      include: {
+        product_categories: true,
+      },
+    });
+
+    return categories.map((category) => ({
+      id: category.id.toString(),
+      name: category.name,
+      description: category.description,
+      imagesUrl: category.images_url ? JSON.parse(category.images_url) : [],
+      parentId: category.parent_id ? category.parent_id.toString() : null,
+      priority: category.priority,
+    }));
   }
 
   findOne(id: number) {

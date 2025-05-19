@@ -108,16 +108,113 @@ export class ProductService {
     };
   }
 
-  create(createProductDto: CreateProductDto) {
-    return 'This action adds a new product';
+  async create(createProductDto: CreateProductDto) {
+    const {
+      title,
+      price,
+      quantity,
+      categoryIds,
+      description,
+      imagesUrl,
+      generalDescription,
+      instruction,
+      isFeatured,
+      featuredThumbnail,
+      recipeThumbnail,
+      type,
+    } = createProductDto;
+
+    const product = await this.prisma.product.create({
+      data: {
+        title,
+        price: price || null,
+        quantity: quantity,
+        description,
+        images_url: imagesUrl ? JSON.stringify(imagesUrl) : null,
+        general_description: generalDescription,
+        instruction,
+        is_featured: isFeatured || false,
+        featured_thumbnail: featuredThumbnail,
+        recipe_thumbnail: recipeThumbnail,
+        type,
+        created_date: new Date(),
+      },
+    });
+
+    if (categoryIds && categoryIds.length > 0) {
+      for (const categoryId of categoryIds) {
+        await this.prisma.product_categories.create({
+          data: {
+            product_id: product.id,
+            categories_id: categoryId,
+          },
+        });
+      }
+    }
+
+    return this.findById(Number(product.id));
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} product`;
-  }
+  async update(id: number, updateProductDto: UpdateProductDto) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: BigInt(id) },
+    });
 
-  update(id: number, updateProductDto: UpdateProductDto) {
-    return `This action updates a #${id} product`;
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${id} not found`);
+    }
+
+    const {
+      title,
+      price,
+      quantity,
+      categoryIds,
+      description,
+      imagesUrl,
+      generalDescription,
+      instruction,
+      isFeatured,
+      featuredThumbnail,
+      recipeThumbnail,
+      type,
+    } = updateProductDto;
+
+    await this.prisma.product.update({
+      where: { id: BigInt(id) },
+      data: {
+        title,
+        price: price ?? product.price,
+        quantity: quantity ?? product.quantity,
+        description: description ?? product.description,
+        images_url: imagesUrl ? JSON.stringify(imagesUrl) : product.images_url,
+        general_description: generalDescription ?? product.general_description,
+        instruction: instruction ?? product.instruction,
+        is_featured: isFeatured ?? product.is_featured,
+        featured_thumbnail: featuredThumbnail ?? product.featured_thumbnail,
+        recipe_thumbnail: recipeThumbnail ?? product.recipe_thumbnail,
+        type: type ?? product.type,
+        updated_date: new Date(),
+      },
+    });
+
+    if (categoryIds && categoryIds.length > 0) {
+      await this.prisma.product_categories.deleteMany({
+        where: {
+          product_id: BigInt(id),
+        },
+      });
+
+      for (const categoryId of categoryIds) {
+        await this.prisma.product_categories.create({
+          data: {
+            product_id: BigInt(id),
+            categories_id: BigInt(categoryId),
+          },
+        });
+      }
+    }
+
+    return this.findById(id);
   }
 
   remove(id: number) {
