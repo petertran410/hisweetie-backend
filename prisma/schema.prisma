@@ -68,6 +68,7 @@ model code_forgot_pass {
 
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
 model hibernate_sequence {
   next_val BigInt?
 
@@ -128,7 +129,6 @@ model orders {
 
 model product {
   id                  BigInt               @id @default(autoincrement())
-  kiotviet_id         BigInt?              @unique
   created_by          String?              @db.VarChar(255)
   created_date        DateTime?            @db.DateTime(6)
   updated_by          String?              @db.VarChar(255)

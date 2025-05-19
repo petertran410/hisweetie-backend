@@ -11,7 +11,6 @@ import { InternalModule } from './internal/internal.module';
 import { JobpostModule } from './jobpost/jobpost.module';
 import { NewsModule } from './news/news.module';
 import { ProductModule } from './product/product.module';
-import { KiotvietModule } from './kiotviet/kiotviet.module';
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
@@ -29,7 +28,6 @@ import { ScheduleModule } from '@nestjs/schedule';
     JobpostModule,
     NewsModule,
     ProductModule,
-    KiotvietModule,
   ],
   controllers: [AppController],
   providers: [AppService],

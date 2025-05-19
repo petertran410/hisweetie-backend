@@ -3,14 +3,6 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { PrismaClient } from '@prisma/client';
 
-function serializeBigInt(data) {
-  return JSON.parse(
-    JSON.stringify(data, (_, value) =>
-      typeof value === 'bigint' ? value.toString() : value,
-    ),
-  );
-}
-
 @Injectable()
 export class ProductService {
   prisma = new PrismaClient();
@@ -68,7 +60,7 @@ export class ProductService {
       };
     });
 
-    return serializeBigInt({
+    return {
       content,
       totalElements,
       pageable: {
@@ -76,7 +68,7 @@ export class ProductService {
         pageSize,
         pageCount: Math.ceil(totalElements / pageSize),
       },
-    });
+    };
   }
 
   async findById(id: number) {
