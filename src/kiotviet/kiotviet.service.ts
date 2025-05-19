@@ -4,6 +4,28 @@ import { PrismaClient } from '@prisma/client';
 import axios from 'axios';
 import { URLSearchParams } from 'url';
 
+function bigIntSerializer(data) {
+  if (data === null || data === undefined) return data;
+
+  if (typeof data === 'bigint') {
+    return data.toString();
+  }
+
+  if (Array.isArray(data)) {
+    return data.map(bigIntSerializer);
+  }
+
+  if (typeof data === 'object') {
+    const result = {};
+    for (const key in data) {
+      result[key] = bigIntSerializer(data[key]);
+    }
+    return result;
+  }
+
+  return data;
+}
+
 @Injectable()
 export class KiotvietService {
   constructor(private configService: ConfigService) {}
@@ -179,6 +201,11 @@ export class KiotvietService {
 
       return {
         ...product,
+        // Convert BigInt to string
+        id: Number(product.id),
+        kiotviet_id: product.kiotviet_id
+          ? product.kiotviet_id.toString()
+          : null,
         imagesUrl,
         isFeatured: product.is_featured,
         ofCategories: product.product_categories.map((pc) => ({
@@ -188,7 +215,7 @@ export class KiotvietService {
       };
     });
 
-    return {
+    return bigIntSerializer({
       content,
       totalElements,
       pageable: {
@@ -196,6 +223,6 @@ export class KiotvietService {
         pageSize,
         pageCount: Math.ceil(totalElements / pageSize),
       },
-    };
+    });
   }
 }
