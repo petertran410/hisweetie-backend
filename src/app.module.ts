@@ -11,6 +11,7 @@ import { InternalModule } from './internal/internal.module';
 import { JobpostModule } from './jobpost/jobpost.module';
 import { NewsModule } from './news/news.module';
 import { ProductModule } from './product/product.module';
+import { KiotvietModule } from './kiotviet/kiotviet.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ProductModule } from './product/product.module';
     JobpostModule,
     NewsModule,
     ProductModule,
+    KiotvietModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -146,6 +146,7 @@ model product {
   orders              orders[]
   product_categories  product_categories[]
   review              review[]
+  kiotviet_id         String?              @unique
 }
 
 model product_categories {
