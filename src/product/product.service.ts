@@ -309,8 +309,8 @@ export class ProductService {
     // Transform response to match frontend expectations
     const content = orders.map((order) => ({
       id: order.id.toString(),
-      createdDate: order.created_date,
-      updatedDate: order.updated_date,
+      createdDate: order.created_date ? order.created_date.toISOString() : null,
+      updatedDate: order.updated_date ? order.updated_date.toISOString() : null,
       addressDetail: order.address_detail,
       email: order.email,
       note: order.note,
@@ -328,7 +328,6 @@ export class ProductService {
               id: item.product.id.toString(),
               title: item.product.title,
               price: item.product.price ? Number(item.product.price) : null,
-              // Add other product fields as needed
             }
           : null,
       })),

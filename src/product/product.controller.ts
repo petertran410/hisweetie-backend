@@ -42,7 +42,7 @@ export class ProductController {
     return this.productService.searchOrders(searchParams);
   }
 
-  @Patch('order/:id::status')
+  @Patch('order/:id/status/:status')
   changeOrderStatus(@Param('id') id: string, @Param('status') status: string) {
     return this.productService.changeOrderStatus(id, status);
   }

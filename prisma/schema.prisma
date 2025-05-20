@@ -51,6 +51,7 @@ model category {
   description        String?              @db.LongText
   images_url         String?              @db.LongText
   name               String?              @db.VarChar(255)
+  kiotviet_id        String?              @unique
   parent_id          BigInt?
   priority           Int?
   product_categories product_categories[]
@@ -145,6 +146,7 @@ model product {
   type                String?              @db.VarChar(255)
   featured_thumbnail  String?              @db.VarChar(255)
   recipe_thumbnail    String?              @db.VarChar(255)
+  kiotviet_id         String?              @unique
   orders              orders[]
   product_categories  product_categories[]
   review              review[]
@@ -178,6 +180,7 @@ model product_order {
   type               String?   @db.VarChar(255)
   user_id            String?   @db.VarChar(255)
   orders             orders[]
+  kiotviet_id        String?
   user               user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKa9own0mc8gwle8cckiij9ubsl")
 
   @@index([user_id], map: "FKa9own0mc8gwle8cckiij9ubsl")
