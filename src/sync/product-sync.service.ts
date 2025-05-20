@@ -26,62 +26,88 @@ export class ProductSyncService {
   }
 
   async syncAllProducts() {
-    this.logger.log('Starting filtered product sync...');
+    this.logger.log('Starting full product sync...');
 
     let pageIndex = 0;
     const pageSize = 100;
     let hasMoreData = true;
     let totalProductsProcessed = 0;
     let totalProductsFiltered = 0;
+    let totalProductsSynced = 0;
 
     const initialSyncDate = '2024-12-22T00:00:00';
 
     while (hasMoreData) {
       try {
+        this.logger.log(
+          `Fetching products batch: page ${pageIndex + 1}, size ${pageSize}`,
+        );
+
         const data = await this.kiotVietService.getProducts(
           pageSize,
           pageIndex,
           initialSyncDate,
         );
 
+        this.logger.log(
+          `Received batch with ${data.data?.length || 0} products. Total products: ${data.total}`,
+        );
+
         if (!data.data || data.data.length === 0) {
+          this.logger.log('No more products in response, ending sync');
           hasMoreData = false;
           break;
         }
 
-        // Count total products before filtering
-        const beforeCount = totalProductsProcessed;
-
-        // Process products (with filtering)
-        await this.processProducts(data.data);
+        // Process the current batch of products
+        const { processed, filtered, synced } = await (
+          this.processProducts as any
+        )(data.data);
 
         // Update counters
         totalProductsProcessed += data.data.length;
-        totalProductsFiltered =
-          totalProductsProcessed - (await this.getLocalProductCount());
+        totalProductsFiltered += filtered;
+        totalProductsSynced += synced;
 
         this.logger.log(
-          `Processed ${totalProductsProcessed} products, filtered out ${totalProductsFiltered} products`,
+          `Batch stats - Processed: ${data.data.length}, Filtered: ${filtered}, Synced: ${synced}`,
+        );
+        this.logger.log(
+          `Running totals - Processed: ${totalProductsProcessed}, Filtered: ${totalProductsFiltered}, Synced: ${totalProductsSynced}`,
         );
 
+        // Increment page index for next batch
         pageIndex++;
 
-        if (data.total <= pageSize * pageIndex) {
+        // Check if we've reached the end of available products
+        // This is calculated based on total products reported by KiotViet
+        if (pageSize * pageIndex >= data.total) {
+          this.logger.log(
+            `Reached the end of available products (${data.total})`,
+          );
           hasMoreData = false;
         }
+
+        // Add a small delay to avoid hitting rate limits
+        await new Promise((resolve) => setTimeout(resolve, 500));
       } catch (error) {
         this.logger.error(`Error syncing products on page ${pageIndex}`, error);
+        // Wait a bit longer after an error
         await new Promise((resolve) => setTimeout(resolve, 5000));
+        // Continue with next page even after an error
       }
     }
 
     this.logger.log(
-      `Product sync completed. Total processed: ${totalProductsProcessed}, filtered out: ${totalProductsFiltered}`,
+      `Product sync completed. Total processed: ${totalProductsProcessed}, ` +
+        `filtered out: ${totalProductsFiltered}, successfully synced: ${totalProductsSynced}`,
     );
+
     return {
       success: true,
       totalProductsProcessed,
       totalProductsFiltered,
+      totalProductsSynced,
     };
   }
 
@@ -154,7 +180,12 @@ export class ProductSyncService {
     );
   }
 
-  private async processProducts(products: any[]) {
+  private async processProducts(
+    products: any[],
+  ): Promise<{ processed: number; filtered: number; synced: number }> {
+    let filtered = 0;
+    let synced = 0;
+
     for (const kiotVietProduct of products) {
       try {
         // Check if product belongs to allowed categories
@@ -163,21 +194,30 @@ export class ProductSyncService {
           this.logger.debug(
             `Skipping product ${kiotVietProduct.id} (${kiotVietProduct.name}) - category ${categoryId} not in allowed list`,
           );
+          filtered++;
           continue; // Skip this product
         }
 
-        this.logger.debug(
-          `Processing product ${kiotVietProduct.id} (${kiotVietProduct.name}) from allowed category ${categoryId}`,
+        this.logger.log(
+          `Processing product from allowed category: ${kiotVietProduct.id} (${kiotVietProduct.name}) - category ${categoryId}`,
         );
 
         const existingProduct = await this.prisma.product.findFirst({
           where: { kiotviet_id: kiotVietProduct.id.toString() },
         });
 
-        const inventoryQuantity =
-          await this.kiotVietService.getProductInventory(
+        // Get inventory information
+        let inventoryQuantity = 0;
+        try {
+          inventoryQuantity = await this.kiotVietService.getProductInventory(
             kiotVietProduct.id.toString(),
           );
+        } catch (inventoryError) {
+          this.logger.error(
+            `Error fetching inventory for product ${kiotVietProduct.id}. Using default value 0.`,
+            inventoryError,
+          );
+        }
 
         const imageUrls = kiotVietProduct.images || [];
 
@@ -202,6 +242,7 @@ export class ProductSyncService {
             where: { id: existingProduct.id },
             data: productData,
           });
+          this.logger.log(`Updated existing product ${kiotVietProduct.id}`);
         } else {
           // Create new product
           const newProduct = await this.prisma.product.create({
@@ -210,6 +251,7 @@ export class ProductSyncService {
               created_date: new Date(),
             },
           });
+          this.logger.log(`Created new product ${kiotVietProduct.id}`);
 
           // Category handling
           if (kiotVietProduct.categoryId) {
@@ -226,6 +268,9 @@ export class ProductSyncService {
                   created_date: new Date(),
                 },
               });
+              this.logger.log(
+                `Created new category ${kiotVietProduct.categoryName}`,
+              );
             }
 
             // Associate product with category
@@ -235,14 +280,22 @@ export class ProductSyncService {
                 categories_id: category.id,
               },
             });
+            this.logger.log(
+              `Associated product ${kiotVietProduct.id} with category ${category.id}`,
+            );
           }
         }
+
+        // Count successful syncs
+        synced++;
       } catch (error) {
         this.logger.error(
-          `Error processing product ${kiotVietProduct.id}`,
-          error,
+          `Error processing product ${kiotVietProduct.id}: ${error.message}`,
+          error.stack,
         );
       }
     }
+
+    return { processed: products.length, filtered, synced };
   }
 }
