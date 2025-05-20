@@ -60,6 +60,7 @@ export class KiotvietService {
     }
 
     try {
+      this.logger.log(`Requesting products with params: ${params}`);
       const response = await firstValueFrom(
         this.httpService.get(`https://public.kiotapi.com/products?${params}`, {
           headers: {
@@ -67,6 +68,18 @@ export class KiotvietService {
             Retailer: this.configService.get('KIOT_SHOP_NAME'),
           },
         }),
+      );
+
+      // Log the structure for debugging
+      this.logger.debug(
+        `Response structure: ${JSON.stringify({
+          total: response.data.total,
+          pageSize: response.data.pageSize,
+          pageNumber: response.data.pageNumber,
+          dataCount: response.data.data?.length || 0,
+          sampleCategories:
+            response.data.data?.slice(0, 3).map((p: any) => p.categoryId) || [],
+        })}`,
       );
 
       return response.data;
