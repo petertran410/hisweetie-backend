@@ -11,6 +11,7 @@ import {
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { OrderSearchDto } from './dto/order-search.dto';
 
 @Controller('product')
 export class ProductController {
@@ -34,6 +35,16 @@ export class ProductController {
       title,
       type,
     });
+  }
+
+  @Get('order/admin-search')
+  searchOrders(@Query() searchParams: OrderSearchDto) {
+    return this.productService.searchOrders(searchParams);
+  }
+
+  @Patch('order/:id::status')
+  changeOrderStatus(@Param('id') id: string, @Param('status') status: string) {
+    return this.productService.changeOrderStatus(id, status);
   }
 
   @Post()
