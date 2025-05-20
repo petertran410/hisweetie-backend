@@ -15,12 +15,12 @@ export class ProductSyncService {
     private readonly configService: ConfigService,
   ) {
     // Get allowed categories from config or use default values
-    const allowedCategoriesStr = this.configService.get(
+    const allowedCategoriesStr = this.configService.get<string>(
       'KIOTVIET_ALLOWED_CATEGORIES',
     );
     this.allowedCategoryIds = allowedCategoriesStr
       ? allowedCategoriesStr.split(',')
-      : ['2205374', '2205381']; // Set defaults if not in config
+      : ['2205374', '2205381']; // Default to Trà Phượng Hoàng and Lermao
 
     this.logger.log(
       `Allowed category IDs: ${this.allowedCategoryIds.join(', ')}`,
@@ -30,76 +30,80 @@ export class ProductSyncService {
   async syncAllProducts() {
     this.logger.log('Starting full product sync...');
 
-    let pageIndex = 0;
-    const pageSize = 100;
-    let hasMoreData = true;
     let totalProductsProcessed = 0;
     let totalProductsFiltered = 0;
     let totalProductsSynced = 0;
 
-    const initialSyncDate = '2024-12-21T00:00:00';
+    // First, ensure we have the categories in our database
+    await this.syncCategories();
 
-    while (hasMoreData) {
-      try {
-        this.logger.log(
-          `Fetching products batch: page ${pageIndex + 1}, size ${pageSize}`,
-        );
+    // Then sync products from each allowed category directly
+    for (const categoryId of this.allowedCategoryIds) {
+      let pageIndex = 0;
+      const pageSize = 100;
+      let hasMoreProducts = true;
 
-        const data = await this.kiotVietService.getProducts(
-          pageSize,
-          pageIndex,
-          initialSyncDate,
-        );
-
-        this.logger.log(
-          `Received batch with ${data.data?.length || 0} products. Total products: ${data.total}`,
-        );
-
-        if (!data.data || data.data.length === 0) {
-          this.logger.log('No more products in response, ending sync');
-          hasMoreData = false;
-          break;
-        }
-
-        // Process the current batch of products
-        const result = await this.processProducts(data.data);
-
-        // Update counters
-        totalProductsProcessed += data.data.length;
-        totalProductsFiltered += result.filtered;
-        totalProductsSynced += result.synced;
-
-        this.logger.log(
-          `Batch stats - Processed: ${data.data.length}, Filtered: ${result.filtered}, Synced: ${result.synced}`,
-        );
-        this.logger.log(
-          `Running totals - Processed: ${totalProductsProcessed}, Filtered: ${totalProductsFiltered}, Synced: ${totalProductsSynced}`,
-        );
-
-        // Increment page index for next batch
-        pageIndex++;
-
-        // Check if we've reached the end of available products
-        if (pageSize * pageIndex >= data.total) {
+      while (hasMoreProducts) {
+        try {
           this.logger.log(
-            `Reached the end of available products (${data.total})`,
+            `Fetching products for category ${categoryId}, page ${pageIndex + 1}`,
           );
-          hasMoreData = false;
-        }
 
-        // Add a small delay to avoid hitting rate limits
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      } catch (error) {
-        this.logger.error(`Error syncing products on page ${pageIndex}`, error);
-        // Wait a bit longer after an error
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-        // Continue with next page even after an error
+          // Get products directly from the category
+          const result = await this.kiotVietService.getProductsByCategory(
+            categoryId,
+            pageSize,
+            pageIndex,
+          );
+
+          if (!result.data || result.data.length === 0) {
+            this.logger.log(`No more products for category ${categoryId}`);
+            hasMoreProducts = false;
+            break;
+          }
+
+          // Process this batch of products
+          const batchResult = await this.processProducts(
+            result.data,
+            categoryId,
+          );
+
+          // Update counters
+          totalProductsProcessed += result.data.length;
+          totalProductsFiltered += batchResult.filtered;
+          totalProductsSynced += batchResult.synced;
+
+          this.logger.log(
+            `Category ${categoryId} - batch processed: ${result.data.length}, ` +
+              `filtered: ${batchResult.filtered}, synced: ${batchResult.synced}`,
+          );
+
+          // Go to next page
+          pageIndex++;
+
+          // Check if we've reached the end
+          if (result.data.length < pageSize) {
+            hasMoreProducts = false;
+          }
+
+          // Add a small delay to avoid rate limits
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        } catch (error) {
+          this.logger.error(
+            `Error syncing category ${categoryId} on page ${pageIndex}`,
+            error,
+          );
+          // Wait a bit longer after an error
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          // Try the next page
+          pageIndex++;
+        }
       }
     }
 
     this.logger.log(
-      `Product sync completed. Total processed: ${totalProductsProcessed}, ` +
-        `filtered out: ${totalProductsFiltered}, successfully synced: ${totalProductsSynced}`,
+      `Full sync completed. Total processed: ${totalProductsProcessed}, ` +
+        `filtered: ${totalProductsFiltered}, synced: ${totalProductsSynced}`,
     );
 
     return {
@@ -110,26 +114,13 @@ export class ProductSyncService {
     };
   }
 
-  // Helper method to get current product count
-  private async getLocalProductCount(): Promise<number> {
-    return await this.prisma.product.count({
-      where: {
-        kiotviet_id: {
-          not: null,
-        },
-      },
-    });
-  }
-
   async incrementalSync() {
+    this.logger.log('Starting incremental product sync...');
+
+    // Use yesterday's date as the starting point for incremental sync
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const dateStr = yesterday.toISOString().split('T')[0] + 'T00:00:00';
-
-    this.logger.log(`Starting incremental sync from ${dateStr}`);
-    this.logger.log(
-      `Using allowed categories: ${this.allowedCategoryIds.join(', ')}`,
-    );
 
     let pageIndex = 0;
     const pageSize = 100;
@@ -138,9 +129,16 @@ export class ProductSyncService {
     let totalProductsFiltered = 0;
     let totalProductsSynced = 0;
 
+    // Ensure we have up-to-date category data
+    await this.syncCategories();
+
     while (hasMoreData) {
       try {
-        this.logger.log(`Fetching page ${pageIndex}, size ${pageSize}`);
+        this.logger.log(
+          `Fetching page ${pageIndex}, size ${pageSize}, date ${dateStr}`,
+        );
+
+        // Get recently modified products
         const data = await this.kiotVietService.getProducts(
           pageSize,
           pageIndex,
@@ -153,13 +151,16 @@ export class ProductSyncService {
           break;
         }
 
-        // Log a sample of the first product to understand the structure
+        // Log sample data for debugging
         if (pageIndex === 0 && data.data.length > 0) {
+          const sampleProduct = data.data[0];
           this.logger.log(
-            `Sample product data: ${JSON.stringify(data.data[0])}`,
+            `Sample product: ID=${sampleProduct.id}, Name=${sampleProduct.name}, ` +
+              `CategoryID=${sampleProduct.categoryId}, CategoryName=${sampleProduct.categoryName}`,
           );
         }
 
+        // Process this batch of products
         const result = await this.processProducts(data.data);
 
         // Update counters
@@ -168,28 +169,35 @@ export class ProductSyncService {
         totalProductsSynced += result.synced;
 
         this.logger.log(
-          `Incrementally processed ${totalProductsProcessed} products, filtered out ${totalProductsFiltered}, synced ${totalProductsSynced}`,
+          `Incrementally processed ${data.data.length} products, ` +
+            `filtered: ${result.filtered}, synced: ${result.synced}`,
         );
 
+        // Go to next page
         pageIndex++;
 
+        // Check if we've reached the end
         if (data.total <= pageSize * pageIndex) {
           hasMoreData = false;
         }
 
-        // Add a small delay
+        // Add a small delay to avoid rate limits
         await new Promise((resolve) => setTimeout(resolve, 500));
       } catch (error) {
         this.logger.error(
           `Error in incremental sync on page ${pageIndex}`,
           error,
         );
-        await new Promise((resolve) => setTimeout(resolve, 5000));
+        // Wait a bit longer after an error
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        // Move to next page
+        pageIndex++;
       }
     }
 
     this.logger.log(
-      `Incremental sync completed. Total processed: ${totalProductsProcessed}, filtered out: ${totalProductsFiltered}, synced: ${totalProductsSynced}`,
+      `Incremental sync completed. Total processed: ${totalProductsProcessed}, ` +
+        `filtered: ${totalProductsFiltered}, synced: ${totalProductsSynced}`,
     );
 
     return {
@@ -200,39 +208,97 @@ export class ProductSyncService {
     };
   }
 
+  private async syncCategories() {
+    this.logger.log('Syncing categories from KiotViet...');
+
+    try {
+      // Get categories from KiotViet
+      const categories = await this.kiotVietService.getCategories();
+
+      if (!categories || !categories.data) {
+        this.logger.error(
+          'Failed to fetch categories or no categories returned',
+        );
+        return;
+      }
+
+      this.logger.log(`Fetched ${categories.data.length} categories`);
+
+      // Process each category
+      for (const categoryData of categories.data) {
+        const categoryId = categoryData.categoryId.toString();
+
+        // Only process allowed categories
+        if (this.allowedCategoryIds.includes(categoryId)) {
+          this.logger.log(
+            `Processing allowed category: ${categoryId} (${categoryData.categoryName})`,
+          );
+
+          // Check if category exists in our database
+          let category = await this.prisma.category.findFirst({
+            where: { kiotviet_id: categoryId },
+          });
+
+          if (!category) {
+            // Create the category if it doesn't exist
+            category = await this.prisma.category.create({
+              data: {
+                name: categoryData.categoryName,
+                kiotviet_id: categoryId,
+                created_date: new Date(),
+              },
+            });
+            this.logger.log(
+              `Created new category: ${categoryData.categoryName} (${categoryId})`,
+            );
+          } else {
+            // Update the category name if it changed
+            if (category.name !== categoryData.categoryName) {
+              await this.prisma.category.update({
+                where: { id: category.id },
+                data: {
+                  name: categoryData.categoryName,
+                  updated_date: new Date(),
+                },
+              });
+              this.logger.log(
+                `Updated category: ${categoryData.categoryName} (${categoryId})`,
+              );
+            }
+          }
+        }
+      }
+
+      this.logger.log('Category sync completed');
+    } catch (error) {
+      this.logger.error('Error syncing categories', error);
+    }
+  }
+
   private async processProducts(
     products: any[],
+    forceCategoryId?: string,
   ): Promise<{ processed: number; filtered: number; synced: number }> {
     let filtered = 0;
     let synced = 0;
 
-    // Log how many products we received for processing
-    this.logger.log(`Processing ${products.length} products from KiotViet`);
-
     for (const kiotVietProduct of products) {
       try {
-        // Extract category ID, converting to string if needed
-        const categoryId = kiotVietProduct.categoryId?.toString();
+        // Get the product's category ID (or use the forced one if provided)
+        const categoryId =
+          forceCategoryId || kiotVietProduct.categoryId?.toString();
 
-        // Detailed debug for the first few products of each batch
-        const isAllowed = this.allowedCategoryIds.includes(categoryId);
-
-        this.logger.debug(
-          `Product: ${kiotVietProduct.id} (${kiotVietProduct.name})
-           - CategoryId: ${categoryId} (type: ${typeof kiotVietProduct.categoryId})
-           - Allowed CategoryIds: ${this.allowedCategoryIds.join(', ')}
-           - Is Allowed: ${isAllowed}`,
-        );
-
-        if (!categoryId || !isAllowed) {
+        // Skip products not in allowed categories
+        if (!this.allowedCategoryIds.includes(categoryId)) {
           filtered++;
-          continue; // Skip this product
+          continue;
         }
 
         this.logger.log(
-          `Processing product from allowed category: ${kiotVietProduct.id} (${kiotVietProduct.name}) - category ${categoryId}`,
+          `Processing product ${kiotVietProduct.id} (${kiotVietProduct.name}) from category ${categoryId}`,
         );
 
+        // Check if this product already exists in our database
         const existingProduct = await this.prisma.product.findFirst({
           where: { kiotviet_id: kiotVietProduct.id.toString() },
         });
@@ -240,9 +306,10 @@ export class ProductSyncService {
         // Get inventory information
         let inventoryQuantity = 0;
         try {
-          inventoryQuantity = await this.kiotVietService.getProductInventory(
+          const inventoryData = await this.kiotVietService.getProductInventory(
             kiotVietProduct.id.toString(),
           );
+          inventoryQuantity = inventoryData; // Use actual inventory data
         } catch (inventoryError) {
           this.logger.error(
             `Error fetching inventory for product ${kiotVietProduct.id}. Using default value 0.`,
@@ -250,8 +317,8 @@ export class ProductSyncService {
           );
         }
 
+        // Prepare the product data
         const imageUrls = kiotVietProduct.images || [];
-
         const productData = {
           title: kiotVietProduct.name,
           price: kiotVietProduct.basePrice
@@ -284,26 +351,16 @@ export class ProductSyncService {
           });
           this.logger.log(`Created new product ${kiotVietProduct.id}`);
 
-          // Category handling
-          if (kiotVietProduct.categoryId) {
-            let category = await this.prisma.category.findFirst({
-              where: { kiotviet_id: kiotVietProduct.categoryId.toString() },
-            });
+          // Get the category entity from the database
+          const category = await this.prisma.category.findFirst({
+            where: { kiotviet_id: categoryId },
+          });
 
-            if (!category) {
-              // Create category if it doesn't exist
-              category = await this.prisma.category.create({
-                data: {
-                  name: kiotVietProduct.categoryName || 'Unknown Category',
-                  kiotviet_id: kiotVietProduct.categoryId.toString(),
-                  created_date: new Date(),
-                },
-              });
-              this.logger.log(
-                `Created new category ${kiotVietProduct.categoryName || 'Unknown Category'}`,
-              );
-            }
-
+          if (!category) {
+            this.logger.error(
+              `Category ${categoryId} not found in database for product ${kiotVietProduct.id}`,
+            );
+          } else {
             // Associate product with category
             await this.prisma.product_categories.create({
               data: {
@@ -327,34 +384,10 @@ export class ProductSyncService {
       }
     }
 
-    this.logger.log(
-      `Processed ${products.length} products: filtered ${filtered}, synced ${synced}`,
-    );
     return { processed: products.length, filtered, synced };
   }
 
   getAllowedCategoryIds(): string[] {
     return this.allowedCategoryIds;
-  }
-
-  async syncProductsByCategory() {
-    let totalProductsSynced = 0;
-
-    for (const categoryId of this.allowedCategoryIds) {
-      this.logger.log(`Syncing products for category ${categoryId}`);
-
-      try {
-        const productsData =
-          await this.kiotVietService.getProductsByCategory(categoryId);
-        if (productsData.data && productsData.data.length > 0) {
-          const result = await this.processProducts(productsData.data);
-          totalProductsSynced += result.synced;
-        }
-      } catch (error) {
-        this.logger.error(`Error syncing category ${categoryId}`, error);
-      }
-    }
-
-    return { success: true, totalProductsSynced };
   }
 }
