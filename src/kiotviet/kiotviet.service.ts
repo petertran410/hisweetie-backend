@@ -29,7 +29,7 @@ export class KiotvietService {
             headers: {
               'Content-Type': 'application/x-www-form-urlencoded',
               Authorization: `Basic ${Buffer.from(
-                `${this.configService.get('KIOTVIET_CLIENT_ID')}:${this.configService.get('KIOTVIET_CLIENT_SECRET')}`,
+                `${this.configService.get('KIOT_CLIEND_ID')}:${this.configService.get('KIOT_SECRET_KEY')}`,
               ).toString('base64')}`,
             },
           },
@@ -37,7 +37,6 @@ export class KiotvietService {
       );
 
       this.accessToken = response.data.access_token;
-      // Set expiry time (usually 1 hour)
       this.tokenExpiry = new Date(Date.now() + response.data.expires_in * 1000);
       return this.accessToken;
     } catch (error) {
@@ -53,7 +52,6 @@ export class KiotvietService {
   ): Promise<any> {
     const token = await this.getAccessToken();
 
-    // Build query parameters
     let params = `pageSize=${pageSize}&pageIndex=${pageIndex}`;
     if (lastModifiedDate) {
       params += `&lastModifiedDate=${lastModifiedDate}`;
@@ -64,7 +62,7 @@ export class KiotvietService {
         this.httpService.get(`https://public.kiotapi.com/products?${params}`, {
           headers: {
             Authorization: `Bearer ${token}`,
-            Retailer: this.configService.get('KIOTVIET_RETAILER'),
+            Retailer: this.configService.get('KIOT_SHOP_NAME'),
           },
         }),
       );
@@ -86,7 +84,7 @@ export class KiotvietService {
         this.httpService.post('https://public.kiotapi.com/orders', orderData, {
           headers: {
             Authorization: `Bearer ${token}`,
-            Retailer: this.configService.get('KIOTVIET_RETAILER'),
+            Retailer: this.configService.get('KIOT_SHOP_NAME'),
             'Content-Type': 'application/json',
           },
         }),
@@ -109,13 +107,12 @@ export class KiotvietService {
           {
             headers: {
               Authorization: `Bearer ${token}`,
-              Retailer: this.configService.get('KIOTVIET_RETAILER'),
+              Retailer: this.configService.get('KIOT_SHOP_NAME'),
             },
           },
         ),
       );
 
-      // Extract inventory quantity from response
       const onHand = response.data?.[0]?.onHand || 0;
       return onHand;
     } catch (error) {

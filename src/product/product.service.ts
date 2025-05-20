@@ -306,7 +306,6 @@ export class ProductService {
       orderBy: { created_date: 'desc' },
     });
 
-    // Transform response to match frontend expectations
     const content = orders.map((order) => ({
       id: order.id.toString(),
       createdDate: order.created_date ? order.created_date.toISOString() : null,

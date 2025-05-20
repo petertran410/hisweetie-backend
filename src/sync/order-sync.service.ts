@@ -1,4 +1,3 @@
-// src/sync/order-sync.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { KiotvietService } from '../kiotviet/kiotviet.service';
 import { PrismaClient } from '@prisma/client';
@@ -13,12 +12,8 @@ export class OrderSyncService {
   constructor(private readonly kiotVietService: KiotvietService) {}
 
   async createOrderAndSyncToKiotViet(orderData: any) {
-    this.logger.log('Creating order and syncing to KiotViet');
-
-    // Start a transaction
     return await this.prisma.$transaction(async (prisma) => {
       try {
-        // 1. Create order in our system
         const newOrder = await prisma.product_order.create({
           data: {
             receiver_full_name: orderData.receiverFullName,
@@ -34,7 +29,6 @@ export class OrderSyncService {
           },
         });
 
-        // 2. Create order items in our system
         for (const item of orderData.orderItems) {
           const product = await prisma.product.findFirst({
             where: { id: BigInt(item.productId) },
@@ -54,7 +48,6 @@ export class OrderSyncService {
           });
         }
 
-        // 3. Prepare and send order to KiotViet
         const kiotVietOrderData = this.prepareKiotVietOrderData(
           newOrder,
           orderData.orderItems,
@@ -84,7 +77,6 @@ export class OrderSyncService {
   }
 
   private prepareKiotVietOrderData(order: any, orderItems: any[]) {
-    // Transform our order format to KiotViet format
     const kiotVietOrderItems = orderItems.map((item) => {
       return {
         productId: item.product.kiotviet_id,
@@ -96,7 +88,7 @@ export class OrderSyncService {
 
     return {
       branchId: this.configService.get('KIOTVIET_BRANCH_ID'),
-      customerId: null, // Could link to KiotViet customer if available
+      customerId: null,
       customerCode: null,
       description: order.note,
       discount: 0,
@@ -105,7 +97,7 @@ export class OrderSyncService {
       customerPhone: order.phone_number,
       customerAddress: order.address_detail,
       deliveryAddress: order.address_detail,
-      type: 'WEB_ORDER', // Or whatever type KiotViet expects
+      type: 'WEB_ORDER',
     };
   }
 }

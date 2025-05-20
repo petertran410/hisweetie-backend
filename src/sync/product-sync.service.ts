@@ -11,7 +11,6 @@ export class ProductSyncService {
 
   constructor(private readonly kiotVietService: KiotvietService) {}
 
-  // Full sync - can be triggered manually or scheduled
   async syncAllProducts() {
     this.logger.log('Starting full product sync...');
 
@@ -20,7 +19,6 @@ export class ProductSyncService {
     let hasMoreData = true;
     let totalProductsProcessed = 0;
 
-    // Initial date for first sync (your starting date)
     const initialSyncDate = '2024-12-22T00:00:00';
 
     while (hasMoreData) {
@@ -36,22 +34,18 @@ export class ProductSyncService {
           break;
         }
 
-        // Process each product
         await this.processProducts(data.data);
 
         totalProductsProcessed += data.data.length;
         this.logger.log(`Processed ${totalProductsProcessed} products so far`);
 
-        // Move to next page
         pageIndex++;
 
-        // Check if we've reached the end
         if (data.total <= pageSize * pageIndex) {
           hasMoreData = false;
         }
       } catch (error) {
         this.logger.error(`Error syncing products on page ${pageIndex}`, error);
-        // Wait a bit before retrying to avoid rate limiting
         await new Promise((resolve) => setTimeout(resolve, 5000));
       }
     }
@@ -62,7 +56,6 @@ export class ProductSyncService {
     return { success: true, totalProductsProcessed };
   }
 
-  // Daily incremental sync - run every night at 1 AM
   @Cron('0 1 * * *')
   async incrementalSync() {
     const yesterday = new Date();
@@ -127,17 +120,13 @@ export class ProductSyncService {
             kiotVietProduct.id.toString(),
           );
 
-        // Extract images if available
         const imageUrls = kiotVietProduct.images || [];
 
-        // Prepare product data
         const productData = {
           title: kiotVietProduct.name,
           price: kiotVietProduct.basePrice
             ? BigInt(Math.round(kiotVietProduct.basePrice))
             : BigInt(0),
-          // Since quantity isn't in this response, we'll need another API call or endpoint
-          // I'll set a placeholder value for now
           quantity: BigInt(inventoryQuantity),
           description: kiotVietProduct.description || '',
           general_description: `${kiotVietProduct.fullName || ''} - ${kiotVietProduct.code || ''}`,
@@ -149,13 +138,11 @@ export class ProductSyncService {
         };
 
         if (existingProduct) {
-          // Update existing product
           await this.prisma.product.update({
             where: { id: existingProduct.id },
             data: productData,
           });
         } else {
-          // Create new product
           const newProduct = await this.prisma.product.create({
             data: {
               ...productData,
@@ -163,15 +150,12 @@ export class ProductSyncService {
             },
           });
 
-          // Handle category association
           if (kiotVietProduct.categoryId) {
-            // Find or create category
             let category = await this.prisma.category.findFirst({
               where: { kiotviet_id: kiotVietProduct.categoryId.toString() },
             });
 
             if (!category) {
-              // Category doesn't exist yet, create it
               category = await this.prisma.category.create({
                 data: {
                   name: kiotVietProduct.categoryName,
@@ -181,7 +165,6 @@ export class ProductSyncService {
               });
             }
 
-            // Create product-category relationship
             await this.prisma.product_categories.create({
               data: {
                 product_id: newProduct.id,
