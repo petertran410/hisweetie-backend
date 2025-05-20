@@ -1,23 +1,38 @@
-// src/sync/product-sync.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { KiotvietService } from '../kiotviet/kiotviet.service';
 import { PrismaClient } from '@prisma/client';
 import { Cron } from '@nestjs/schedule';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class ProductSyncService {
   private readonly logger = new Logger(ProductSyncService.name);
   private prisma = new PrismaClient();
 
-  constructor(private readonly kiotVietService: KiotvietService) {}
+  // Define allowed category IDs
+  private readonly allowedCategoryIds = ['2205374', '2205381']; // Trà Phượng Hoàng, Lermao
+
+  constructor(
+    private readonly kiotVietService: KiotvietService,
+    private readonly configService: ConfigService,
+  ) {
+    // Get allowed categories from config
+    const allowedCategoriesStr = this.configService.get(
+      'KIOTVIET_ALLOWED_CATEGORIES',
+    );
+    this.allowedCategoryIds = allowedCategoriesStr
+      ? allowedCategoriesStr.split(',')
+      : [];
+  }
 
   async syncAllProducts() {
-    this.logger.log('Starting full product sync...');
+    this.logger.log('Starting filtered product sync...');
 
     let pageIndex = 0;
     const pageSize = 100;
     let hasMoreData = true;
     let totalProductsProcessed = 0;
+    let totalProductsFiltered = 0;
 
     const initialSyncDate = '2024-12-22T00:00:00';
 
@@ -34,10 +49,20 @@ export class ProductSyncService {
           break;
         }
 
+        // Count total products before filtering
+        const beforeCount = totalProductsProcessed;
+
+        // Process products (with filtering)
         await this.processProducts(data.data);
 
+        // Update counters
         totalProductsProcessed += data.data.length;
-        this.logger.log(`Processed ${totalProductsProcessed} products so far`);
+        totalProductsFiltered =
+          totalProductsProcessed - (await this.getLocalProductCount());
+
+        this.logger.log(
+          `Processed ${totalProductsProcessed} products, filtered out ${totalProductsFiltered} products`,
+        );
 
         pageIndex++;
 
@@ -51,9 +76,24 @@ export class ProductSyncService {
     }
 
     this.logger.log(
-      `Product sync completed. Total processed: ${totalProductsProcessed}`,
+      `Product sync completed. Total processed: ${totalProductsProcessed}, filtered out: ${totalProductsFiltered}`,
     );
-    return { success: true, totalProductsProcessed };
+    return {
+      success: true,
+      totalProductsProcessed,
+      totalProductsFiltered,
+    };
+  }
+
+  // Helper method to get current product count
+  private async getLocalProductCount(): Promise<number> {
+    return await this.prisma.product.count({
+      where: {
+        kiotviet_id: {
+          not: null,
+        },
+      },
+    });
   }
 
   @Cron('0 1 * * *')
@@ -68,6 +108,7 @@ export class ProductSyncService {
     const pageSize = 100;
     let hasMoreData = true;
     let totalProductsProcessed = 0;
+    let totalProductsFiltered = 0;
 
     while (hasMoreData) {
       try {
@@ -82,11 +123,16 @@ export class ProductSyncService {
           break;
         }
 
+        const beforeCount = await this.getLocalProductCount();
         await this.processProducts(data.data);
+        const afterCount = await this.getLocalProductCount();
 
+        // Update counters
         totalProductsProcessed += data.data.length;
+        totalProductsFiltered += data.data.length - (afterCount - beforeCount);
+
         this.logger.log(
-          `Incrementally processed ${totalProductsProcessed} products`,
+          `Incrementally processed ${totalProductsProcessed} products, filtered out ${totalProductsFiltered} products`,
         );
 
         pageIndex++;
@@ -104,13 +150,26 @@ export class ProductSyncService {
     }
 
     this.logger.log(
-      `Incremental sync completed. Total updated: ${totalProductsProcessed}`,
+      `Incremental sync completed. Total processed: ${totalProductsProcessed}, filtered out: ${totalProductsFiltered}`,
     );
   }
 
   private async processProducts(products: any[]) {
     for (const kiotVietProduct of products) {
       try {
+        // Check if product belongs to allowed categories
+        const categoryId = kiotVietProduct.categoryId?.toString();
+        if (!categoryId || !this.allowedCategoryIds.includes(categoryId)) {
+          this.logger.debug(
+            `Skipping product ${kiotVietProduct.id} (${kiotVietProduct.name}) - category ${categoryId} not in allowed list`,
+          );
+          continue; // Skip this product
+        }
+
+        this.logger.debug(
+          `Processing product ${kiotVietProduct.id} (${kiotVietProduct.name}) from allowed category ${categoryId}`,
+        );
+
         const existingProduct = await this.prisma.product.findFirst({
           where: { kiotviet_id: kiotVietProduct.id.toString() },
         });
@@ -138,11 +197,13 @@ export class ProductSyncService {
         };
 
         if (existingProduct) {
+          // Update existing product
           await this.prisma.product.update({
             where: { id: existingProduct.id },
             data: productData,
           });
         } else {
+          // Create new product
           const newProduct = await this.prisma.product.create({
             data: {
               ...productData,
@@ -150,12 +211,14 @@ export class ProductSyncService {
             },
           });
 
+          // Category handling
           if (kiotVietProduct.categoryId) {
             let category = await this.prisma.category.findFirst({
               where: { kiotviet_id: kiotVietProduct.categoryId.toString() },
             });
 
             if (!category) {
+              // Create category if it doesn't exist
               category = await this.prisma.category.create({
                 data: {
                   name: kiotVietProduct.categoryName,
@@ -165,6 +228,7 @@ export class ProductSyncService {
               });
             }
 
+            // Associate product with category
             await this.prisma.product_categories.create({
               data: {
                 product_id: newProduct.id,

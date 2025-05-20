@@ -1,4 +1,3 @@
-// src/sync/sync.controller.ts
 import { Controller, Post, Body, Get, Query } from '@nestjs/common';
 import { ProductSyncService } from './product-sync.service';
 import { OrderSyncService } from './order-sync.service';
