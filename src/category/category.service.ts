@@ -52,14 +52,44 @@ export class CategoryService {
       orderBy: { priority: 'asc' },
     });
 
-    return categories.map((category) => ({
-      id: category.id.toString(),
-      name: category.name,
-      description: category.description,
-      imagesUrl: category.images_url ? JSON.parse(category.images_url) : [],
-      parentId: category.parent_id ? category.parent_id.toString() : null,
-      priority: category.priority,
-    }));
+    const parentIds = categories
+      .filter((cat) => cat.parent_id !== null)
+      .map((cat) => cat.parent_id!);
+
+    let parentMap = {};
+    if (parentIds.length > 0) {
+      const parentCategories = await this.prisma.category.findMany({
+        where: {
+          id: {
+            in: parentIds,
+          },
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
+      parentMap = parentCategories.reduce((acc, parent) => {
+        acc[parent.id.toString()] = parent.name;
+        return acc;
+      }, {});
+    }
+
+    return categories.map((category) => {
+      const parentId = category.parent_id
+        ? category.parent_id.toString()
+        : null;
+
+      return {
+        id: category.id.toString(),
+        name: category.name,
+        description: category.description,
+        imagesUrl: category.images_url ? JSON.parse(category.images_url) : [],
+        parentId: parentId,
+        parentName: parentId ? parentMap[parentId] || null : null,
+        priority: category.priority,
+      };
+    });
   }
 
   async findOne(id: number) {
