@@ -1,3 +1,4 @@
+// src/news/entities/news.entity.ts
 export class News {
   id: number;
   created_by?: string;

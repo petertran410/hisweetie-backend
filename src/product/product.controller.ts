@@ -61,4 +61,9 @@ export class ProductController {
   remove(@Param('id') id: string) {
     return this.productService.remove(+id);
   }
+
+  @Get('cache-list-products')
+  async getProductsByIds(@Query('productIds') productIds: string) {
+    return this.productService.getProductsByIds(productIds);
+  }
 }

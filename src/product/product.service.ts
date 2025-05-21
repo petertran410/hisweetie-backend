@@ -365,4 +365,49 @@ export class ProductService {
 
     return { message: `Order status updated to ${status}` };
   }
+
+  async getProductsByIds(productIds: string) {
+    const ids = productIds.split(',').map((id) => BigInt(id));
+
+    if (!ids.length) {
+      return [];
+    }
+
+    const products = await this.prisma.product.findMany({
+      where: {
+        id: {
+          in: ids,
+        },
+      },
+      include: {
+        product_categories: {
+          include: {
+            category: true,
+          },
+        },
+      },
+    });
+
+    return products.map((product) => {
+      let imagesUrl = [];
+      try {
+        imagesUrl = product.images_url ? JSON.parse(product.images_url) : [];
+      } catch (error) {
+        console.log(
+          `Failed to parse images_url for product ${product.id}:`,
+          error,
+        );
+      }
+
+      return {
+        ...product,
+        imagesUrl,
+        isFeatured: product.is_featured,
+        ofCategories: product.product_categories.map((pc) => ({
+          id: pc.categories_id,
+          name: pc.category?.name || '',
+        })),
+      };
+    });
+  }
 }
