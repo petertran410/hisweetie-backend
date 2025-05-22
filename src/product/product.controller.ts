@@ -7,22 +7,284 @@ import {
   Param,
   Delete,
   Query,
+  HttpCode,
+  HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { OrderSearchDto } from './dto/order-search.dto';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiQuery,
+  ApiParam,
+} from '@nestjs/swagger';
 
+@ApiTags('products')
 @Controller('product')
 export class ProductController {
+  private readonly logger = new Logger(ProductController.name);
+
   constructor(private readonly productService: ProductService) {}
 
+  // KiotViet synchronization endpoints
+
+  @Post('sync/full')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Force full synchronization with KiotViet',
+    description:
+      'Replaces all local products with data from KiotViet. This operation may take several minutes for large product catalogs.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Synchronization completed successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        totalSynced: { type: 'number' },
+        totalDeleted: { type: 'number' },
+        errors: { type: 'array', items: { type: 'string' } },
+        summary: {
+          type: 'object',
+          properties: {
+            beforeSync: { type: 'number' },
+            afterSync: { type: 'number' },
+            newProducts: { type: 'number' },
+            updatedProducts: { type: 'number' },
+            deletedProducts: { type: 'number' },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Bad request - KiotViet credentials not configured or API error',
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error during synchronization',
+  })
+  async fullSync() {
+    this.logger.log('Full product synchronization requested');
+
+    try {
+      const result = await this.productService.forceFullSync();
+
+      this.logger.log(
+        `Full sync completed: ${result.success ? 'Success' : 'Failed'}`,
+        {
+          totalSynced: result.totalSynced,
+          totalDeleted: result.totalDeleted,
+          errorCount: result.errors.length,
+        },
+      );
+
+      return {
+        message: result.success
+          ? 'Product synchronization completed successfully'
+          : 'Product synchronization completed with errors',
+        ...result,
+      };
+    } catch (error) {
+      this.logger.error('Full sync failed:', error.message);
+      throw error;
+    }
+  }
+
+  @Post('sync/incremental')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Incremental synchronization with KiotViet',
+    description:
+      'Syncs only products that have been modified since the last sync. More efficient for regular updates.',
+  })
+  @ApiQuery({
+    name: 'since',
+    required: false,
+    description:
+      'ISO date string to sync products modified since this date. If not provided, uses last sync timestamp.',
+    example: '2024-01-01T00:00:00Z',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Incremental synchronization completed successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - Invalid date format or KiotViet API error',
+  })
+  async incrementalSync(@Query('since') since?: string) {
+    this.logger.log(
+      `Incremental product synchronization requested${since ? ` since ${since}` : ''}`,
+    );
+
+    try {
+      const result = await this.productService.incrementalSync(since);
+
+      this.logger.log(
+        `Incremental sync completed: ${result.success ? 'Success' : 'Failed'}`,
+        {
+          totalSynced: result.totalSynced,
+          totalDeleted: result.totalDeleted,
+          errorCount: result.errors.length,
+        },
+      );
+
+      return {
+        message: result.success
+          ? 'Incremental synchronization completed successfully'
+          : 'Incremental synchronization completed with errors',
+        ...result,
+      };
+    } catch (error) {
+      this.logger.error('Incremental sync failed:', error.message);
+      throw error;
+    }
+  }
+
+  @Get('sync/test-connection')
+  @ApiOperation({
+    summary: 'Test KiotViet connection',
+    description:
+      'Tests the connection to KiotViet API and verifies authentication credentials.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Connection test completed',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' },
+        tokenInfo: {
+          type: 'object',
+          properties: {
+            expiresAt: { type: 'string', format: 'date-time' },
+            tokenType: { type: 'string' },
+          },
+        },
+      },
+    },
+  })
+  async testConnection() {
+    this.logger.log('KiotViet connection test requested');
+
+    try {
+      const result =
+        await this.productService['kiotVietService'].testConnection();
+
+      if (result.success) {
+        this.logger.log('KiotViet connection test successful');
+      } else {
+        this.logger.warn('KiotViet connection test failed:', result.message);
+      }
+
+      return result;
+    } catch (error) {
+      this.logger.error('Connection test error:', error.message);
+      throw error;
+    }
+  }
+
+  @Get('sync/status')
+  @ApiOperation({
+    summary: 'Get synchronization status',
+    description:
+      'Returns information about the current state of product synchronization and statistics.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Synchronization status retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        totalProducts: { type: 'number' },
+        lastSyncAttempt: { type: 'string', format: 'date-time' },
+        syncEnabled: { type: 'boolean' },
+        kiotVietConfigured: { type: 'boolean' },
+      },
+    },
+  })
+  async getSyncStatus() {
+    try {
+      // Get basic statistics about current product state
+      const totalProducts = await this.productService
+        .search({
+          pageSize: 1,
+          pageNumber: 0,
+        })
+        .then((result) => result.totalElements);
+
+      // Check if KiotViet is properly configured by testing connection
+      let kiotVietConfigured = false;
+      let configMessage = '';
+
+      try {
+        const connectionTest =
+          await this.productService['kiotVietService'].testConnection();
+        kiotVietConfigured = connectionTest.success;
+        configMessage = connectionTest.message;
+      } catch (error) {
+        this.logger.warn('KiotViet not configured:', error.message);
+        configMessage = `KiotViet configuration error: ${error.message}`;
+      }
+
+      return {
+        totalProducts,
+        lastSyncAttempt: null, // You might want to store this in a config table
+        syncEnabled: true,
+        kiotVietConfigured,
+        message: configMessage,
+      };
+    } catch (error) {
+      this.logger.error('Failed to get sync status:', error.message);
+      throw error;
+    }
+  }
+
+  // Existing product management endpoints (unchanged)
+
   @Get('get-by-id/:id')
+  @ApiOperation({ summary: 'Get product by ID' })
+  @ApiParam({ name: 'id', description: 'Product ID' })
+  @ApiResponse({ status: 200, description: 'Product found successfully' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
   findById(@Param('id') id: string) {
     return this.productService.findById(+id);
   }
 
   @Get('search')
+  @ApiOperation({ summary: 'Search products with pagination' })
+  @ApiQuery({
+    name: 'pageSize',
+    required: false,
+    description: 'Number of items per page',
+    example: 10,
+  })
+  @ApiQuery({
+    name: 'pageNumber',
+    required: false,
+    description: 'Page number (0-based)',
+    example: 0,
+  })
+  @ApiQuery({
+    name: 'title',
+    required: false,
+    description: 'Search by product title',
+  })
+  @ApiQuery({
+    name: 'type',
+    required: false,
+    description: 'Search by product type',
+  })
+  @ApiResponse({ status: 200, description: 'Products retrieved successfully' })
   search(
     @Query('pageSize') pageSize: string = '10',
     @Query('pageNumber') pageNumber: string = '0',
@@ -38,31 +300,71 @@ export class ProductController {
   }
 
   @Get('order/admin-search')
+  @ApiOperation({ summary: 'Search orders for admin panel' })
+  @ApiResponse({ status: 200, description: 'Orders retrieved successfully' })
   searchOrders(@Query() searchParams: OrderSearchDto) {
     return this.productService.searchOrders(searchParams);
   }
 
   @Patch('order/:id/status/:status')
+  @ApiOperation({ summary: 'Change order status' })
+  @ApiParam({ name: 'id', description: 'Order ID' })
+  @ApiParam({ name: 'status', description: 'New status' })
+  @ApiResponse({
+    status: 200,
+    description: 'Order status updated successfully',
+  })
+  @ApiResponse({ status: 404, description: 'Order not found' })
   changeOrderStatus(@Param('id') id: string, @Param('status') status: string) {
     return this.productService.changeOrderStatus(id, status);
   }
 
   @Post()
+  @ApiOperation({
+    summary: 'Create a new product',
+    description:
+      'Creates a new product in the local database. Note: This will not sync to KiotViet automatically.',
+  })
+  @ApiResponse({ status: 201, description: 'Product created successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid product data' })
   create(@Body() createProductDto: CreateProductDto) {
     return this.productService.create(createProductDto);
   }
 
   @Patch(':id')
+  @ApiOperation({
+    summary: 'Update an existing product',
+    description:
+      'Updates a product in the local database. Note: This will not sync to KiotViet automatically.',
+  })
+  @ApiParam({ name: 'id', description: 'Product ID' })
+  @ApiResponse({ status: 200, description: 'Product updated successfully' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
   update(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto) {
     return this.productService.update(+id, updateProductDto);
   }
 
   @Delete(':id')
+  @ApiOperation({
+    summary: 'Delete a product',
+    description:
+      'Deletes a product from the local database. Note: This will not sync to KiotViet automatically.',
+  })
+  @ApiParam({ name: 'id', description: 'Product ID' })
+  @ApiResponse({ status: 200, description: 'Product deleted successfully' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
   remove(@Param('id') id: string) {
     return this.productService.remove(+id);
   }
 
   @Get('cache-list-products')
+  @ApiOperation({ summary: 'Get products by IDs for caching' })
+  @ApiQuery({
+    name: 'productIds',
+    description: 'Comma-separated list of product IDs',
+    example: '1,2,3,4,5',
+  })
+  @ApiResponse({ status: 200, description: 'Products retrieved successfully' })
   async getProductsByIds(@Query('productIds') productIds: string) {
     return this.productService.getProductsByIds(productIds);
   }

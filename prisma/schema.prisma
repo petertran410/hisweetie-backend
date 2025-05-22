@@ -69,6 +69,7 @@ model code_forgot_pass {
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
 model hibernate_sequence {
   next_val BigInt?
 
@@ -145,9 +146,13 @@ model product {
   type                String?              @db.VarChar(255)
   featured_thumbnail  String?              @db.VarChar(255)
   recipe_thumbnail    String?              @db.VarChar(255)
+  kiotviet_id         String?              @unique
   orders              orders[]
   product_categories  product_categories[]
   review              review[]
+
+  @@index([kiotviet_id], map: "idx_product_kiotviet_id")
+  @@index([updated_date], map: "idx_product_updated_date")
 }
 
 model product_categories {
@@ -222,4 +227,19 @@ model user {
   @@index([phone, email], map: "phone")
   @@index([email], map: "userEmailIndex")
   @@index([phone], map: "userPhoneIndex")
+}
+
+model sync_log {
+  id            Int       @id @default(autoincrement())
+  sync_type     String    @db.VarChar(50)
+  started_at    DateTime  @default(now())
+  completed_at  DateTime?
+  status        String    @default("pending") @db.VarChar(20)
+  total_synced  Int?      @default(0)
+  total_deleted Int?      @default(0)
+  error_message String?   @db.Text
+  details       Json?
+
+  @@index([status], map: "idx_sync_log_status")
+  @@index([sync_type, started_at], map: "idx_sync_log_type_date")
 }
