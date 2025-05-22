@@ -1,4 +1,3 @@
-import { ConfigModule, ConfigService } from '@nestjs/config';
 import {
   Controller,
   Get,
@@ -7,69 +6,63 @@ import {
   Patch,
   Param,
   Delete,
-  UseInterceptors,
-  UploadedFiles,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 
-// @ApiTags('user')
+@ApiTags('user')
 @Controller('user')
 export class UserController {
-  constructor(
-    private readonly userService: UserService,
-    private configService: ConfigService,
-  ) {}
+  constructor(private readonly userService: UserService) {}
 
   @Get()
-  findAll() {
-    return this.userService.findAll();
-  }
-
-  // @ApiConsumes('multipart/form-data')
-  // // @ApiBody({
-  // //   type: uploadDTO,
-  // // })
-  // @UseInterceptors(
-  //   FileInterceptor('avatar', {
-  //     storage: diskStorage({
-  //       destination: process.cwd() + '/public/img',
-  //       filename: (req, file, callback) =>
-  //         callback(null, new Date().getTime() + '_' + file.originalname),
-  //     }),
-  //   }),
-  // )
-  // @Post('upload')
-  // upload(@UploadedFiles() file: Express.Multer.File[]) {
-  //   return file;
-  // }
-
-  @Get('search/:uName')
-  findName(@Param('uName') uName) {
-    return this.userService.findName(uName);
+  @ApiOperation({ summary: 'Get current user information' })
+  @ApiResponse({ status: 200, description: 'Returns current user details' })
+  getCurrentUser() {
+    return this.userService.getCurrentUser();
   }
 
   @Post()
+  @ApiOperation({ summary: 'Create a new user' })
+  @ApiResponse({
+    status: 201,
+    description: 'User has been successfully created',
+  })
+  @UsePipes(new ValidationPipe())
   create(@Body() createUserDto: CreateUserDto) {
     return this.userService.create(createUserDto);
   }
 
+  @Get('search/:uName')
+  @ApiOperation({ summary: 'Search users by name' })
+  @ApiParam({ name: 'uName', description: 'Name to search for' })
+  findName(@Param('uName') uName: string) {
+    return this.userService.findName(uName);
+  }
+
   @Get(':id')
+  @ApiOperation({ summary: 'Get user by ID' })
+  @ApiParam({ name: 'id', description: 'User ID' })
   findOne(@Param('id') id: string) {
-    return this.userService.findOne(+id);
+    return this.userService.findOne(id);
   }
 
   @Patch(':id')
+  @ApiOperation({ summary: 'Update user information' })
+  @ApiParam({ name: 'id', description: 'User ID' })
+  @UsePipes(new ValidationPipe())
   update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
-    return this.userService.update(+id, updateUserDto);
+    return this.userService.update(id, updateUserDto);
   }
 
   @Delete(':id')
+  @ApiOperation({ summary: 'Delete a user' })
+  @ApiParam({ name: 'id', description: 'User ID' })
   remove(@Param('id') id: string) {
-    return this.userService.remove(+id);
+    return this.userService.remove(id);
   }
 }

@@ -93,6 +93,10 @@ export class CategoryService {
   }
 
   async findOne(id: number) {
+    if (isNaN(id) || id <= 0) {
+      throw new NotFoundException(`Invalid category ID provided`);
+    }
+
     const categoryResult = await this.prisma.category.findUnique({
       where: { id: BigInt(id) },
     });
