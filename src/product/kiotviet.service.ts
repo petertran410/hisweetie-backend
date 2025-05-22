@@ -34,6 +34,10 @@ interface KiotVietProduct {
   hasVariants?: boolean;
   weight?: number;
   isActive?: boolean;
+  inventories?: Array<{
+    productId: number;
+    onHand: number;
+  }>;
 }
 
 interface KiotVietApiResponse {
@@ -185,11 +189,13 @@ export class KiotVietService {
   private async getValidAccessToken(): Promise<string> {
     const credentials = this.getCredentials();
 
+    // Check if we have a valid cached token
     if (this.currentToken && new Date() < this.currentToken.expiresAt) {
       this.logger.debug('Using cached access token');
       return this.currentToken.accessToken;
     }
 
+    // Token is expired or missing, get a new one
     this.logger.log('Access token expired or missing, obtaining new token');
     this.currentToken = await this.obtainAccessToken(credentials);
 
@@ -200,6 +206,7 @@ export class KiotVietService {
     const credentials = this.getCredentials();
     const accessToken = await this.getValidAccessToken();
 
+    // Set up headers as required by KiotViet API documentation
     this.axiosInstance.defaults.headers.common['Retailer'] =
       credentials.retailerName;
     this.axiosInstance.defaults.headers.common['Authorization'] =
@@ -210,12 +217,14 @@ export class KiotVietService {
     const currentTime = Date.now();
     const hourElapsed = currentTime - this.hourStartTime;
 
+    // Reset counter if an hour has passed
     if (hourElapsed >= 3600000) {
       this.requestCount = 0;
       this.hourStartTime = currentTime;
       this.logger.log('Rate limit counter reset');
     }
 
+    // Check if we're approaching the rate limit
     if (this.requestCount >= this.maxRequestsPerHour) {
       const waitTime = 3600000 - hourElapsed;
       this.logger.warn(
@@ -227,23 +236,32 @@ export class KiotVietService {
     }
   }
 
+  /**
+   * Fetch a batch of products from KiotViet API
+   * This method handles pagination and follows KiotViet API documentation section 2.4.1
+   */
   private async fetchProductBatch(
     currentItem: number = 0,
     pageSize: number = 100,
     lastModifiedFrom?: string,
   ): Promise<KiotVietApiResponse> {
+    // Check rate limits before making request
     await this.checkRateLimit();
 
+    // Ensure we have valid authentication headers
     await this.setupAuthHeaders();
 
+    // Build request parameters according to KiotViet API documentation
     const params: any = {
       currentItem,
       pageSize,
-      includeRemoveIds: true,
+      includeRemoveIds: true, // Get list of deleted product IDs
+      includeInventory: true, // Get inventory information
       orderBy: 'id',
       orderDirection: 'Asc',
     };
 
+    // Add lastModifiedFrom for incremental sync
     if (lastModifiedFrom) {
       params.lastModifiedFrom = lastModifiedFrom;
     }
@@ -261,12 +279,14 @@ export class KiotVietService {
 
       return response.data;
     } catch (error) {
+      // Handle token expiration and retry once
       if (error.response?.status === 401 && this.currentToken) {
         this.logger.warn(
           'Received 401 error, clearing cached token and retrying once',
         );
         this.currentToken = null;
 
+        // Retry with fresh token
         await this.setupAuthHeaders();
         const retryResponse: AxiosResponse<KiotVietApiResponse> =
           await this.axiosInstance.get('/products', {
@@ -287,6 +307,9 @@ export class KiotVietService {
     }
   }
 
+  /**
+   * Test the connection to KiotViet API
+   */
   async testConnection(): Promise<{
     success: boolean;
     message: string;
@@ -300,9 +323,13 @@ export class KiotVietService {
 
       const credentials = this.getCredentials();
 
+      // Get a valid access token
       const token = await this.getValidAccessToken();
 
+      // Set up authentication headers
       await this.setupAuthHeaders();
+
+      // Make a test API call to verify connection
       const testResponse = await this.axiosInstance.get('/products', {
         params: { currentItem: 0, pageSize: 1 },
       });
@@ -329,6 +356,10 @@ export class KiotVietService {
     }
   }
 
+  /**
+   * Fetch all products from KiotViet with proper pagination
+   * This method orchestrates the complete data retrieval process
+   */
   async fetchAllProducts(lastModifiedFrom?: string): Promise<{
     products: KiotVietProduct[];
     deletedIds: number[];
@@ -350,11 +381,12 @@ export class KiotVietService {
     }> = [];
 
     let currentItem = 0;
-    const batchSize = 100;
+    const batchSize = 100; // KiotViet recommends max 100 items per request
     let totalProducts = 0;
     let batchNumber = 1;
 
     try {
+      // Fetch first batch to determine total count
       this.logger.log(
         'Fetching initial batch to determine total product count',
       );
@@ -367,6 +399,7 @@ export class KiotVietService {
       totalProducts = firstBatch.total;
       this.logger.log(`Total products in KiotViet: ${totalProducts}`);
 
+      // Handle case where no products are found
       if (totalProducts === 0) {
         this.logger.log('No products found in KiotViet');
         return {
@@ -377,8 +410,9 @@ export class KiotVietService {
         };
       }
 
+      // Process first batch
       allProducts.push(...firstBatch.data);
-      if (firstBatch.removeId) {
+      if (firstBatch.removeId && Array.isArray(firstBatch.removeId)) {
         allDeletedIds.push(...firstBatch.removeId);
       }
 
@@ -392,10 +426,12 @@ export class KiotVietService {
         `Batch ${batchNumber}: Fetched ${firstBatch.data.length} products`,
       );
 
+      // Calculate remaining batches
       const totalBatches = Math.ceil(totalProducts / batchSize);
       currentItem = batchSize;
       batchNumber++;
 
+      // Fetch remaining batches
       while (currentItem < totalProducts) {
         this.logger.log(
           `Processing batch ${batchNumber}/${totalBatches} (items ${currentItem}-${Math.min(currentItem + batchSize - 1, totalProducts - 1)})`,
@@ -408,7 +444,7 @@ export class KiotVietService {
         );
 
         allProducts.push(...batch.data);
-        if (batch.removeId) {
+        if (batch.removeId && Array.isArray(batch.removeId)) {
           allDeletedIds.push(...batch.removeId);
         }
 
@@ -425,6 +461,7 @@ export class KiotVietService {
         currentItem += batchSize;
         batchNumber++;
 
+        // Add small delay between requests to be respectful to the API
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
 
@@ -444,6 +481,9 @@ export class KiotVietService {
     }
   }
 
+  /**
+   * Validate data integrity after fetching
+   */
   validateDataIntegrity(
     products: KiotVietProduct[],
     expectedTotal: number,
@@ -469,18 +509,21 @@ export class KiotVietService {
       (id, index) => productIds.indexOf(id) !== index,
     );
 
+    // Check for duplicate IDs
     if (duplicateIds.length > 0) {
       issues.push(
         `Found ${duplicateIds.length} duplicate product IDs: ${duplicateIds.slice(0, 5).join(', ')}${duplicateIds.length > 5 ? '...' : ''}`,
       );
     }
 
+    // Check total count
     if (products.length !== expectedTotal) {
       issues.push(
         `Product count mismatch: expected ${expectedTotal}, got ${products.length}`,
       );
     }
 
+    // Check for gaps in ID sequence (informational only)
     const sortedIds = [...uniqueIds].sort((a, b) => a - b);
     const gaps: number[] = [];
     for (let i = 0; i < sortedIds.length - 1; i++) {
