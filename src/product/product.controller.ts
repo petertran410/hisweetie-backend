@@ -19,7 +19,7 @@ import { OrderSearchDto } from './dto/order-search.dto';
 import {
   ApiTags,
   ApiOperation,
-  ApiResponse,
+  ApiResponse, // <-- This import is important!
   ApiQuery,
   ApiParam,
 } from '@nestjs/swagger';
@@ -487,6 +487,122 @@ export class ProductController {
       };
     } catch (error) {
       this.logger.error('Failed to fetch categories:', error.message);
+      throw error;
+    }
+  }
+
+  // Add this new endpoint to src/product/product.controller.ts
+
+  /**
+   * Clean database and sync only specific categories
+   * This is the safest way to transition from a full catalog to category-filtered products
+   */
+  @Post('sync/clean-and-sync-categories') // <-- The route decorator
+  @HttpCode(HttpStatus.OK) // <-- HTTP status decorator
+  @ApiOperation({
+    // <-- Description of what this endpoint does
+    summary: 'Clean database and sync only specific categories',
+    description:
+      'Safely removes ALL existing products from the database and then syncs only products from the specified categories. ' +
+      'This is useful when transitioning from a full product catalog to a category-filtered approach. ' +
+      'Use this when you want your database to contain ONLY products from specific categories.',
+  })
+  @ApiQuery({
+    // <-- Describes the query parameters
+    name: 'categories',
+    required: true,
+    description: 'Comma-separated list of category names to sync',
+    example: 'Lermao,Trà Phượng Hoàng',
+  })
+  @ApiResponse({
+    // <-- HERE IS WHERE IT GOES!
+    status: 200, // <-- This describes the success response
+    description:
+      'Database cleaned and category synchronization completed successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        totalSynced: { type: 'number' },
+        totalDeleted: { type: 'number' },
+        cleanupInfo: {
+          type: 'object',
+          properties: {
+            deletedProducts: { type: 'number' },
+            deletedOrders: { type: 'number' },
+            deletedReviews: { type: 'number' },
+            deletedRelations: { type: 'number' },
+          },
+        },
+        categories: { type: 'array', items: { type: 'string' } },
+        summary: {
+          type: 'object',
+          properties: {
+            beforeSync: { type: 'number' },
+            afterSync: { type: 'number' },
+            newProducts: { type: 'number' },
+            updatedProducts: { type: 'number' },
+            deletedProducts: { type: 'number' },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    // <-- You can have multiple @ApiResponse decorators
+    status: 400, // <-- This describes error responses
+    description: 'Bad request - Invalid category names or operation failed',
+  })
+  async cleanAndSyncCategories(@Query('categories') categories: string) {
+    // <-- THE ACTUAL METHOD IMPLEMENTATION GOES HERE
+    this.logger.log(`Clean and sync requested for categories: ${categories}`);
+
+    if (!categories || categories.trim() === '') {
+      throw new BadRequestException(
+        'Categories parameter is required. Example: ?categories=Lermao,Trà Phượng Hoàng',
+      );
+    }
+
+    // Parse and validate category names
+    const categoryNames = categories
+      .split(',')
+      .map((cat) => cat.trim())
+      .filter((cat) => cat.length > 0);
+
+    if (categoryNames.length === 0) {
+      throw new BadRequestException(
+        'At least one valid category name is required',
+      );
+    }
+
+    this.logger.log(
+      `Parsed ${categoryNames.length} categories: ${categoryNames.join(', ')}`,
+    );
+
+    try {
+      const result =
+        await this.productService.cleanAndSyncCategories(categoryNames);
+
+      this.logger.log(
+        `Clean and sync completed: ${result.success ? 'Success' : 'Failed'}`,
+        {
+          categories: categoryNames,
+          deletedOldProducts: result.cleanupInfo.deletedProducts,
+          newProductsSynced: result.totalSynced,
+          errorCount: result.errors.length,
+        },
+      );
+
+      return {
+        message: result.success
+          ? `Database cleaned and successfully synced ${result.totalSynced} products from categories: ${categoryNames.join(', ')}`
+          : `Database cleaned but sync completed with ${result.errors.length} errors for categories: ${categoryNames.join(', ')}`,
+        categories: categoryNames,
+        operation: 'clean-and-sync',
+        ...result,
+      };
+    } catch (error) {
+      this.logger.error('Clean and sync operation failed:', error.message);
       throw error;
     }
   }

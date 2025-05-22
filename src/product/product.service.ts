@@ -1130,4 +1130,135 @@ export class ProductService {
       };
     });
   }
+
+  // Add this new method to src/product/product.service.ts
+
+  /**
+   * Clean database and sync only specific categories
+   * This method safely removes ALL products and their related data, then syncs only specified categories
+   *
+   * We need to delete related data in the correct order to respect foreign key constraints:
+   * 1. Orders (which reference products)
+   * 2. Reviews (which reference products)
+   * 3. Product-category relationships (which reference products)
+   * 4. Finally, the products themselves
+   */
+  async cleanAndSyncCategories(
+    categoryNames: string[],
+  ): Promise<
+    SyncResult & {
+      cleanupInfo: {
+        deletedProducts: number;
+        deletedOrders: number;
+        deletedReviews: number;
+        deletedRelations: number;
+      };
+    }
+  > {
+    this.logger.log(
+      `Starting clean database and category sync for: ${categoryNames.join(', ')}`,
+    );
+
+    if (!categoryNames || categoryNames.length === 0) {
+      throw new BadRequestException('At least one category name is required');
+    }
+
+    try {
+      // Step 1: Get count of products before cleanup (for reporting)
+      const beforeCleanupCount = await this.prisma.product.count();
+      this.logger.log(
+        `Current products in database before cleanup: ${beforeCleanupCount}`,
+      );
+
+      // Step 2: Get counts of related data for reporting
+      const beforeOrdersCount = await this.prisma.orders.count();
+      const beforeReviewsCount = await this.prisma.review.count();
+      const beforeRelationsCount = await this.prisma.product_categories.count();
+
+      this.logger.log(
+        `Related data before cleanup: ${beforeOrdersCount} orders, ${beforeReviewsCount} reviews, ${beforeRelationsCount} category relations`,
+      );
+
+      // Step 3: Safely clear all products and related data from database
+      // We do this in a transaction to ensure data consistency - either everything succeeds or everything rolls back
+      const cleanupResults = await this.prisma.$transaction(async (prisma) => {
+        this.logger.log('Starting database cleanup transaction...');
+
+        // Delete in the correct order to respect foreign key constraints:
+
+        // First: Delete orders that reference products
+        // This removes the "checkout records" before removing the "books" from our library analogy
+        const deletedOrders = await prisma.orders.deleteMany({});
+        this.logger.log(`Deleted ${deletedOrders.count} orders`);
+
+        // Second: Delete reviews that reference products
+        // This removes the "book reviews" before removing the "books"
+        const deletedReviews = await prisma.review.deleteMany({});
+        this.logger.log(`Deleted ${deletedReviews.count} reviews`);
+
+        // Third: Delete product-category relationships
+        // This removes the "catalog entries" before removing the "books"
+        const deletedRelations = await prisma.product_categories.deleteMany({});
+        this.logger.log(
+          `Deleted ${deletedRelations.count} product-category relationships`,
+        );
+
+        // Finally: Delete the products themselves
+        // Now we can safely remove the "books" since nothing references them anymore
+        const deletedProducts = await prisma.product.deleteMany({});
+        this.logger.log(`Deleted ${deletedProducts.count} products`);
+
+        return {
+          deletedProducts: deletedProducts.count,
+          deletedOrders: deletedOrders.count,
+          deletedReviews: deletedReviews.count,
+          deletedRelations: deletedRelations.count,
+        };
+      });
+
+      // Step 4: Verify database is clean
+      const afterCleanupCount = await this.prisma.product.count();
+      if (afterCleanupCount !== 0) {
+        throw new Error(
+          `Database cleanup failed: ${afterCleanupCount} products still remain`,
+        );
+      }
+      this.logger.log(
+        'Database successfully cleaned - no products or related data remain',
+      );
+
+      // Step 5: Perform fresh sync with only specified categories
+      this.logger.log(
+        `Now syncing fresh data for categories: ${categoryNames.join(', ')}`,
+      );
+      const syncResult = await this.syncProductsFromKiotViet(
+        undefined,
+        categoryNames,
+      );
+
+      // Step 6: Combine results for comprehensive reporting
+      const enhancedResult = {
+        ...syncResult,
+        cleanupInfo: cleanupResults,
+      };
+
+      if (syncResult.success) {
+        this.logger.log(
+          `Clean and sync completed successfully! ` +
+            `Removed ${cleanupResults.deletedProducts} old products (and ${cleanupResults.deletedOrders} orders, ${cleanupResults.deletedReviews} reviews), ` +
+            `added ${syncResult.totalSynced} new products from categories: ${categoryNames.join(', ')}`,
+        );
+      } else {
+        this.logger.warn(
+          `Clean and sync completed with errors. ` +
+            `Removed ${cleanupResults.deletedProducts} old products, added ${syncResult.totalSynced} new products, but ${syncResult.errors.length} errors occurred.`,
+        );
+      }
+
+      return enhancedResult;
+    } catch (error) {
+      this.logger.error(`Clean and sync operation failed: ${error.message}`);
+      throw new BadRequestException(`Clean and sync failed: ${error.message}`);
+    }
+  }
 }
