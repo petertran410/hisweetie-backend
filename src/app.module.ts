@@ -1,35 +1,40 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-import { UserModule } from './user/user.module';
-import { AuthModule } from './auth/auth.module';
-import { ConfigModule } from '@nestjs/config';
-import { AdminModule } from './admin/admin.module';
-import { CategoryModule } from './category/category.module';
-import { FileModule } from './file/file.module';
-import { InternalModule } from './internal/internal.module';
-import { JobpostModule } from './jobpost/jobpost.module';
-import { NewsModule } from './news/news.module';
-import { ProductModule } from './product/product.module';
-import { ScheduleModule } from '@nestjs/schedule';
+import { JwtModule } from '@nestjs/jwt';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { PassportModule } from '@nestjs/passport';
+import { AuthController } from '../src/auth/auth.controller';
+import { AuthService } from '../src/auth/auth.service';
+import { UserModule } from '../src/user/user.module';
+import { JwtStrategy } from '../src/auth/jwt.strategy';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-    }),
-    ScheduleModule.forRoot(),
-    AuthModule,
     UserModule,
-    AdminModule,
-    CategoryModule,
-    FileModule,
-    InternalModule,
-    JobpostModule,
-    NewsModule,
-    ProductModule,
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => {
+        const secretKey = configService.get<string>('APP_SECRET_KEY');
+        const expiresIn = configService.get<string>('TOKEN_EXPIRES_IN') || '1d';
+
+        if (!secretKey) {
+          throw new Error(
+            'APP_SECRET_KEY is not defined in environment variables',
+          );
+        }
+
+        return {
+          secret: secretKey,
+          signOptions: {
+            expiresIn: expiresIn,
+          },
+        };
+      },
+    }),
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  controllers: [AuthController],
+  providers: [AuthService, JwtStrategy],
+  exports: [AuthService, JwtStrategy, PassportModule],
 })
-export class AppModule {}
+export class AuthModule {}
