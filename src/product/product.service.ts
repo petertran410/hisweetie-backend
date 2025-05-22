@@ -487,7 +487,10 @@ export class ProductService {
                 }
 
                 // FIXED: Check if product exists with proper error handling
-                let existingProduct = null;
+                let existingProduct: Awaited<
+                  ReturnType<typeof transactionClient.product.findUnique>
+                > = null;
+
                 try {
                   existingProduct = await transactionClient.product.findUnique({
                     where: { id: BigInt(kiotVietProduct.id) },
