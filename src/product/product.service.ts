@@ -1,3 +1,4 @@
+// src/product/product.service.ts
 import {
   Injectable,
   Logger,
@@ -19,7 +20,6 @@ interface KiotVietProduct {
   fullName?: string;
   basePrice?: number;
   description?: string;
-
   images?: Array<string | { Image: string }>;
   unit?: string;
   modifiedDate?: string;
@@ -62,7 +62,6 @@ export class ProductService {
 
   /**
    * Safe BigInt conversion with extensive validation and logging
-   * This function handles all the edge cases that could cause conversion errors
    */
   private safeBigIntConversion(
     value: any,
@@ -70,12 +69,10 @@ export class ProductService {
     productId?: number,
   ): bigint {
     try {
-      // Handle null, undefined, or empty values
       if (value === null || value === undefined || value === '') {
         return BigInt(0);
       }
 
-      // Handle string values that might be numbers
       if (typeof value === 'string') {
         const cleanValue = value.replace(/[^\d.-]/g, '');
         if (cleanValue === '' || cleanValue === '-') {
@@ -84,10 +81,8 @@ export class ProductService {
         value = parseFloat(cleanValue);
       }
 
-      // Convert to number if not already
       const numericValue = Number(value);
 
-      // Validate the numeric conversion
       if (isNaN(numericValue) || !isFinite(numericValue)) {
         this.logger.warn(
           `${fieldName} for product ${productId} is invalid: ${value}, using 0`,
@@ -95,10 +90,8 @@ export class ProductService {
         return BigInt(0);
       }
 
-      // Ensure positive values only and convert to integer
       const positiveValue = Math.max(0, Math.floor(numericValue));
 
-      // Check if the value is within safe integer range
       if (positiveValue > Number.MAX_SAFE_INTEGER) {
         this.logger.warn(
           `${fieldName} for product ${productId} exceeds max safe integer, capping`,
@@ -149,7 +142,6 @@ export class ProductService {
 
   /**
    * Map KiotViet product to local database structure
-   * This function transforms KiotViet data to match your Prisma schema exactly
    */
   private mapKiotVietProductToLocal(kiotVietProduct: KiotVietProduct): any {
     const productId = kiotVietProduct.id;
@@ -191,7 +183,7 @@ export class ProductService {
         productId,
       );
 
-      // Handle images array safely - CORRECTED: Handle both image data structures
+      // Handle images array safely - Process both image data structures
       let imageUrls: string[] = [];
       if (kiotVietProduct.images && Array.isArray(kiotVietProduct.images)) {
         this.logger.debug(
@@ -200,12 +192,9 @@ export class ProductService {
 
         imageUrls = kiotVietProduct.images
           .map((img, index) => {
-            // Handle both possible image structures from KiotViet API
             let imageUrl: string | null = null;
 
             if (typeof img === 'string') {
-              // Structure 1: Images as direct URL strings
-              // Example: "https://cdn-images.kiotviet.vn/..."
               imageUrl = img;
               this.logger.debug(
                 `Image ${index} for product ${productId}: direct string URL`,
@@ -216,14 +205,11 @@ export class ProductService {
               img.Image &&
               typeof img.Image === 'string'
             ) {
-              // Structure 2: Images as objects with Image property
-              // Example: {"Image": "https://cdn-images.kiotviet.vn/..."}
               imageUrl = img.Image;
               this.logger.debug(
                 `Image ${index} for product ${productId}: object with Image property`,
               );
             } else {
-              // Invalid or unexpected image structure
               this.logger.warn(
                 `Image ${index} for product ${productId}: unexpected structure`,
                 img,
@@ -231,7 +217,6 @@ export class ProductService {
               return null;
             }
 
-            // Validate and clean the URL
             if (imageUrl && typeof imageUrl === 'string') {
               const cleanUrl = imageUrl.trim();
               if (
@@ -249,7 +234,7 @@ export class ProductService {
 
             return null;
           })
-          .filter((url): url is string => url !== null); // Type guard to ensure only strings remain
+          .filter((url): url is string => url !== null);
 
         this.logger.debug(
           `Product ${productId}: processed ${imageUrls.length} valid images out of ${kiotVietProduct.images.length} total`,
@@ -260,18 +245,8 @@ export class ProductService {
         );
       }
 
-      // Process the final image data
       const images_url = this.safeJsonStringify(imageUrls, 'images', productId);
       const featured_thumbnail = imageUrls.length > 0 ? imageUrls[0] : null;
-
-      // Log final image processing results for debugging
-      if (imageUrls.length > 0) {
-        this.logger.debug(
-          `Product ${productId}: stored ${imageUrls.length} images, featured: ${featured_thumbnail}`,
-        );
-      } else {
-        this.logger.debug(`Product ${productId}: no valid images to store`);
-      }
 
       // Handle text fields with safe sanitization
       const description = this.sanitizeString(
@@ -282,7 +257,7 @@ export class ProductService {
       );
       const type = this.sanitizeString(kiotVietProduct.unit || 'piece');
 
-      // Return object that matches EXACTLY your Prisma schema
+      // Return object that matches your Prisma schema
       return {
         title,
         price,
@@ -348,21 +323,14 @@ export class ProductService {
   }
 
   /**
-   * Enhanced synchronization with robust error handling
-   */
-  // Update the syncProductsFromKiotViet method in src/product/product.service.ts
-
-  /**
-   * Enhanced synchronization with category filtering support
-   * Now supports filtering by specific categories like "Lermao" and "Trà Phượng Hoàng"
+   * FIXED: Enhanced synchronization with robust error handling and proper transaction management
    */
   async syncProductsFromKiotViet(
     lastModifiedFrom?: string,
-    categoryNames?: string[], // New parameter for category filtering
+    categoryNames?: string[],
   ): Promise<SyncResult> {
     this.logger.log('Starting product synchronization from KiotViet');
 
-    // Log category filtering information
     if (categoryNames && categoryNames.length > 0) {
       this.logger.log(
         `Filtering sync to categories: ${categoryNames.join(', ')}`,
@@ -416,9 +384,9 @@ export class ProductService {
         errors.push(...validation.issues);
       }
 
-      // Process the synchronization in a database transaction
+      // FIXED: Process the synchronization with improved transaction handling
       const syncResults = await this.prisma.$transaction(
-        async (prisma) => {
+        async (transactionClient) => {
           let newProducts = 0;
           let updatedProducts = 0;
 
@@ -434,9 +402,28 @@ export class ProductService {
                 .map((id) => BigInt(id));
 
               if (validDeletedIds.length > 0) {
-                const deleteResult = await prisma.product.deleteMany({
-                  where: { id: { in: validDeletedIds } },
+                // FIXED: Delete associated records first to avoid foreign key constraints
+                await transactionClient.orders.deleteMany({
+                  where: {
+                    product: {
+                      id: { in: validDeletedIds },
+                    },
+                  },
                 });
+
+                await transactionClient.review.deleteMany({
+                  where: { product_id: { in: validDeletedIds } },
+                });
+
+                await transactionClient.product_categories.deleteMany({
+                  where: { product_id: { in: validDeletedIds } },
+                });
+
+                const deleteResult = await transactionClient.product.deleteMany(
+                  {
+                    where: { id: { in: validDeletedIds } },
+                  },
+                );
 
                 totalDeleted = deleteResult.count;
                 this.logger.log(
@@ -450,8 +437,8 @@ export class ProductService {
             }
           }
 
-          // Step 2: Process products in smaller batches
-          const batchSize = 50;
+          // Step 2: Process products in smaller batches with improved error handling
+          const batchSize = 20; // Reduced batch size for better stability
           const totalProducts = fetchResult.products.length;
           this.logger.log(
             `Processing ${totalProducts} products in batches of ${batchSize}`,
@@ -484,12 +471,9 @@ export class ProductService {
                   continue;
                 }
 
-                // Additional logging for category verification
-                if (kiotVietProduct.categoryName) {
-                  this.logger.debug(
-                    `Processing product ${kiotVietProduct.id} from category: ${kiotVietProduct.categoryName}`,
-                  );
-                }
+                this.logger.debug(
+                  `Processing product ${kiotVietProduct.id} - ${kiotVietProduct.name}`,
+                );
 
                 // Map the product data to your schema structure
                 const productData =
@@ -502,43 +486,62 @@ export class ProductService {
                   continue;
                 }
 
-                // Check if product exists in database
-                const existingProduct = await prisma.product.findUnique({
-                  where: { id: BigInt(kiotVietProduct.id) },
-                });
-
-                if (existingProduct) {
-                  // Update existing product
-                  await prisma.product.update({
+                // FIXED: Check if product exists with proper error handling
+                let existingProduct = null;
+                try {
+                  existingProduct = await transactionClient.product.findUnique({
                     where: { id: BigInt(kiotVietProduct.id) },
-                    data: {
-                      ...productData,
-                      updated_date: new Date(),
-                    },
                   });
-                  updatedProducts++;
-                  this.logger.debug(
-                    `Updated product ${kiotVietProduct.id} from category ${kiotVietProduct.categoryName || 'unknown'}`,
-                  );
-                } else {
-                  // Create new product
-                  await prisma.product.create({
-                    data: {
-                      id: BigInt(kiotVietProduct.id),
-                      ...productData,
-                      created_date: kiotVietProduct.createdDate
-                        ? new Date(kiotVietProduct.createdDate)
-                        : new Date(),
-                      updated_date: new Date(),
-                    },
-                  });
-                  newProducts++;
-                  this.logger.debug(
-                    `Created new product ${kiotVietProduct.id} from category ${kiotVietProduct.categoryName || 'unknown'}`,
+                } catch (findError) {
+                  this.logger.warn(
+                    `Error checking if product ${kiotVietProduct.id} exists: ${findError.message}`,
                   );
                 }
-              } catch (error) {
-                const errorMsg = `Failed to sync product ${kiotVietProduct?.id || 'unknown'}: ${error.message}`;
+
+                if (existingProduct) {
+                  // Update existing product with comprehensive error handling
+                  try {
+                    await transactionClient.product.update({
+                      where: { id: BigInt(kiotVietProduct.id) },
+                      data: {
+                        ...productData,
+                        updated_date: new Date(),
+                      },
+                    });
+                    updatedProducts++;
+                    this.logger.debug(
+                      `Updated product ${kiotVietProduct.id} - ${kiotVietProduct.name}`,
+                    );
+                  } catch (updateError) {
+                    const errorMsg = `Failed to update product ${kiotVietProduct.id}: ${updateError.message}`;
+                    this.logger.error(errorMsg);
+                    errors.push(errorMsg);
+                  }
+                } else {
+                  // Create new product with comprehensive error handling
+                  try {
+                    await transactionClient.product.create({
+                      data: {
+                        id: BigInt(kiotVietProduct.id),
+                        ...productData,
+                        created_date: kiotVietProduct.createdDate
+                          ? new Date(kiotVietProduct.createdDate)
+                          : new Date(),
+                        updated_date: new Date(),
+                      },
+                    });
+                    newProducts++;
+                    this.logger.debug(
+                      `Created new product ${kiotVietProduct.id} - ${kiotVietProduct.name}`,
+                    );
+                  } catch (createError) {
+                    const errorMsg = `Failed to create product ${kiotVietProduct.id}: ${createError.message}`;
+                    this.logger.error(errorMsg);
+                    errors.push(errorMsg);
+                  }
+                }
+              } catch (productError) {
+                const errorMsg = `Failed to process product ${kiotVietProduct?.id || 'unknown'}: ${productError.message}`;
                 this.logger.error(errorMsg);
                 errors.push(errorMsg);
               }
@@ -548,6 +551,11 @@ export class ProductService {
             this.logger.log(
               `Completed batch ${batchNumber}/${totalBatches}. Progress: ${Math.round(((i + batch.length) / totalProducts) * 100)}%`,
             );
+
+            // FIXED: Add small delay between batches to prevent overwhelming the database
+            if (batchNumber < totalBatches) {
+              await new Promise((resolve) => setTimeout(resolve, 100));
+            }
           }
 
           totalSynced = newProducts + updatedProducts;
@@ -558,7 +566,8 @@ export class ProductService {
           return { newProducts, updatedProducts };
         },
         {
-          timeout: 600000, // 10 minute timeout for very large syncs
+          timeout: 900000, // 15 minute timeout for very large syncs
+          isolationLevel: 'Serializable', // FIXED: Use stronger isolation level for data consistency
         },
       );
 
@@ -621,7 +630,6 @@ export class ProductService {
 
   /**
    * Force sync with category filtering
-   * Enhanced to support filtering by specific categories
    */
   async forceFullSync(categoryNames?: string[]): Promise<SyncResult> {
     if (categoryNames && categoryNames.length > 0) {
@@ -729,7 +737,115 @@ export class ProductService {
     this.logger.log(`Last sync completed at: ${new Date().toISOString()}`);
   }
 
-  // All your existing methods remain exactly the same
+  /**
+   * Clean database and sync only specific categories
+   */
+  async cleanAndSyncCategories(categoryNames: string[]): Promise<
+    SyncResult & {
+      cleanupInfo: {
+        deletedProducts: number;
+        deletedOrders: number;
+        deletedReviews: number;
+        deletedRelations: number;
+      };
+    }
+  > {
+    this.logger.log(
+      `Starting clean database and category sync for: ${categoryNames.join(', ')}`,
+    );
+
+    if (!categoryNames || categoryNames.length === 0) {
+      throw new BadRequestException('At least one category name is required');
+    }
+
+    try {
+      const beforeCleanupCount = await this.prisma.product.count();
+      this.logger.log(
+        `Current products in database before cleanup: ${beforeCleanupCount}`,
+      );
+
+      const beforeOrdersCount = await this.prisma.orders.count();
+      const beforeReviewsCount = await this.prisma.review.count();
+      const beforeRelationsCount = await this.prisma.product_categories.count();
+
+      this.logger.log(
+        `Related data before cleanup: ${beforeOrdersCount} orders, ${beforeReviewsCount} reviews, ${beforeRelationsCount} category relations`,
+      );
+
+      // Clear all products and related data from database
+      const cleanupResults = await this.prisma.$transaction(async (prisma) => {
+        this.logger.log('Starting database cleanup transaction...');
+
+        const deletedOrders = await prisma.orders.deleteMany({});
+        this.logger.log(`Deleted ${deletedOrders.count} orders`);
+
+        const deletedReviews = await prisma.review.deleteMany({});
+        this.logger.log(`Deleted ${deletedReviews.count} reviews`);
+
+        const deletedRelations = await prisma.product_categories.deleteMany({});
+        this.logger.log(
+          `Deleted ${deletedRelations.count} product-category relationships`,
+        );
+
+        const deletedProducts = await prisma.product.deleteMany({});
+        this.logger.log(`Deleted ${deletedProducts.count} products`);
+
+        return {
+          deletedProducts: deletedProducts.count,
+          deletedOrders: deletedOrders.count,
+          deletedReviews: deletedReviews.count,
+          deletedRelations: deletedRelations.count,
+        };
+      });
+
+      // Verify database is clean
+      const afterCleanupCount = await this.prisma.product.count();
+      if (afterCleanupCount !== 0) {
+        throw new Error(
+          `Database cleanup failed: ${afterCleanupCount} products still remain`,
+        );
+      }
+      this.logger.log(
+        'Database successfully cleaned - no products or related data remain',
+      );
+
+      // Perform fresh sync with only specified categories
+      this.logger.log(
+        `Now syncing fresh data for categories: ${categoryNames.join(', ')}`,
+      );
+      const syncResult = await this.syncProductsFromKiotViet(
+        undefined,
+        categoryNames,
+      );
+
+      const enhancedResult = {
+        ...syncResult,
+        cleanupInfo: cleanupResults,
+      };
+
+      if (syncResult.success) {
+        this.logger.log(
+          `Clean and sync completed successfully! ` +
+            `Removed ${cleanupResults.deletedProducts} old products (and ${cleanupResults.deletedOrders} orders, ${cleanupResults.deletedReviews} reviews), ` +
+            `added ${syncResult.totalSynced} new products from categories: ${categoryNames.join(', ')}`,
+        );
+      } else {
+        this.logger.warn(
+          `Clean and sync completed with errors. ` +
+            `Removed ${cleanupResults.deletedProducts} old products, added ${syncResult.totalSynced} new products, but ${syncResult.errors.length} errors occurred.`,
+        );
+      }
+
+      return enhancedResult;
+    } catch (error) {
+      this.logger.error(`Clean and sync operation failed: ${error.message}`);
+      throw new BadRequestException(`Clean and sync failed: ${error.message}`);
+    }
+  }
+
+  // Include all your existing methods here (search, findById, create, update, remove, etc.)
+  // ... (keeping all existing methods unchanged)
+
   async search(params: {
     pageSize: number;
     pageNumber: number;
@@ -1129,136 +1245,5 @@ export class ProductService {
         })),
       };
     });
-  }
-
-  // Add this new method to src/product/product.service.ts
-
-  /**
-   * Clean database and sync only specific categories
-   * This method safely removes ALL products and their related data, then syncs only specified categories
-   *
-   * We need to delete related data in the correct order to respect foreign key constraints:
-   * 1. Orders (which reference products)
-   * 2. Reviews (which reference products)
-   * 3. Product-category relationships (which reference products)
-   * 4. Finally, the products themselves
-   */
-  async cleanAndSyncCategories(
-    categoryNames: string[],
-  ): Promise<
-    SyncResult & {
-      cleanupInfo: {
-        deletedProducts: number;
-        deletedOrders: number;
-        deletedReviews: number;
-        deletedRelations: number;
-      };
-    }
-  > {
-    this.logger.log(
-      `Starting clean database and category sync for: ${categoryNames.join(', ')}`,
-    );
-
-    if (!categoryNames || categoryNames.length === 0) {
-      throw new BadRequestException('At least one category name is required');
-    }
-
-    try {
-      // Step 1: Get count of products before cleanup (for reporting)
-      const beforeCleanupCount = await this.prisma.product.count();
-      this.logger.log(
-        `Current products in database before cleanup: ${beforeCleanupCount}`,
-      );
-
-      // Step 2: Get counts of related data for reporting
-      const beforeOrdersCount = await this.prisma.orders.count();
-      const beforeReviewsCount = await this.prisma.review.count();
-      const beforeRelationsCount = await this.prisma.product_categories.count();
-
-      this.logger.log(
-        `Related data before cleanup: ${beforeOrdersCount} orders, ${beforeReviewsCount} reviews, ${beforeRelationsCount} category relations`,
-      );
-
-      // Step 3: Safely clear all products and related data from database
-      // We do this in a transaction to ensure data consistency - either everything succeeds or everything rolls back
-      const cleanupResults = await this.prisma.$transaction(async (prisma) => {
-        this.logger.log('Starting database cleanup transaction...');
-
-        // Delete in the correct order to respect foreign key constraints:
-
-        // First: Delete orders that reference products
-        // This removes the "checkout records" before removing the "books" from our library analogy
-        const deletedOrders = await prisma.orders.deleteMany({});
-        this.logger.log(`Deleted ${deletedOrders.count} orders`);
-
-        // Second: Delete reviews that reference products
-        // This removes the "book reviews" before removing the "books"
-        const deletedReviews = await prisma.review.deleteMany({});
-        this.logger.log(`Deleted ${deletedReviews.count} reviews`);
-
-        // Third: Delete product-category relationships
-        // This removes the "catalog entries" before removing the "books"
-        const deletedRelations = await prisma.product_categories.deleteMany({});
-        this.logger.log(
-          `Deleted ${deletedRelations.count} product-category relationships`,
-        );
-
-        // Finally: Delete the products themselves
-        // Now we can safely remove the "books" since nothing references them anymore
-        const deletedProducts = await prisma.product.deleteMany({});
-        this.logger.log(`Deleted ${deletedProducts.count} products`);
-
-        return {
-          deletedProducts: deletedProducts.count,
-          deletedOrders: deletedOrders.count,
-          deletedReviews: deletedReviews.count,
-          deletedRelations: deletedRelations.count,
-        };
-      });
-
-      // Step 4: Verify database is clean
-      const afterCleanupCount = await this.prisma.product.count();
-      if (afterCleanupCount !== 0) {
-        throw new Error(
-          `Database cleanup failed: ${afterCleanupCount} products still remain`,
-        );
-      }
-      this.logger.log(
-        'Database successfully cleaned - no products or related data remain',
-      );
-
-      // Step 5: Perform fresh sync with only specified categories
-      this.logger.log(
-        `Now syncing fresh data for categories: ${categoryNames.join(', ')}`,
-      );
-      const syncResult = await this.syncProductsFromKiotViet(
-        undefined,
-        categoryNames,
-      );
-
-      // Step 6: Combine results for comprehensive reporting
-      const enhancedResult = {
-        ...syncResult,
-        cleanupInfo: cleanupResults,
-      };
-
-      if (syncResult.success) {
-        this.logger.log(
-          `Clean and sync completed successfully! ` +
-            `Removed ${cleanupResults.deletedProducts} old products (and ${cleanupResults.deletedOrders} orders, ${cleanupResults.deletedReviews} reviews), ` +
-            `added ${syncResult.totalSynced} new products from categories: ${categoryNames.join(', ')}`,
-        );
-      } else {
-        this.logger.warn(
-          `Clean and sync completed with errors. ` +
-            `Removed ${cleanupResults.deletedProducts} old products, added ${syncResult.totalSynced} new products, but ${syncResult.errors.length} errors occurred.`,
-        );
-      }
-
-      return enhancedResult;
-    } catch (error) {
-      this.logger.error(`Clean and sync operation failed: ${error.message}`);
-      throw new BadRequestException(`Clean and sync failed: ${error.message}`);
-    }
   }
 }
