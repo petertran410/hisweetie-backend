@@ -17,10 +17,9 @@ export class UserService {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
   }
 
-  async getCurrentUser(userId?: string) {
+  async getCurrentUser(userId: string) {
     if (!userId) {
-      // Extract from JWT token in real implementation
-      throw new Error('User ID not provided');
+      throw new NotFoundException('User ID not provided');
     }
 
     const user = await this.prisma.user.findUnique({

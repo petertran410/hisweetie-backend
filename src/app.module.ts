@@ -15,12 +15,12 @@ import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
-    UserModule,
-    AuthModule,
     ConfigModule.forRoot({
       isGlobal: true,
     }),
     ScheduleModule.forRoot(),
+    AuthModule,
+    UserModule,
     AdminModule,
     CategoryModule,
     FileModule,

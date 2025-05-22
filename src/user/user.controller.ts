@@ -8,11 +8,21 @@ import {
   Delete,
   UsePipes,
   ValidationPipe,
+  UseGuards,
+  Request,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/user.decorator';
 
 @ApiTags('user')
 @Controller('user')
@@ -20,10 +30,19 @@ export class UserController {
   constructor(private readonly userService: UserService) {}
 
   @Get()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user information' })
   @ApiResponse({ status: 200, description: 'Returns current user details' })
-  getCurrentUser() {
-    return this.userService.getCurrentUser();
+  getCurrentUser(@CurrentUser() user: any, @Request() req: any) {
+    console.log('Controller - CurrentUser:', user); // Debug log
+    console.log('Controller - Request user:', req.user); // Debug log
+
+    if (!user || !user.userId) {
+      throw new Error('User not authenticated properly');
+    }
+
+    return this.userService.getCurrentUser(user.userId);
   }
 
   @Post()
