@@ -146,12 +146,10 @@ model product {
   type                String?              @db.VarChar(255)
   featured_thumbnail  String?              @db.VarChar(255)
   recipe_thumbnail    String?              @db.VarChar(255)
-  kiotviet_id         String?              @unique
   orders              orders[]
   product_categories  product_categories[]
   review              review[]
 
-  @@index([kiotviet_id], map: "idx_product_kiotviet_id")
   @@index([updated_date], map: "idx_product_updated_date")
 }
 

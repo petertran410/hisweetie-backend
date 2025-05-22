@@ -303,7 +303,6 @@ export class ProductService {
         featured_thumbnail: null,
         recipe_thumbnail: null,
         type: 'error',
-        kiotviet_id: productId.toString(),
       };
     }
   }

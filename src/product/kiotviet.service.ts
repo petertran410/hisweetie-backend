@@ -500,58 +500,56 @@ export class KiotVietService {
       actualTotal: number;
       totalBatches: number;
       duplicateIds: number[];
+      gapCount: number; // NEW: total # of missing IDs
+      gapSamples: string[]; // NEW: first few ranges for reference only
     };
   } {
     const issues: string[] = [];
-    const productIds = products.map((p) => p.id);
-    const uniqueIds = new Set(productIds);
-    const duplicateIds = productIds.filter(
-      (id, index) => productIds.indexOf(id) !== index,
-    );
 
-    // Check for duplicate IDs
-    if (duplicateIds.length > 0) {
+    /* duplicates ---------------------------------------------------------- */
+    const seen = new Set<number>();
+    const duplicateIds: number[] = [];
+    for (const id of products.map((p) => p.id)) {
+      if (seen.has(id)) duplicateIds.push(id);
+      else seen.add(id);
+    }
+    if (duplicateIds.length) {
       issues.push(
-        `Found ${duplicateIds.length} duplicate product IDs: ${duplicateIds.slice(0, 5).join(', ')}${duplicateIds.length > 5 ? '...' : ''}`,
+        `Found ${duplicateIds.length} duplicate IDs (showing 5): ${duplicateIds.slice(0, 5).join(', ')}`,
       );
     }
 
-    // Check total count
+    /* count gaps ---------------------------------------------------------- */
+    const sortedIds = [...seen].sort((a, b) => a - b);
+    let gapCount = 0;
+    const gapSamples: string[] = []; // keep at most 10 small strings
+    for (let i = 1; i < sortedIds.length; i++) {
+      const diff = sortedIds[i] - sortedIds[i - 1];
+      if (diff > 1) {
+        gapCount += diff - 1;
+        if (gapSamples.length < 10) {
+          gapSamples.push(`${sortedIds[i - 1] + 1}-${sortedIds[i] - 1}`);
+        }
+      }
+    }
+
+    /* total count mismatch ------------------------------------------------ */
     if (products.length !== expectedTotal) {
       issues.push(
         `Product count mismatch: expected ${expectedTotal}, got ${products.length}`,
       );
     }
 
-    // Check for gaps in ID sequence (informational only)
-    const sortedIds = [...uniqueIds].sort((a, b) => a - b);
-    const gaps: number[] = [];
-    for (let i = 0; i < sortedIds.length - 1; i++) {
-      const currentId = sortedIds[i];
-      const nextId = sortedIds[i + 1];
-      if (nextId - currentId > 1) {
-        for (let missingId = currentId + 1; missingId < nextId; missingId++) {
-          gaps.push(missingId);
-        }
-      }
-    }
-
-    if (gaps.length > 0) {
-      this.logger.log(
-        `Found ${gaps.length} gaps in product ID sequence (likely deleted products)`,
-      );
-    }
-
-    const isValid = issues.length === 0;
-
     return {
-      isValid,
+      isValid: issues.length === 0,
       issues,
       summary: {
         expectedTotal,
         actualTotal: products.length,
         totalBatches: batchInfo.length,
         duplicateIds: [...new Set(duplicateIds)],
+        gapCount,
+        gapSamples,
       },
     };
   }

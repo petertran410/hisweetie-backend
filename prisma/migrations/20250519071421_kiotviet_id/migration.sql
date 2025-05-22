@@ -142,10 +142,6 @@ CREATE TABLE `product` (
     `type` VARCHAR(255) NULL,
     `featured_thumbnail` VARCHAR(255) NULL,
     `recipe_thumbnail` VARCHAR(255) NULL,
-    `kiotviet_id` VARCHAR(191) NULL,
-
-    UNIQUE INDEX `product_kiotviet_id_key`(`kiotviet_id`),
-    PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
