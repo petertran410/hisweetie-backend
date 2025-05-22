@@ -14,12 +14,23 @@ import { JwtStrategy } from './jwt.strategy';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        secret: configService.get('APP_SECRET_KEY'),
-        signOptions: {
-          expiresIn: configService.get('TOKEN_EXPIRES_IN') || '1d',
-        },
-      }),
+      useFactory: (configService: ConfigService) => {
+        const secretKey = configService.get<string>('APP_SECRET_KEY');
+        const expiresIn = configService.get<string>('TOKEN_EXPIRES_IN') || '1d';
+
+        if (!secretKey) {
+          throw new Error(
+            'APP_SECRET_KEY is not defined in environment variables',
+          );
+        }
+
+        return {
+          secret: secretKey,
+          signOptions: {
+            expiresIn: expiresIn,
+          },
+        };
+      },
     }),
   ],
   controllers: [AuthController],

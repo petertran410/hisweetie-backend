@@ -7,8 +7,30 @@ import { PrismaClient } from '@prisma/client';
 export class CategoryService {
   prisma = new PrismaClient();
 
-  postCategory(createCategoryDto: CreateCategoryDto) {
-    return 'This action adds a new category';
+  async postCategory(createCategoryDto: CreateCategoryDto) {
+    const { name, description, parentId, imagesUrl, priority } =
+      createCategoryDto;
+
+    const category = await this.prisma.category.create({
+      data: {
+        name,
+        description,
+        parent_id: parentId ? BigInt(parentId) : null,
+        images_url: imagesUrl ? JSON.stringify(imagesUrl) : null,
+        priority: priority || 0,
+        created_date: new Date(),
+      },
+    });
+
+    return {
+      id: category.id.toString(),
+      name: category.name,
+      description: category.description,
+      imagesUrl: category.images_url ? JSON.parse(category.images_url) : [],
+      parentId: category.parent_id ? category.parent_id.toString() : null,
+      priority: category.priority,
+      createdDate: category.created_date,
+    };
   }
 
   async updatePriorities(updateData: any) {
@@ -132,10 +154,70 @@ export class CategoryService {
   }
 
   async update(id: number, updateCategoryDto: UpdateCategoryDto) {
-    return `This action updates a #${id} category`;
+    const categoryExists = await this.prisma.category.findUnique({
+      where: { id: BigInt(id) },
+    });
+
+    if (!categoryExists) {
+      throw new NotFoundException(`Category with ID ${id} not found`);
+    }
+
+    const { name, description, imagesUrl } = updateCategoryDto as any;
+
+    const updateData: any = {
+      updated_date: new Date(),
+    };
+
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (imagesUrl !== undefined)
+      updateData.images_url = JSON.stringify(imagesUrl);
+
+    const updatedCategory = await this.prisma.category.update({
+      where: { id: BigInt(id) },
+      data: updateData,
+    });
+
+    return {
+      id: updatedCategory.id.toString(),
+      name: updatedCategory.name,
+      description: updatedCategory.description,
+      imagesUrl: updatedCategory.images_url
+        ? JSON.parse(updatedCategory.images_url)
+        : [],
+      parentId: updatedCategory.parent_id
+        ? updatedCategory.parent_id.toString()
+        : null,
+      priority: updatedCategory.priority,
+      updatedDate: updatedCategory.updated_date,
+    };
   }
 
   async remove(id: number) {
-    return `This action removes a #${id} category`;
+    const categoryExists = await this.prisma.category.findUnique({
+      where: { id: BigInt(id) },
+    });
+
+    if (!categoryExists) {
+      throw new NotFoundException(`Category with ID ${id} not found`);
+    }
+
+    const childCategories = await this.prisma.category.findMany({
+      where: { parent_id: BigInt(id) },
+    });
+
+    if (childCategories.length > 0) {
+      throw new Error('Cannot delete category that has child categories');
+    }
+
+    await this.prisma.product_categories.deleteMany({
+      where: { categories_id: BigInt(id) },
+    });
+
+    await this.prisma.category.delete({
+      where: { id: BigInt(id) },
+    });
+
+    return { message: `Category with ID ${id} has been deleted` };
   }
 }

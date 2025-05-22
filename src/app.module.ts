@@ -1,40 +1,33 @@
 import { Module } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { PassportModule } from '@nestjs/passport';
-import { AuthController } from '../src/auth/auth.controller';
-import { AuthService } from '../src/auth/auth.service';
-import { UserModule } from '../src/user/user.module';
-import { JwtStrategy } from '../src/auth/jwt.strategy';
+import { ConfigModule } from '@nestjs/config';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
+import { AuthModule } from './auth/auth.module';
+import { UserModule } from './user/user.module';
+import { AdminModule } from './admin/admin.module';
+import { CategoryModule } from './category/category.module';
+import { ProductModule } from './product/product.module';
+import { NewsModule } from './news/news.module';
+import { JobpostModule } from './jobpost/jobpost.module';
+import { FileModule } from './file/file.module';
+import { InternalModule } from './internal/internal.module';
 
 @Module({
   imports: [
-    UserModule,
-    PassportModule.register({ defaultStrategy: 'jwt' }),
-    JwtModule.registerAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) => {
-        const secretKey = configService.get<string>('APP_SECRET_KEY');
-        const expiresIn = configService.get<string>('TOKEN_EXPIRES_IN') || '1d';
-
-        if (!secretKey) {
-          throw new Error(
-            'APP_SECRET_KEY is not defined in environment variables',
-          );
-        }
-
-        return {
-          secret: secretKey,
-          signOptions: {
-            expiresIn: expiresIn,
-          },
-        };
-      },
+    ConfigModule.forRoot({
+      isGlobal: true,
     }),
+    AuthModule,
+    UserModule,
+    AdminModule,
+    CategoryModule,
+    ProductModule,
+    NewsModule,
+    JobpostModule,
+    FileModule,
+    InternalModule,
   ],
-  controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
-  exports: [AuthService, JwtStrategy, PassportModule],
+  controllers: [AppController],
+  providers: [AppService],
 })
-export class AuthModule {}
+export class AppModule {}

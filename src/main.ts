@@ -1,12 +1,12 @@
 import { NestFactory } from '@nestjs/core';
-import { AuthModule } from './app.module';
+import { AppModule } from './app.module';
 import * as express from 'express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { BigIntInterceptor } from './interceptors/bigint-interceptor';
 import { join } from 'path';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AuthModule, { cors: true });
+  const app = await NestFactory.create(AppModule, { cors: true });
 
   const fs = require('fs');
   const uploadDir = join(process.cwd(), 'public', 'img');
