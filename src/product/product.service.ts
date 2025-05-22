@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { PrismaClient } from '@prisma/client';
+import { prisma, PrismaClient } from '@prisma/client';
 import { OrderSearchDto } from './dto/order-search.dto';
 import { KiotVietService } from './kiotviet.service';
 
@@ -19,7 +19,8 @@ interface KiotVietProduct {
   fullName?: string;
   basePrice?: number;
   description?: string;
-  images?: Array<{ Image: string }>;
+
+  images?: Array<string | { Image: string }>;
   unit?: string;
   modifiedDate?: string;
   createdDate?: string;
@@ -61,7 +62,7 @@ export class ProductService {
 
   /**
    * Safe BigInt conversion with extensive validation and logging
-   * This function handles all the edge cases that could cause "Invalid array length" errors
+   * This function handles all the edge cases that could cause conversion errors
    */
   private safeBigIntConversion(
     value: any,
@@ -69,25 +70,15 @@ export class ProductService {
     productId?: number,
   ): bigint {
     try {
-      // Log the incoming value for debugging
-      this.logger.debug(
-        `Converting ${fieldName} for product ${productId}: ${JSON.stringify(value)} (type: ${typeof value})`,
-      );
-
       // Handle null, undefined, or empty values
       if (value === null || value === undefined || value === '') {
-        this.logger.debug(`${fieldName} is null/undefined/empty, returning 0`);
         return BigInt(0);
       }
 
       // Handle string values that might be numbers
       if (typeof value === 'string') {
-        // Remove any non-numeric characters except decimal point
         const cleanValue = value.replace(/[^\d.-]/g, '');
         if (cleanValue === '' || cleanValue === '-') {
-          this.logger.debug(
-            `${fieldName} string cleaned to empty, returning 0`,
-          );
           return BigInt(0);
         }
         value = parseFloat(cleanValue);
@@ -99,33 +90,26 @@ export class ProductService {
       // Validate the numeric conversion
       if (isNaN(numericValue) || !isFinite(numericValue)) {
         this.logger.warn(
-          `${fieldName} for product ${productId} is NaN or infinite: ${value}, returning 0`,
+          `${fieldName} for product ${productId} is invalid: ${value}, using 0`,
         );
         return BigInt(0);
       }
 
-      // Ensure positive values only
-      const positiveValue = Math.max(0, numericValue);
-
-      // Ensure integer values (floor the number)
-      const integerValue = Math.floor(positiveValue);
+      // Ensure positive values only and convert to integer
+      const positiveValue = Math.max(0, Math.floor(numericValue));
 
       // Check if the value is within safe integer range
-      if (integerValue > Number.MAX_SAFE_INTEGER) {
+      if (positiveValue > Number.MAX_SAFE_INTEGER) {
         this.logger.warn(
-          `${fieldName} for product ${productId} exceeds max safe integer: ${integerValue}, capping to max safe integer`,
+          `${fieldName} for product ${productId} exceeds max safe integer, capping`,
         );
         return BigInt(Number.MAX_SAFE_INTEGER);
       }
 
-      const result = BigInt(integerValue);
-      this.logger.debug(
-        `Successfully converted ${fieldName} for product ${productId}: ${result}`,
-      );
-      return result;
+      return BigInt(positiveValue);
     } catch (error) {
       this.logger.error(
-        `Error converting ${fieldName} for product ${productId}: ${error.message}, returning 0`,
+        `Error converting ${fieldName} for product ${productId}: ${error.message}, using 0`,
       );
       return BigInt(0);
     }
@@ -144,9 +128,7 @@ export class ProductService {
         return null;
       }
 
-      // Validate array structure if it's an array
       if (Array.isArray(data)) {
-        // Filter out invalid entries
         const validData = data.filter(
           (item) => item !== null && item !== undefined,
         );
@@ -166,131 +148,159 @@ export class ProductService {
   }
 
   /**
-   * Enhanced product mapping with individual field error handling
-   * Each field conversion is wrapped in its own try-catch to isolate issues
+   * Map KiotViet product to local database structure
+   * This function transforms KiotViet data to match your Prisma schema exactly
    */
   private mapKiotVietProductToLocal(kiotVietProduct: KiotVietProduct): any {
     const productId = kiotVietProduct.id;
-    this.logger.debug(`Mapping product ${productId}: ${kiotVietProduct.name}`);
 
     try {
-      let result = {};
-
       // Handle title with fallback chain
-      try {
-        result['title'] = this.sanitizeString(
-          kiotVietProduct.name ||
-            kiotVietProduct.fullName ||
-            `Product ${productId}`,
-        );
-      } catch (error) {
-        this.logger.error(
-          `Error processing title for product ${productId}: ${error.message}`,
-        );
-        result['title'] = `Product ${productId}`;
-      }
+      const title = this.sanitizeString(
+        kiotVietProduct.name ||
+          kiotVietProduct.fullName ||
+          `Product ${productId}`,
+      );
 
-      // Handle price conversion
-      try {
-        result['price'] = this.safeBigIntConversion(
-          kiotVietProduct.basePrice,
-          'price',
-          productId,
-        );
-      } catch (error) {
-        this.logger.error(
-          `Error processing price for product ${productId}: ${error.message}`,
-        );
-        result['price'] = BigInt(0);
-      }
+      // Handle price conversion safely
+      const price = this.safeBigIntConversion(
+        kiotVietProduct.basePrice,
+        'price',
+        productId,
+      );
 
       // Handle quantity conversion with inventory data
-      try {
-        let quantityValue = 1; // Default quantity
-        if (
-          kiotVietProduct.inventories &&
-          Array.isArray(kiotVietProduct.inventories)
-        ) {
-          const totalOnHand = kiotVietProduct.inventories.reduce((sum, inv) => {
-            if (inv && typeof inv.onHand === 'number' && !isNaN(inv.onHand)) {
-              return sum + Math.max(0, inv.onHand);
-            }
-            return sum;
-          }, 0);
-          if (totalOnHand > 0) {
-            quantityValue = totalOnHand;
+      let quantityValue = 1; // Default quantity
+      if (
+        kiotVietProduct.inventories &&
+        Array.isArray(kiotVietProduct.inventories)
+      ) {
+        const totalOnHand = kiotVietProduct.inventories.reduce((sum, inv) => {
+          if (inv && typeof inv.onHand === 'number' && !isNaN(inv.onHand)) {
+            return sum + Math.max(0, inv.onHand);
           }
+          return sum;
+        }, 0);
+        if (totalOnHand > 0) {
+          quantityValue = totalOnHand;
         }
-        result['quantity'] = this.safeBigIntConversion(
-          quantityValue,
-          'quantity',
-          productId,
+      }
+      const quantity = this.safeBigIntConversion(
+        quantityValue,
+        'quantity',
+        productId,
+      );
+
+      // Handle images array safely - CORRECTED: Handle both image data structures
+      let imageUrls: string[] = [];
+      if (kiotVietProduct.images && Array.isArray(kiotVietProduct.images)) {
+        this.logger.debug(
+          `Processing ${kiotVietProduct.images.length} images for product ${productId}`,
         );
-      } catch (error) {
-        this.logger.error(
-          `Error processing quantity for product ${productId}: ${error.message}`,
+
+        imageUrls = kiotVietProduct.images
+          .map((img, index) => {
+            // Handle both possible image structures from KiotViet API
+            let imageUrl: string | null = null;
+
+            if (typeof img === 'string') {
+              // Structure 1: Images as direct URL strings
+              // Example: "https://cdn-images.kiotviet.vn/..."
+              imageUrl = img;
+              this.logger.debug(
+                `Image ${index} for product ${productId}: direct string URL`,
+              );
+            } else if (
+              img &&
+              typeof img === 'object' &&
+              img.Image &&
+              typeof img.Image === 'string'
+            ) {
+              // Structure 2: Images as objects with Image property
+              // Example: {"Image": "https://cdn-images.kiotviet.vn/..."}
+              imageUrl = img.Image;
+              this.logger.debug(
+                `Image ${index} for product ${productId}: object with Image property`,
+              );
+            } else {
+              // Invalid or unexpected image structure
+              this.logger.warn(
+                `Image ${index} for product ${productId}: unexpected structure`,
+                img,
+              );
+              return null;
+            }
+
+            // Validate and clean the URL
+            if (imageUrl && typeof imageUrl === 'string') {
+              const cleanUrl = imageUrl.trim();
+              if (
+                cleanUrl.length > 0 &&
+                (cleanUrl.startsWith('http://') ||
+                  cleanUrl.startsWith('https://'))
+              ) {
+                return cleanUrl;
+              } else {
+                this.logger.warn(
+                  `Image ${index} for product ${productId}: invalid URL format: ${cleanUrl}`,
+                );
+              }
+            }
+
+            return null;
+          })
+          .filter((url): url is string => url !== null); // Type guard to ensure only strings remain
+
+        this.logger.debug(
+          `Product ${productId}: processed ${imageUrls.length} valid images out of ${kiotVietProduct.images.length} total`,
         );
-        result['quantity'] = BigInt(1);
+      } else {
+        this.logger.debug(
+          `Product ${productId}: no images array found or array is empty`,
+        );
       }
 
-      // Handle images array
-      try {
-        let imageUrls = [''];
-        if (kiotVietProduct.images && Array.isArray(kiotVietProduct.images)) {
-          imageUrls = kiotVietProduct.images
-            .filter((img) => img && img.Image && typeof img.Image === 'string')
-            .map((img) => img.Image.trim())
-            .filter((url) => url.length > 0);
-        }
-        result['images_url'] = this.safeJsonStringify(
-          imageUrls,
-          'images',
-          productId,
+      // Process the final image data
+      const images_url = this.safeJsonStringify(imageUrls, 'images', productId);
+      const featured_thumbnail = imageUrls.length > 0 ? imageUrls[0] : null;
+
+      // Log final image processing results for debugging
+      if (imageUrls.length > 0) {
+        this.logger.debug(
+          `Product ${productId}: stored ${imageUrls.length} images, featured: ${featured_thumbnail}`,
         );
-        result['featured_thumbnail'] =
-          imageUrls.length > 0 ? imageUrls[0] : null;
-      } catch (error) {
-        this.logger.error(
-          `Error processing images for product ${productId}: ${error.message}`,
-        );
-        result['images_url'] = null;
-        result['featured_thumbnail'] = null;
+      } else {
+        this.logger.debug(`Product ${productId}: no valid images to store`);
       }
 
       // Handle text fields with safe sanitization
-      try {
-        result['description'] = this.sanitizeString(
-          kiotVietProduct.description || '',
-        );
-        result['general_description'] = this.sanitizeString(
-          kiotVietProduct.fullName || kiotVietProduct.name || '',
-        );
-        result['type'] = this.sanitizeString(kiotVietProduct.unit || 'piece');
-        result['kiotviet_id'] = this.sanitizeString(
-          kiotVietProduct.code || productId.toString(),
-        );
-      } catch (error) {
-        this.logger.error(
-          `Error processing text fields for product ${productId}: ${error.message}`,
-        );
-        result['description'] = '';
-        result['general_description'] = '';
-        result['type'] = 'piece';
-        result['kiotviet_id'] = productId.toString();
-      }
+      const description = this.sanitizeString(
+        kiotVietProduct.description || '',
+      );
+      const general_description = this.sanitizeString(
+        kiotVietProduct.fullName || kiotVietProduct.name || '',
+      );
+      const type = this.sanitizeString(kiotVietProduct.unit || 'piece');
 
-      // Set default values for remaining fields
-      result['instruction'] = '';
-      result['is_featured'] = false;
-      result['recipe_thumbnail'] = null;
-
-      this.logger.debug(`Successfully mapped product ${productId}`);
-      return result;
+      // Return object that matches EXACTLY your Prisma schema
+      return {
+        title,
+        price,
+        quantity,
+        description,
+        images_url,
+        general_description,
+        instruction: '', // Default empty string
+        is_featured: false, // Default false
+        featured_thumbnail,
+        recipe_thumbnail: null, // Default null
+        type,
+      };
     } catch (error) {
       this.logger.error(
         `Critical error mapping product ${productId}: ${error.message}`,
       );
-      // Return a minimal safe object
+      // Return a minimal safe object that matches your schema
       return {
         title: `Error Product ${productId}`,
         price: BigInt(0),
@@ -312,12 +322,10 @@ export class ProductService {
    */
   private sanitizeString(value: any): string {
     try {
-      // Handle non-string inputs
       if (value === null || value === undefined) {
         return '';
       }
 
-      // Convert to string if not already
       let stringValue = String(value);
 
       // Remove problematic characters that could cause database issues
@@ -329,9 +337,7 @@ export class ProductService {
       // Limit length to prevent database overflow
       if (stringValue.length > 1000) {
         stringValue = stringValue.substring(0, 1000);
-        this.logger.warn(
-          `String truncated to 1000 characters: ${stringValue.substring(0, 50)}...`,
-        );
+        this.logger.warn(`String truncated to 1000 characters`);
       }
 
       return stringValue;
@@ -342,12 +348,28 @@ export class ProductService {
   }
 
   /**
-   * Enhanced synchronization with granular error handling and progress tracking
+   * Enhanced synchronization with robust error handling
+   */
+  // Update the syncProductsFromKiotViet method in src/product/product.service.ts
+
+  /**
+   * Enhanced synchronization with category filtering support
+   * Now supports filtering by specific categories like "Lermao" and "Trà Phượng Hoàng"
    */
   async syncProductsFromKiotViet(
     lastModifiedFrom?: string,
+    categoryNames?: string[], // New parameter for category filtering
   ): Promise<SyncResult> {
     this.logger.log('Starting product synchronization from KiotViet');
+
+    // Log category filtering information
+    if (categoryNames && categoryNames.length > 0) {
+      this.logger.log(
+        `Filtering sync to categories: ${categoryNames.join(', ')}`,
+      );
+    } else {
+      this.logger.log('Syncing all products (no category filtering)');
+    }
 
     const errors: string[] = [];
     let totalSynced = 0;
@@ -358,25 +380,27 @@ export class ProductService {
       const beforeSyncCount = await this.prisma.product.count();
       this.logger.log(`Current products in database: ${beforeSyncCount}`);
 
-      // Fetch all products from KiotViet with detailed logging
+      // Fetch products from KiotViet with optional category filtering
       this.logger.log('Fetching products from KiotViet...');
-      const fetchResult =
-        await this.kiotVietService.fetchAllProducts(lastModifiedFrom);
-      this.logger.log(
-        `Fetched ${fetchResult.products.length} products from KiotViet`,
+      const fetchResult = await this.kiotVietService.fetchAllProducts(
+        lastModifiedFrom,
+        categoryNames,
       );
+
+      if (categoryNames) {
+        this.logger.log(
+          `Fetched ${fetchResult.products.length} products from categories: ${categoryNames.join(', ')}`,
+        );
+      } else {
+        this.logger.log(
+          `Fetched ${fetchResult.products.length} products from KiotViet`,
+        );
+      }
 
       // Validate the fetched data structure
       if (!Array.isArray(fetchResult.products)) {
         throw new Error(
           `Invalid products data structure: expected array, got ${typeof fetchResult.products}`,
-        );
-      }
-
-      // Log some sample data for debugging
-      if (fetchResult.products.length > 0) {
-        this.logger.debug(
-          `Sample product data: ${JSON.stringify(fetchResult.products[0], null, 2)}`,
         );
       }
 
@@ -398,44 +422,20 @@ export class ProductService {
           let newProducts = 0;
           let updatedProducts = 0;
 
-          // Step 1: Handle deleted products with enhanced validation
+          // Step 1: Handle deleted products
           if (fetchResult.deletedIds && fetchResult.deletedIds.length > 0) {
             this.logger.log(
               `Processing ${fetchResult.deletedIds.length} deleted products`,
             );
 
             try {
-              // Validate deleted IDs array
               const validDeletedIds = fetchResult.deletedIds
-                .filter((id) => {
-                  if (typeof id !== 'number' || isNaN(id) || id <= 0) {
-                    this.logger.warn(`Invalid deleted product ID: ${id}`);
-                    return false;
-                  }
-                  return true;
-                })
-                .map((id) => {
-                  try {
-                    return BigInt(id);
-                  } catch (error) {
-                    this.logger.error(
-                      `Error converting deleted ID ${id} to BigInt: ${error.message}`,
-                    );
-                    return null;
-                  }
-                })
-                .filter((id) => id !== null);
+                .filter((id) => typeof id === 'number' && !isNaN(id) && id > 0)
+                .map((id) => BigInt(id));
 
               if (validDeletedIds.length > 0) {
-                this.logger.log(
-                  `Deleting ${validDeletedIds.length} valid product IDs`,
-                );
                 const deleteResult = await prisma.product.deleteMany({
-                  where: {
-                    id: {
-                      in: validDeletedIds,
-                    },
-                  },
+                  where: { id: { in: validDeletedIds } },
                 });
 
                 totalDeleted = deleteResult.count;
@@ -450,8 +450,8 @@ export class ProductService {
             }
           }
 
-          // Step 2: Process products in smaller batches with individual error handling
-          const batchSize = 25; // Smaller batches for better error isolation
+          // Step 2: Process products in smaller batches
+          const batchSize = 50;
           const totalProducts = fetchResult.products.length;
           this.logger.log(
             `Processing ${totalProducts} products in batches of ${batchSize}`,
@@ -466,16 +466,11 @@ export class ProductService {
               `Processing batch ${batchNumber}/${totalBatches} (${batch.length} products)`,
             );
 
-            for (let j = 0; j < batch.length; j++) {
-              const kiotVietProduct = batch[j];
-              const productIndex = i + j + 1;
-
+            for (const kiotVietProduct of batch) {
               try {
                 // Validate essential product fields
                 if (!kiotVietProduct || typeof kiotVietProduct !== 'object') {
-                  errors.push(
-                    `Product ${productIndex}: Invalid product object`,
-                  );
+                  errors.push(`Invalid product object`);
                   continue;
                 }
 
@@ -484,20 +479,22 @@ export class ProductService {
                   typeof kiotVietProduct.id !== 'number'
                 ) {
                   errors.push(
-                    `Product ${productIndex}: Invalid or missing product ID: ${kiotVietProduct.id}`,
+                    `Invalid or missing product ID: ${kiotVietProduct.id}`,
                   );
                   continue;
                 }
 
-                this.logger.debug(
-                  `Processing product ${productIndex}/${totalProducts}: ID ${kiotVietProduct.id}`,
-                );
+                // Additional logging for category verification
+                if (kiotVietProduct.categoryName) {
+                  this.logger.debug(
+                    `Processing product ${kiotVietProduct.id} from category: ${kiotVietProduct.categoryName}`,
+                  );
+                }
 
-                // Map the product data with detailed error handling
+                // Map the product data to your schema structure
                 const productData =
                   this.mapKiotVietProductToLocal(kiotVietProduct);
 
-                // Validate the mapped data before database operation
                 if (!productData || typeof productData !== 'object') {
                   errors.push(
                     `Product ${kiotVietProduct.id}: Failed to map product data`,
@@ -520,7 +517,9 @@ export class ProductService {
                     },
                   });
                   updatedProducts++;
-                  this.logger.debug(`Updated product ${kiotVietProduct.id}`);
+                  this.logger.debug(
+                    `Updated product ${kiotVietProduct.id} from category ${kiotVietProduct.categoryName || 'unknown'}`,
+                  );
                 } else {
                   // Create new product
                   await prisma.product.create({
@@ -535,18 +534,13 @@ export class ProductService {
                   });
                   newProducts++;
                   this.logger.debug(
-                    `Created new product ${kiotVietProduct.id}`,
+                    `Created new product ${kiotVietProduct.id} from category ${kiotVietProduct.categoryName || 'unknown'}`,
                   );
                 }
               } catch (error) {
-                const errorMsg = `Failed to sync product ${kiotVietProduct?.id || 'unknown'} (${kiotVietProduct?.name || 'unnamed'}): ${error.message}`;
+                const errorMsg = `Failed to sync product ${kiotVietProduct?.id || 'unknown'}: ${error.message}`;
                 this.logger.error(errorMsg);
                 errors.push(errorMsg);
-
-                // Log the full error stack for debugging
-                this.logger.debug(
-                  `Full error stack for product ${kiotVietProduct?.id}: ${error.stack}`,
-                );
               }
             }
 
@@ -561,10 +555,7 @@ export class ProductService {
             `Sync summary: ${newProducts} new, ${updatedProducts} updated, ${totalSynced} total synced`,
           );
 
-          return {
-            newProducts,
-            updatedProducts,
-          };
+          return { newProducts, updatedProducts };
         },
         {
           timeout: 600000, // 10 minute timeout for very large syncs
@@ -593,13 +584,14 @@ export class ProductService {
         this.logger.log('Product synchronization completed successfully', {
           totalSynced: result.totalSynced,
           totalDeleted: result.totalDeleted,
+          filteredCategories: fetchResult.filteredCategories,
         });
       } else {
         this.logger.warn('Product synchronization completed with errors', {
           totalSynced: result.totalSynced,
           totalDeleted: result.totalDeleted,
           errorCount: result.errors.length,
-          firstFewErrors: result.errors.slice(0, 3),
+          filteredCategories: fetchResult.filteredCategories,
         });
       }
 
@@ -609,7 +601,6 @@ export class ProductService {
         'Product synchronization failed with critical error:',
         error.message,
       );
-      this.logger.debug('Full error stack:', error.stack);
 
       return {
         success: false,
@@ -629,45 +620,75 @@ export class ProductService {
   }
 
   /**
-   * Force sync all products with enhanced error reporting
+   * Force sync with category filtering
+   * Enhanced to support filtering by specific categories
    */
-  async forceFullSync(): Promise<SyncResult> {
-    this.logger.log(
-      'Starting force full sync - this will replace all products',
-    );
+  async forceFullSync(categoryNames?: string[]): Promise<SyncResult> {
+    if (categoryNames && categoryNames.length > 0) {
+      this.logger.log(
+        `Starting force full sync for categories: ${categoryNames.join(', ')}`,
+      );
+    } else {
+      this.logger.log(
+        'Starting force full sync - this will replace all products',
+      );
+    }
 
     try {
       const beforeCount = await this.prisma.product.count();
       this.logger.log(`Current product count before sync: ${beforeCount}`);
 
-      const syncResult = await this.syncProductsFromKiotViet();
+      const syncResult = await this.syncProductsFromKiotViet(
+        undefined,
+        categoryNames,
+      );
 
       if (syncResult.success) {
-        this.logger.log(
-          `Force full sync completed successfully. Products: ${beforeCount} → ${syncResult.summary.afterSync}`,
-        );
+        if (categoryNames) {
+          this.logger.log(
+            `Force sync for categories [${categoryNames.join(', ')}] completed successfully. ` +
+              `Products: ${beforeCount} → ${syncResult.summary.afterSync} (${syncResult.totalSynced} synced)`,
+          );
+        } else {
+          this.logger.log(
+            `Force full sync completed successfully. Products: ${beforeCount} → ${syncResult.summary.afterSync}`,
+          );
+        }
       } else {
-        this.logger.error('Force full sync completed with errors:');
-        syncResult.errors.forEach((error, index) => {
-          this.logger.error(`Error ${index + 1}: ${error}`);
-        });
+        this.logger.error(
+          'Force sync completed with errors:',
+          syncResult.errors.slice(0, 5),
+        );
       }
 
       return syncResult;
     } catch (error) {
-      this.logger.error('Force full sync failed:', error.message);
+      this.logger.error('Force sync failed:', error.message);
       throw new BadRequestException(`Force sync failed: ${error.message}`);
     }
   }
 
   /**
-   * Incremental sync with enhanced logging
+   * Incremental sync with category filtering
    */
-  async incrementalSync(since?: string): Promise<SyncResult> {
+  async incrementalSync(
+    since?: string,
+    categoryNames?: string[],
+  ): Promise<SyncResult> {
     const lastModifiedFrom = since || (await this.getLastSyncTimestamp());
-    this.logger.log(`Starting incremental sync since: ${lastModifiedFrom}`);
 
-    const result = await this.syncProductsFromKiotViet(lastModifiedFrom);
+    if (categoryNames && categoryNames.length > 0) {
+      this.logger.log(
+        `Starting incremental sync for categories [${categoryNames.join(', ')}] since: ${lastModifiedFrom}`,
+      );
+    } else {
+      this.logger.log(`Starting incremental sync since: ${lastModifiedFrom}`);
+    }
+
+    const result = await this.syncProductsFromKiotViet(
+      lastModifiedFrom,
+      categoryNames,
+    );
 
     if (result.success) {
       await this.updateLastSyncTimestamp();
@@ -708,9 +729,7 @@ export class ProductService {
     this.logger.log(`Last sync completed at: ${new Date().toISOString()}`);
   }
 
-  // All your existing methods remain the same below...
-  // [Rest of your existing methods: search, findById, create, update, remove, searchOrders, changeOrderStatus, getProductsByIds]
-
+  // All your existing methods remain exactly the same
   async search(params: {
     pageSize: number;
     pageNumber: number;
