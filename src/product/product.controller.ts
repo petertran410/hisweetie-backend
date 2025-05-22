@@ -1,3 +1,4 @@
+// src/product/product.controller.ts
 import {
   Controller,
   Get,
@@ -19,7 +20,7 @@ import { OrderSearchDto } from './dto/order-search.dto';
 import {
   ApiTags,
   ApiOperation,
-  ApiResponse, // <-- This import is important!
+  ApiResponse,
   ApiQuery,
   ApiParam,
 } from '@nestjs/swagger';
@@ -31,14 +32,14 @@ export class ProductController {
 
   constructor(private readonly productService: ProductService) {}
 
-  // KiotViet synchronization endpoints
+  // ===== ENHANCED KIOTVIET SYNCHRONIZATION ENDPOINTS =====
 
   @Post('sync/full')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Force full synchronization with KiotViet',
+    summary: 'Force full synchronization with KiotViet (Products + Categories)',
     description:
-      'Replaces all local products with data from KiotViet. This operation may take several minutes for large product catalogs.',
+      'Replaces all local products and categories with data from KiotViet. This operation synchronizes both categories and products, maintaining proper relationships. This operation may take several minutes for large catalogs.',
   })
   @ApiResponse({
     status: 200,
@@ -58,6 +59,9 @@ export class ProductController {
             newProducts: { type: 'number' },
             updatedProducts: { type: 'number' },
             deletedProducts: { type: 'number' },
+            newCategories: { type: 'number' },
+            updatedCategories: { type: 'number' },
+            deletedCategories: { type: 'number' },
           },
         },
       },
@@ -73,7 +77,7 @@ export class ProductController {
     description: 'Internal server error during synchronization',
   })
   async fullSync() {
-    this.logger.log('Full product synchronization requested');
+    this.logger.log('Full synchronization requested (products + categories)');
 
     try {
       const result = await this.productService.forceFullSync();
@@ -84,13 +88,17 @@ export class ProductController {
           totalSynced: result.totalSynced,
           totalDeleted: result.totalDeleted,
           errorCount: result.errors.length,
+          categoriesSynced:
+            result.summary.newCategories + result.summary.updatedCategories,
+          productsSynced:
+            result.summary.newProducts + result.summary.updatedProducts,
         },
       );
 
       return {
         message: result.success
-          ? 'Product synchronization completed successfully'
-          : 'Product synchronization completed with errors',
+          ? 'Product and category synchronization completed successfully'
+          : 'Product and category synchronization completed with errors',
         ...result,
       };
     } catch (error) {
@@ -102,15 +110,16 @@ export class ProductController {
   @Post('sync/incremental')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Incremental synchronization with KiotViet',
+    summary:
+      'Incremental synchronization with KiotViet (Products + Categories)',
     description:
-      'Syncs only products that have been modified since the last sync. More efficient for regular updates.',
+      'Syncs only products and categories that have been modified since the last sync. This includes maintaining proper category-product relationships. More efficient for regular updates.',
   })
   @ApiQuery({
     name: 'since',
     required: false,
     description:
-      'ISO date string to sync products modified since this date. If not provided, uses last sync timestamp.',
+      'ISO date string to sync items modified since this date. If not provided, uses last sync timestamp.',
     example: '2024-01-01T00:00:00Z',
   })
   @ApiResponse({
@@ -123,7 +132,7 @@ export class ProductController {
   })
   async incrementalSync(@Query('since') since?: string) {
     this.logger.log(
-      `Incremental product synchronization requested${since ? ` since ${since}` : ''}`,
+      `Incremental synchronization requested (products + categories)${since ? ` since ${since}` : ''}`,
     );
 
     try {
@@ -135,13 +144,17 @@ export class ProductController {
           totalSynced: result.totalSynced,
           totalDeleted: result.totalDeleted,
           errorCount: result.errors.length,
+          categoriesSynced:
+            result.summary.newCategories + result.summary.updatedCategories,
+          productsSynced:
+            result.summary.newProducts + result.summary.updatedProducts,
         },
       );
 
       return {
         message: result.success
-          ? 'Incremental synchronization completed successfully'
-          : 'Incremental synchronization completed with errors',
+          ? 'Incremental synchronization of products and categories completed successfully'
+          : 'Incremental synchronization of products and categories completed with errors',
         ...result,
       };
     } catch (error) {
@@ -198,7 +211,7 @@ export class ProductController {
   @ApiOperation({
     summary: 'Get synchronization status',
     description:
-      'Returns information about the current state of product synchronization and statistics.',
+      'Returns information about the current state of product and category synchronization with statistics.',
   })
   @ApiResponse({
     status: 200,
@@ -207,6 +220,7 @@ export class ProductController {
       type: 'object',
       properties: {
         totalProducts: { type: 'number' },
+        totalCategories: { type: 'number' },
         lastSyncAttempt: { type: 'string', format: 'date-time' },
         syncEnabled: { type: 'boolean' },
         kiotVietConfigured: { type: 'boolean' },
@@ -215,13 +229,16 @@ export class ProductController {
   })
   async getSyncStatus() {
     try {
-      // Get basic statistics about current product state
+      // Get basic statistics about current state
       const totalProducts = await this.productService
         .search({
           pageSize: 1,
           pageNumber: 0,
         })
         .then((result) => result.totalElements);
+
+      // Get category count
+      const totalCategories = await this.productService.prisma.category.count();
 
       // Check if KiotViet is properly configured by testing connection
       let kiotVietConfigured = false;
@@ -239,6 +256,7 @@ export class ProductController {
 
       return {
         totalProducts,
+        totalCategories,
         lastSyncAttempt: null, // You might want to store this in a config table
         syncEnabled: true,
         kiotVietConfigured,
@@ -250,19 +268,16 @@ export class ProductController {
     }
   }
 
-  // Add these new endpoints to src/product/product.controller.ts
+  // ===== CATEGORY-FILTERED SYNCHRONIZATION ENDPOINTS =====
 
-  /**
-   * Force sync products from specific categories only
-   * This allows you to sync only "Lermao" and "Trà Phượng Hoàng" categories
-   */
   @Post('sync/full/categories')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Force full synchronization for specific categories',
     description:
-      'Syncs only products from specified categories (e.g., "Lermao", "Trà Phượng Hoàng"). ' +
-      'This is more efficient than syncing all products when you only need specific product lines.',
+      'Syncs only products and categories from specified categories (e.g., "Lermao", "Trà Phượng Hoàng"). ' +
+      'This maintains the hierarchical category structure and product-category relationships. ' +
+      'More efficient than syncing all data when you only need specific product lines.',
   })
   @ApiQuery({
     name: 'categories',
@@ -289,6 +304,9 @@ export class ProductController {
             newProducts: { type: 'number' },
             updatedProducts: { type: 'number' },
             deletedProducts: { type: 'number' },
+            newCategories: { type: 'number' },
+            updatedCategories: { type: 'number' },
+            deletedCategories: { type: 'number' },
           },
         },
       },
@@ -333,6 +351,10 @@ export class ProductController {
           totalSynced: result.totalSynced,
           totalDeleted: result.totalDeleted,
           errorCount: result.errors.length,
+          categoriesSynced:
+            result.summary.newCategories + result.summary.updatedCategories,
+          productsSynced:
+            result.summary.newProducts + result.summary.updatedProducts,
         },
       );
 
@@ -349,15 +371,13 @@ export class ProductController {
     }
   }
 
-  /**
-   * Incremental sync for specific categories
-   */
   @Post('sync/incremental/categories')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Incremental synchronization for specific categories',
     description:
-      'Syncs only products from specified categories that have been modified since the last sync. ' +
+      'Syncs only products and categories from specified categories that have been modified since the last sync. ' +
+      'Maintains proper category hierarchies and product-category relationships. ' +
       'More efficient for regular updates of specific product lines.',
   })
   @ApiQuery({
@@ -369,7 +389,7 @@ export class ProductController {
   @ApiQuery({
     name: 'since',
     required: false,
-    description: 'ISO date string to sync products modified since this date',
+    description: 'ISO date string to sync items modified since this date',
     example: '2024-01-01T00:00:00Z',
   })
   @ApiResponse({
@@ -411,6 +431,10 @@ export class ProductController {
           categories: categoryNames,
           totalSynced: result.totalSynced,
           errorCount: result.errors.length,
+          categoriesSynced:
+            result.summary.newCategories + result.summary.updatedCategories,
+          productsSynced:
+            result.summary.newProducts + result.summary.updatedProducts,
         },
       );
 
@@ -428,15 +452,11 @@ export class ProductController {
     }
   }
 
-  /**
-   * Get available categories from KiotViet
-   * This endpoint helps you discover what categories are available for filtering
-   */
   @Get('sync/categories')
   @ApiOperation({
     summary: 'Get available categories from KiotViet',
     description:
-      'Retrieves the list of all available categories from KiotViet. ' +
+      'Retrieves the list of all available categories from KiotViet with their hierarchical structure. ' +
       'Use this to discover category names for filtering sync operations.',
   })
   @ApiResponse({
@@ -452,6 +472,8 @@ export class ProductController {
             properties: {
               name: { type: 'string' },
               id: { type: 'number' },
+              parentId: { type: 'number' },
+              hasChild: { type: 'boolean' },
             },
           },
         },
@@ -463,15 +485,15 @@ export class ProductController {
     this.logger.log('Fetching available categories from KiotViet');
 
     try {
-      const categoryMap =
-        await this.productService['kiotVietService'].fetchCategories();
+      const categoryResult =
+        await this.productService['kiotVietService'].fetchAllCategories();
 
-      const categories = Array.from(categoryMap.entries()).map(
-        ([name, id]) => ({
-          name,
-          id,
-        }),
-      );
+      const categories = categoryResult.categories.map((category) => ({
+        name: category.categoryName,
+        id: category.categoryId,
+        parentId: category.parentId || null,
+        hasChild: category.hasChild || false,
+      }));
 
       // Sort categories alphabetically for easier browsing
       categories.sort((a, b) => a.name.localeCompare(b.name));
@@ -491,32 +513,24 @@ export class ProductController {
     }
   }
 
-  // Add this new endpoint to src/product/product.controller.ts
-
-  /**
-   * Clean database and sync only specific categories
-   * This is the safest way to transition from a full catalog to category-filtered products
-   */
-  @Post('sync/clean-and-sync-categories') // <-- The route decorator
-  @HttpCode(HttpStatus.OK) // <-- HTTP status decorator
+  @Post('sync/clean-and-sync-categories')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    // <-- Description of what this endpoint does
     summary: 'Clean database and sync only specific categories',
     description:
-      'Safely removes ALL existing products from the database and then syncs only products from the specified categories. ' +
-      'This is useful when transitioning from a full product catalog to a category-filtered approach. ' +
-      'Use this when you want your database to contain ONLY products from specific categories.',
+      'Safely removes ALL existing products and categories from the database and then syncs only data from the specified categories. ' +
+      'This is useful when transitioning from a full catalog to a category-filtered approach. ' +
+      'Use this when you want your database to contain ONLY data from specific categories. ' +
+      'This maintains proper hierarchical relationships and product-category associations.',
   })
   @ApiQuery({
-    // <-- Describes the query parameters
     name: 'categories',
     required: true,
     description: 'Comma-separated list of category names to sync',
     example: 'Lermao,Trà Phượng Hoàng',
   })
   @ApiResponse({
-    // <-- HERE IS WHERE IT GOES!
-    status: 200, // <-- This describes the success response
+    status: 200,
     description:
       'Database cleaned and category synchronization completed successfully',
     schema: {
@@ -532,6 +546,7 @@ export class ProductController {
             deletedOrders: { type: 'number' },
             deletedReviews: { type: 'number' },
             deletedRelations: { type: 'number' },
+            deletedCategories: { type: 'number' },
           },
         },
         categories: { type: 'array', items: { type: 'string' } },
@@ -543,18 +558,19 @@ export class ProductController {
             newProducts: { type: 'number' },
             updatedProducts: { type: 'number' },
             deletedProducts: { type: 'number' },
+            newCategories: { type: 'number' },
+            updatedCategories: { type: 'number' },
+            deletedCategories: { type: 'number' },
           },
         },
       },
     },
   })
   @ApiResponse({
-    // <-- You can have multiple @ApiResponse decorators
-    status: 400, // <-- This describes error responses
+    status: 400,
     description: 'Bad request - Invalid category names or operation failed',
   })
   async cleanAndSyncCategories(@Query('categories') categories: string) {
-    // <-- THE ACTUAL METHOD IMPLEMENTATION GOES HERE
     this.logger.log(`Clean and sync requested for categories: ${categories}`);
 
     if (!categories || categories.trim() === '') {
@@ -588,14 +604,16 @@ export class ProductController {
         {
           categories: categoryNames,
           deletedOldProducts: result.cleanupInfo.deletedProducts,
-          newProductsSynced: result.totalSynced,
+          deletedOldCategories: result.cleanupInfo.deletedCategories,
+          newCategoriesSynced: result.summary.newCategories,
+          newProductsSynced: result.summary.newProducts,
           errorCount: result.errors.length,
         },
       );
 
       return {
         message: result.success
-          ? `Database cleaned and successfully synced ${result.totalSynced} products from categories: ${categoryNames.join(', ')}`
+          ? `Database cleaned and successfully synced ${result.summary.newProducts + result.summary.updatedProducts} products and ${result.summary.newCategories + result.summary.updatedCategories} categories from: ${categoryNames.join(', ')}`
           : `Database cleaned but sync completed with ${result.errors.length} errors for categories: ${categoryNames.join(', ')}`,
         categories: categoryNames,
         operation: 'clean-and-sync',
@@ -606,6 +624,58 @@ export class ProductController {
       throw error;
     }
   }
+
+  // ===== MANUAL CATEGORY SYNCHRONIZATION ENDPOINTS =====
+
+  @Post('sync/categories-only')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Synchronize only categories from KiotViet',
+    description:
+      'Syncs only the category structure from KiotViet without touching products. ' +
+      'This is useful when you want to update your category structure independently.',
+  })
+  @ApiQuery({
+    name: 'since',
+    required: false,
+    description: 'ISO date string to sync categories modified since this date',
+    example: '2024-01-01T00:00:00Z',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Category synchronization completed successfully',
+  })
+  async syncCategoriesOnly(@Query('since') since?: string) {
+    this.logger.log(
+      `Categories-only sync requested${since ? ` since ${since}` : ''}`,
+    );
+
+    try {
+      const result =
+        await this.productService.syncCategoriesFromKiotViet(since);
+
+      this.logger.log(
+        `Categories-only sync completed: ${result.success ? 'Success' : 'Failed'}`,
+        {
+          totalSynced: result.totalSynced,
+          totalDeleted: result.totalDeleted,
+          errorCount: result.errors.length,
+        },
+      );
+
+      return {
+        message: result.success
+          ? 'Category synchronization completed successfully'
+          : 'Category synchronization completed with errors',
+        ...result,
+      };
+    } catch (error) {
+      this.logger.error('Categories-only sync failed:', error.message);
+      throw error;
+    }
+  }
+
+  // ===== EXISTING PRODUCT ENDPOINTS (keeping all your current functionality) =====
 
   @Get('get-by-id/:id')
   @ApiOperation({ summary: 'Get product by ID' })

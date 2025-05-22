@@ -9,6 +9,8 @@ interface KiotVietCategory {
   parentId?: number;
   retailerId: number;
   createdDate: string;
+  modifiedDate?: string;
+  hasChild?: boolean;
 }
 
 interface KiotVietCategoryResponse {
@@ -16,6 +18,7 @@ interface KiotVietCategoryResponse {
   pageSize: number;
   data: KiotVietCategory[];
   timestamp: string;
+  removedIds?: number[]; // Categories that were deleted
 }
 
 interface KiotVietTokenResponse {
@@ -216,6 +219,180 @@ export class KiotVietService {
     }
   }
 
+  // ===== NEW CATEGORY METHODS =====
+
+  /**
+   * Fetch all categories from KiotViet with hierarchical structure
+   * This method handles pagination and builds the complete category tree
+   */
+  async fetchAllCategories(lastModifiedFrom?: string): Promise<{
+    categories: KiotVietCategory[];
+    deletedIds: number[];
+    totalFetched: number;
+    batchInfo: Array<{
+      batchNumber: number;
+      itemsFetched: number;
+      currentItem: number;
+    }>;
+  }> {
+    this.logger.log('Starting category synchronization from KiotViet');
+
+    const allCategories: KiotVietCategory[] = [];
+    const allDeletedIds: number[] = [];
+    const batchInfo: Array<{
+      batchNumber: number;
+      itemsFetched: number;
+      currentItem: number;
+    }> = [];
+
+    try {
+      await this.checkRateLimit();
+      await this.setupAuthHeaders();
+
+      // First, get hierarchical data to understand the structure
+      this.logger.log('Fetching hierarchical category structure');
+      const hierarchicalData = await this.fetchCategoryBatch(
+        0,
+        100,
+        lastModifiedFrom,
+        true, // hierachicalData = true
+      );
+
+      if (hierarchicalData.data.length > 0) {
+        allCategories.push(...hierarchicalData.data);
+        batchInfo.push({
+          batchNumber: 1,
+          itemsFetched: hierarchicalData.data.length,
+          currentItem: 0,
+        });
+      }
+
+      // If we have removed IDs, add them to our collection
+      if (
+        hierarchicalData.removedIds &&
+        hierarchicalData.removedIds.length > 0
+      ) {
+        allDeletedIds.push(...hierarchicalData.removedIds);
+      }
+
+      // If there are more categories to fetch (unlikely for categories, but just in case)
+      if (hierarchicalData.data.length === 100) {
+        this.logger.log('Fetching additional category pages');
+        let currentItem = 100;
+        let batchNumber = 2;
+
+        while (true) {
+          const batch = await this.fetchCategoryBatch(
+            currentItem,
+            100,
+            lastModifiedFrom,
+            false, // hierachicalData = false for pagination
+          );
+
+          if (batch.data.length === 0) {
+            break;
+          }
+
+          allCategories.push(...batch.data);
+          batchInfo.push({
+            batchNumber,
+            itemsFetched: batch.data.length,
+            currentItem,
+          });
+
+          if (batch.removedIds && batch.removedIds.length > 0) {
+            allDeletedIds.push(...batch.removedIds);
+          }
+
+          if (batch.data.length < 100) {
+            break;
+          }
+
+          currentItem += 100;
+          batchNumber++;
+
+          // Small delay between requests
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+      }
+
+      this.logger.log(
+        `Successfully fetched all categories. Total: ${allCategories.length}, Deleted: ${allDeletedIds.length}`,
+      );
+
+      return {
+        categories: allCategories,
+        deletedIds: allDeletedIds,
+        totalFetched: allCategories.length,
+        batchInfo,
+      };
+    } catch (error) {
+      this.logger.error('Failed to fetch categories:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch a batch of categories from KiotViet
+   */
+  private async fetchCategoryBatch(
+    currentItem: number = 0,
+    pageSize: number = 100,
+    lastModifiedFrom?: string,
+    hierachicalData: boolean = true,
+  ): Promise<KiotVietCategoryResponse> {
+    await this.checkRateLimit();
+    await this.setupAuthHeaders();
+
+    const params: any = {
+      currentItem,
+      pageSize,
+      hierachicalData, // Note: KiotViet API uses this spelling
+      orderBy: 'categoryId',
+      orderDirection: 'Asc',
+    };
+
+    if (lastModifiedFrom) {
+      params.lastModifiedFrom = lastModifiedFrom;
+    }
+
+    try {
+      const response: AxiosResponse<KiotVietCategoryResponse> =
+        await this.axiosInstance.get('/categories', { params });
+
+      this.requestCount++;
+      this.logger.debug(
+        `Fetched category batch: currentItem=${currentItem}, returned ${response.data.data.length} categories`,
+      );
+
+      return response.data;
+    } catch (error) {
+      if (error.response?.status === 401 && this.currentToken) {
+        this.logger.warn(
+          'Received 401 error, clearing cached token and retrying once',
+        );
+        this.currentToken = null;
+        await this.setupAuthHeaders();
+        const retryResponse: AxiosResponse<KiotVietCategoryResponse> =
+          await this.axiosInstance.get('/categories', { params });
+        this.requestCount++;
+        return retryResponse.data;
+      }
+
+      this.logger.error(
+        `Failed to fetch category batch at currentItem ${currentItem}:`,
+        error.message,
+      );
+      throw new BadRequestException(
+        `Failed to fetch categories from KiotViet: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Build category name-to-ID mapping for quick lookups
+   * This helps when we need to find category IDs by name
+   */
   async fetchCategories(): Promise<Map<string, number>> {
     const now = Date.now();
     if (this.categoriesCache.size > 0 && now < this.categoriesCacheExpiry) {
@@ -223,48 +400,27 @@ export class KiotVietService {
       return this.categoriesCache;
     }
 
-    this.logger.log('Fetching categories from KiotViet');
+    this.logger.log('Fetching categories from KiotViet for mapping');
 
-    await this.checkRateLimit();
-    await this.setupAuthHeaders();
+    const categoryResult = await this.fetchAllCategories();
 
-    try {
-      const response: AxiosResponse<KiotVietCategoryResponse> =
-        await this.axiosInstance.get('/categories', {
-          params: {
-            pageSize: 100,
-            currentItem: 0,
-            hierachicalData: false,
-          },
-        });
-
-      this.requestCount++;
-      this.logger.log(
-        `Fetched ${response.data.data.length} categories from KiotViet`,
+    this.categoriesCache.clear();
+    categoryResult.categories.forEach((category) => {
+      this.categoriesCache.set(category.categoryName, category.categoryId);
+      this.logger.debug(
+        `Mapped category: "${category.categoryName}" -> ID ${category.categoryId}`,
       );
+    });
 
-      this.categoriesCache.clear();
+    this.categoriesCacheExpiry = now + 3600000; // Cache for 1 hour
 
-      response.data.data.forEach((category) => {
-        this.categoriesCache.set(category.categoryName, category.categoryId);
-        this.logger.debug(
-          `Mapped category: "${category.categoryName}" -> ID ${category.categoryId}`,
-        );
-      });
-
-      this.categoriesCacheExpiry = now + 3600000;
-
-      this.logger.log(
-        `Built category mapping with ${this.categoriesCache.size} categories`,
-      );
-      return this.categoriesCache;
-    } catch (error) {
-      this.logger.error('Failed to fetch categories:', error.message);
-      throw new BadRequestException(
-        `Failed to fetch categories from KiotViet: ${error.message}`,
-      );
-    }
+    this.logger.log(
+      `Built category mapping with ${this.categoriesCache.size} categories`,
+    );
+    return this.categoriesCache;
   }
+
+  // ===== EXISTING PRODUCT METHODS (keeping all your current functionality) =====
 
   async getCategoryIds(categoryNames: string[]): Promise<number[]> {
     this.logger.log(`Looking up category IDs for: ${categoryNames.join(', ')}`);
