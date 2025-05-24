@@ -670,7 +670,7 @@ export class ProductService {
       const general_description = this.sanitizeString(
         kiotVietProduct.fullName || kiotVietProduct.name || '',
       );
-      const type = this.sanitizeString(kiotVietProduct.unit || 'piece');
+      const type = this.sanitizeString(kiotVietProduct.unit);
 
       // Return object that matches your Prisma schema
       return {
@@ -680,12 +680,11 @@ export class ProductService {
         description,
         images_url,
         general_description,
-        instruction: '', // Default empty string
-        is_featured: false, // Default false
+        instruction: '',
+        is_featured: false,
         featured_thumbnail,
-        recipe_thumbnail: null, // Default null
+        recipe_thumbnail: null,
         type,
-        // Store category info for later processing
         categoryId: kiotVietProduct.categoryId,
         categoryName: kiotVietProduct.categoryName,
       };

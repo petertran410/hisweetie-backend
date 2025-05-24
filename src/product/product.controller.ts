@@ -980,4 +980,223 @@ export class ProductController {
   async getProductsByIds(@Query('productIds') productIds: string) {
     return this.productService.getProductsByIds(productIds);
   }
+
+  @Get('debug/categories-analysis')
+  @ApiOperation({
+    summary: 'Debug: Analyze categories and products',
+    description:
+      'Returns detailed analysis of categories and their products for debugging',
+  })
+  async debugCategoriesAnalysis() {
+    this.logger.log('Debug: Analyzing categories and products');
+
+    try {
+      // Get all categories
+      const allCategories = await this.productService.prisma.category.findMany({
+        select: {
+          id: true,
+          name: true,
+          parent_id: true,
+        },
+        orderBy: { name: 'asc' },
+      });
+
+      // Get target categories specifically
+      const targetCategories =
+        await this.productService.prisma.category.findMany({
+          where: {
+            name: {
+              in: ['Trà Phượng Hoàng', 'Lermao'],
+            },
+          },
+          include: {
+            product_categories: {
+              include: {
+                product: {
+                  select: {
+                    id: true,
+                    title: true,
+                    type: true,
+                    price: true,
+                    quantity: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+      // Get all products with their categories
+      const allProducts = await this.productService.prisma.product.findMany({
+        include: {
+          product_categories: {
+            include: {
+              category: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Get products in target categories
+      const targetCategoryIds = targetCategories.map((cat) => cat.id);
+      const productsInTargetCategories =
+        await this.productService.prisma.product.findMany({
+          where: {
+            product_categories: {
+              some: {
+                categories_id: {
+                  in: targetCategoryIds,
+                },
+              },
+            },
+          },
+          include: {
+            product_categories: {
+              include: {
+                category: true,
+              },
+            },
+          },
+        });
+
+      // Analyze product types in target categories
+      const productTypesAnalysis = {};
+      productsInTargetCategories.forEach((product) => {
+        const type = product.type || 'No Type';
+        const categories = product.product_categories
+          .map((pc) => pc.category.name)
+          .join(', ');
+
+        if (!productTypesAnalysis[type]) {
+          productTypesAnalysis[type] = {
+            count: 0,
+            products: [],
+            categories: new Set(),
+          };
+        }
+
+        productTypesAnalysis[type].count++;
+        productTypesAnalysis[type].products.push({
+          id: product.id.toString(),
+          title: product.title,
+          categories: categories,
+        });
+
+        product.product_categories.forEach((pc) => {
+          productTypesAnalysis[type].categories.add(pc.category.name);
+        });
+      });
+
+      // Convert sets to arrays for JSON response
+      Object.keys(productTypesAnalysis).forEach((type) => {
+        productTypesAnalysis[type].categories = Array.from(
+          productTypesAnalysis[type].categories,
+        );
+      });
+
+      return {
+        summary: {
+          totalCategories: allCategories.length,
+          totalProducts: allProducts.length,
+          targetCategoriesFound: targetCategories.length,
+          productsInTargetCategories: productsInTargetCategories.length,
+          totalProductTypes: Object.keys(productTypesAnalysis).length,
+        },
+        allCategories: allCategories.map((cat) => ({
+          id: cat.id.toString(),
+          name: cat.name,
+          parentId: cat.parent_id?.toString() || null,
+        })),
+        targetCategories: targetCategories.map((cat) => ({
+          id: cat.id.toString(),
+          name: cat.name,
+          productCount: cat.product_categories.length,
+        })),
+        productTypesInTargetCategories: productTypesAnalysis,
+        sampleProducts: productsInTargetCategories
+          .slice(0, 10)
+          .map((product) => ({
+            id: product.id.toString(),
+            title: product.title,
+            type: product.type,
+            price: product.price ? Number(product.price) : null,
+            quantity: product.quantity ? Number(product.quantity) : null,
+            categories: product.product_categories.map((pc) => ({
+              id: pc.category.id.toString(),
+              name: pc.category.name,
+            })),
+          })),
+      };
+    } catch (error) {
+      this.logger.error('Debug analysis failed:', error.message);
+      throw error;
+    }
+  }
+
+  @Get('debug/search-test')
+  @ApiOperation({
+    summary: 'Debug: Test search functionality',
+    description: 'Tests the search functionality with various parameters',
+  })
+  async debugSearchTest(
+    @Query('categoryNames') categoryNames?: string,
+    @Query('pageSize') pageSize: string = '50',
+    @Query('includeTypes') includeTypes: string = 'true',
+  ) {
+    this.logger.log(`Debug: Testing search with categories: ${categoryNames}`);
+
+    try {
+      const categoryNamesList = categoryNames
+        ? categoryNames
+            .split(',')
+            .map((name) => name.trim())
+            .filter((name) => name.length > 0)
+        : ['Trà Phượng Hoàng', 'Lermao'];
+
+      // Test the search function
+      const searchResult = await this.productService.search({
+        pageSize: parseInt(pageSize),
+        pageNumber: 0,
+        categoryNames: categoryNamesList,
+      });
+
+      // Get detailed product types if requested
+      let productTypesDetail: any = null;
+      if (includeTypes === 'true') {
+        productTypesDetail =
+          await this.productService.getProductTypesByCategories(
+            categoryNamesList,
+          );
+      }
+
+      return {
+        searchParams: {
+          categoryNames: categoryNamesList,
+          pageSize: parseInt(pageSize),
+          pageNumber: 0,
+        },
+        searchResult: {
+          totalElements: searchResult.totalElements,
+          contentLength: searchResult.content.length,
+          availableTypes: searchResult.availableTypes,
+          products: searchResult.content.map((product) => ({
+            id: product.id,
+            title: product.title,
+            type: product.type,
+            price: product.price,
+            categories: product.ofCategories,
+          })),
+        },
+        productTypesDetail,
+      };
+    } catch (error) {
+      this.logger.error('Debug search test failed:', error.message);
+      throw error;
+    }
+  }
 }
