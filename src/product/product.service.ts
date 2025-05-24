@@ -1439,16 +1439,92 @@ export class ProductService {
     pageNumber: number;
     title?: string;
     type?: string;
+    categoryNames?: string[];
+    categoryIds?: string[];
+    productTypes?: string[]; // New parameter for product type filtering
   }) {
-    const { pageSize, pageNumber, title, type } = params;
+    const {
+      pageSize,
+      pageNumber,
+      title,
+      type,
+      categoryNames,
+      categoryIds,
+      productTypes,
+    } = params;
 
-    const where = {};
+    const where: any = {};
+
     if (title) {
       where['title'] = { contains: title };
     }
     if (type) {
       where['type'] = type;
     }
+
+    // Add product type filtering
+    if (productTypes && productTypes.length > 0) {
+      where['type'] = {
+        in: productTypes,
+      };
+    }
+
+    // Add category filtering
+    if (categoryNames && categoryNames.length > 0) {
+      // First, find category IDs by names
+      const categories = await this.prisma.category.findMany({
+        where: {
+          name: {
+            in: categoryNames,
+          },
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
+
+      if (categories.length === 0) {
+        this.logger.warn(
+          `No categories found with names: ${categoryNames.join(', ')}`,
+        );
+        // Return empty result if no categories found
+        return {
+          content: [],
+          totalElements: 0,
+          availableTypes: [],
+          pageable: {
+            pageNumber,
+            pageSize,
+            pageCount: 0,
+          },
+        };
+      }
+
+      const foundCategoryIds = categories.map((cat) => cat.id);
+      this.logger.log(
+        `Found categories: ${categories.map((c) => `${c.name} (${c.id})`).join(', ')}`,
+      );
+
+      where['product_categories'] = {
+        some: {
+          categories_id: {
+            in: foundCategoryIds,
+          },
+        },
+      };
+    } else if (categoryIds && categoryIds.length > 0) {
+      // Filter by category IDs directly
+      const bigIntCategoryIds = categoryIds.map((id) => BigInt(id));
+      where['product_categories'] = {
+        some: {
+          categories_id: {
+            in: bigIntCategoryIds,
+          },
+        },
+      };
+    }
+
     const totalElements = await this.prisma.product.count({ where });
 
     const products = await this.prisma.product.findMany({
@@ -1464,6 +1540,26 @@ export class ProductService {
         },
       },
     });
+
+    // Get available types for the current filter
+    const availableTypesQuery = { ...where };
+    delete availableTypesQuery.type; // Remove type filter to get all available types
+
+    const availableTypesResult = await this.prisma.product.findMany({
+      where: availableTypesQuery,
+      select: {
+        type: true,
+      },
+      distinct: ['type'],
+      orderBy: {
+        type: 'asc',
+      },
+    });
+
+    const availableTypes = availableTypesResult
+      .map((item) => item.type)
+      .filter((type) => type && type.trim() !== '')
+      .sort();
 
     const content = products.map((product) => {
       let imagesUrl = [];
@@ -1483,6 +1579,7 @@ export class ProductService {
         quantity: product.quantity ? Number(product.quantity) : null,
         imagesUrl,
         isFeatured: product.is_featured,
+        type: product.type || 'Chưa phân loại', // Ensure type is always present
         ofCategories: product.product_categories.map((pc) => ({
           id: pc.categories_id.toString(),
           name: pc.category?.name || '',
@@ -1490,14 +1587,141 @@ export class ProductService {
       };
     });
 
+    this.logger.log(
+      `Search completed: ${content.length} products found with filters:`,
+      {
+        title,
+        type,
+        categoryNames,
+        categoryIds,
+        productTypes,
+        totalElements,
+        availableTypesCount: availableTypes.length,
+      },
+    );
+
     return {
       content,
       totalElements,
+      availableTypes, // Include available types for frontend filtering
       pageable: {
         pageNumber,
         pageSize,
         pageCount: Math.ceil(totalElements / pageSize),
       },
+    };
+  }
+
+  // Add method to get product types for specific categories
+  async getProductTypesByCategories(categoryNames: string[]): Promise<{
+    types: Array<{
+      type: string;
+      count: number;
+      categoryName: string;
+    }>;
+    totalTypes: number;
+  }> {
+    if (!categoryNames || categoryNames.length === 0) {
+      return { types: [], totalTypes: 0 };
+    }
+
+    // Find category IDs
+    const categories = await this.prisma.category.findMany({
+      where: {
+        name: {
+          in: categoryNames,
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    if (categories.length === 0) {
+      return { types: [], totalTypes: 0 };
+    }
+
+    const categoryIds = categories.map((cat) => cat.id);
+    const categoryMap = categories.reduce((acc, cat) => {
+      acc[cat.id.toString()] = cat.name;
+      return acc;
+    }, {});
+
+    // Get products with their types for these categories
+    const products = await this.prisma.product.findMany({
+      where: {
+        product_categories: {
+          some: {
+            categories_id: {
+              in: categoryIds,
+            },
+          },
+        },
+      },
+      select: {
+        type: true,
+        product_categories: {
+          include: {
+            category: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Count types by category
+    const typeCountMap = new Map<
+      string,
+      { count: number; categoryName: string }
+    >();
+
+    products.forEach((product) => {
+      const productType = product.type || 'Chưa phân loại';
+
+      product.product_categories.forEach((pc) => {
+        if (
+          categoryIds.some((id) => id.toString() === pc.category.id.toString())
+        ) {
+          const key = `${productType}|${pc.category.name}`;
+          const existing = typeCountMap.get(key);
+
+          if (existing) {
+            existing.count += 1;
+          } else {
+            typeCountMap.set(key, {
+              count: 1,
+              categoryName: pc.category.name,
+            });
+          }
+        }
+      });
+    });
+
+    const types = Array.from(typeCountMap.entries())
+      .map(([key, value]) => {
+        const [type] = key.split('|');
+        return {
+          type,
+          count: value.count,
+          categoryName: value.categoryName,
+        };
+      })
+      .sort((a, b) => {
+        // Sort by category name first, then by type name
+        if (a.categoryName !== b.categoryName) {
+          return a.categoryName.localeCompare(b.categoryName);
+        }
+        return a.type.localeCompare(b.type);
+      });
+
+    return {
+      types,
+      totalTypes: types.length,
     };
   }
 
@@ -1833,5 +2057,70 @@ export class ProductService {
         })),
       };
     });
+  }
+
+  async getAllCategories(): Promise<
+    Array<{
+      id: string;
+      name: string;
+      parentId: string | null;
+      parentName: string | null;
+    }>
+  > {
+    const categories = await this.prisma.category.findMany({
+      where: {
+        name: {
+          not: null, // Only get categories with non-null names
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    // Get parent names
+    const parentIds = categories
+      .filter((cat) => cat.parent_id !== null)
+      .map((cat) => cat.parent_id!);
+
+    let parentMap: Record<string, string> = {};
+    if (parentIds.length > 0) {
+      const parentCategories = await this.prisma.category.findMany({
+        where: {
+          id: {
+            in: parentIds,
+          },
+          name: {
+            not: null, // Only get parent categories with non-null names
+          },
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      });
+      parentMap = parentCategories.reduce(
+        (acc, parent) => {
+          if (parent.name) {
+            // Additional null check
+            acc[parent.id.toString()] = parent.name;
+          }
+          return acc;
+        },
+        {} as Record<string, string>,
+      );
+    }
+
+    return categories
+      .filter((category) => category.name) // Filter out any categories with null names
+      .map((category) => {
+        const parentId = category.parent_id
+          ? category.parent_id.toString()
+          : null;
+        return {
+          id: category.id.toString(),
+          name: category.name!, // Use non-null assertion since we filtered out nulls
+          parentId: parentId,
+          parentName: parentId ? parentMap[parentId] || null : null,
+        };
+      });
   }
 }

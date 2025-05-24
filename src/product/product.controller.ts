@@ -687,7 +687,9 @@ export class ProductController {
   }
 
   @Get('search')
-  @ApiOperation({ summary: 'Search products with pagination' })
+  @ApiOperation({
+    summary: 'Search products with pagination and category filtering',
+  })
   @ApiQuery({
     name: 'pageSize',
     required: false,
@@ -710,19 +712,134 @@ export class ProductController {
     required: false,
     description: 'Search by product type',
   })
+  @ApiQuery({
+    name: 'categoryNames',
+    required: false,
+    description: 'Filter by category names (comma-separated)',
+    example: 'Trà Phượng Hoàng,Lermao',
+  })
+  @ApiQuery({
+    name: 'categoryIds',
+    required: false,
+    description: 'Filter by category IDs (comma-separated)',
+    example: '2205374,2205381',
+  })
   @ApiResponse({ status: 200, description: 'Products retrieved successfully' })
   search(
     @Query('pageSize') pageSize: string = '10',
     @Query('pageNumber') pageNumber: string = '0',
     @Query('title') title?: string,
     @Query('type') type?: string,
+    @Query('categoryNames') categoryNames?: string,
+    @Query('categoryIds') categoryIds?: string,
   ) {
+    // Parse comma-separated category names and IDs
+    const categoryNamesList = categoryNames
+      ? categoryNames
+          .split(',')
+          .map((name) => name.trim())
+          .filter((name) => name.length > 0)
+      : undefined;
+
+    const categoryIdsList = categoryIds
+      ? categoryIds
+          .split(',')
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0)
+      : undefined;
+
     return this.productService.search({
       pageSize: parseInt(pageSize),
       pageNumber: parseInt(pageNumber),
       title,
       type,
+      categoryNames: categoryNamesList,
+      categoryIds: categoryIdsList,
     });
+  }
+
+  @Get('categories')
+  @ApiOperation({ summary: 'Get all categories for filtering' })
+  @ApiResponse({
+    status: 200,
+    description: 'Categories retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        categories: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              name: { type: 'string' },
+              parentId: { type: 'string', nullable: true },
+              parentName: { type: 'string', nullable: true },
+            },
+          },
+        },
+        totalCount: { type: 'number' },
+      },
+    },
+  })
+  async getAllCategories() {
+    const categories = await this.productService.getAllCategories();
+    return {
+      categories,
+      totalCount: categories.length,
+    };
+  }
+
+  @Get('search/target-categories')
+  @ApiOperation({
+    summary:
+      'Get products from target categories (Trà Phượng Hoàng and Lermao)',
+    description:
+      'Returns products only from "Trà Phượng Hoàng" and "Lermao" categories with pagination',
+  })
+  @ApiQuery({
+    name: 'pageSize',
+    required: false,
+    description: 'Number of items per page',
+    example: 10,
+  })
+  @ApiQuery({
+    name: 'pageNumber',
+    required: false,
+    description: 'Page number (0-based)',
+    example: 0,
+  })
+  @ApiQuery({
+    name: 'title',
+    required: false,
+    description: 'Search by product title within target categories',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Target category products retrieved successfully',
+  })
+  async getTargetCategoryProducts(
+    @Query('pageSize') pageSize: string = '10',
+    @Query('pageNumber') pageNumber: string = '0',
+    @Query('title') title?: string,
+  ) {
+    const targetCategories = ['Trà Phượng Hoàng', 'Lermao'];
+
+    const result = await this.productService.search({
+      pageSize: parseInt(pageSize),
+      pageNumber: parseInt(pageNumber),
+      title,
+      categoryNames: targetCategories,
+    });
+
+    return {
+      ...result,
+      filterInfo: {
+        appliedCategories: targetCategories,
+        description:
+          'Showing products from Trà Phượng Hoàng and Lermao categories only',
+      },
+    };
   }
 
   @Get('order/admin-search')
