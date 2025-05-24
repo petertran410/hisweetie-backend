@@ -1,9 +1,8 @@
-// src/product/kiotviet.service.ts (Updated with category filtering)
+// src/product/kiotviet.service.ts
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 
-// Add category interface for better type safety
 interface KiotVietCategory {
   categoryId: number;
   categoryName: string;
@@ -19,21 +18,18 @@ interface KiotVietCategoryResponse {
   timestamp: string;
 }
 
-// Interface for KiotViet OAuth token response
 interface KiotVietTokenResponse {
   access_token: string;
   expires_in: number;
   token_type: string;
 }
 
-// Interface for stored token information with expiration tracking
 interface StoredToken {
   accessToken: string;
   expiresAt: Date;
   tokenType: string;
 }
 
-// Interface for KiotViet API response structure
 interface KiotVietProduct {
   id: number;
   code: string;
@@ -77,20 +73,15 @@ export class KiotVietService {
   private readonly baseUrl = 'https://public.kiotapi.com';
   private readonly authUrl = 'https://id.kiotviet.vn/connect/token';
 
-  // Token management - stores current valid token
   private currentToken: StoredToken | null = null;
-
-  // Rate limiting tracking (KiotViet allows 5000 requests/hour)
   private requestCount = 0;
   private hourStartTime = Date.now();
   private readonly maxRequestsPerHour = 4900;
 
-  // Cache for categories to avoid repeated API calls
   private categoriesCache: Map<string, number> = new Map();
   private categoriesCacheExpiry: number = 0;
 
   constructor(private readonly configService: ConfigService) {
-    // Initialize axios instance with default configuration
     this.axiosInstance = axios.create({
       baseURL: this.baseUrl,
       timeout: 30000,
@@ -99,7 +90,6 @@ export class KiotVietService {
       },
     });
 
-    // Add response interceptor for logging and error handling
     this.axiosInstance.interceptors.response.use(
       (response) => {
         this.logger.debug(`API call successful: ${response.config.url}`);
@@ -112,9 +102,6 @@ export class KiotVietService {
     );
   }
 
-  /**
-   * Get KiotViet credentials from environment configuration
-   */
   getCredentials(): KiotVietCredentials {
     const retailerName = this.configService.get<string>(
       'KIOTVIET_RETAILER_NAME',
@@ -133,9 +120,6 @@ export class KiotVietService {
     return { retailerName, clientId, clientSecret };
   }
 
-  /**
-   * Obtain access token from KiotViet using OAuth 2.0 client credentials flow
-   */
   private async obtainAccessToken(
     credentials: KiotVietCredentials,
   ): Promise<StoredToken> {
@@ -232,12 +216,7 @@ export class KiotVietService {
     }
   }
 
-  /**
-   * Fetch categories from KiotViet and build a lookup map
-   * This method creates a mapping of category names to their IDs for filtering
-   */
   async fetchCategories(): Promise<Map<string, number>> {
-    // Check if we have a valid cache (expires after 1 hour)
     const now = Date.now();
     if (this.categoriesCache.size > 0 && now < this.categoriesCacheExpiry) {
       this.logger.debug('Using cached categories');
@@ -250,13 +229,12 @@ export class KiotVietService {
     await this.setupAuthHeaders();
 
     try {
-      // Fetch all categories - KiotViet typically has a reasonable number of categories
       const response: AxiosResponse<KiotVietCategoryResponse> =
         await this.axiosInstance.get('/categories', {
           params: {
-            pageSize: 100, // Get up to 100 categories at once
+            pageSize: 100,
             currentItem: 0,
-            hierachicalData: false, // Get flat list instead of hierarchical
+            hierachicalData: false,
           },
         });
 
@@ -265,10 +243,8 @@ export class KiotVietService {
         `Fetched ${response.data.data.length} categories from KiotViet`,
       );
 
-      // Clear and rebuild the cache
       this.categoriesCache.clear();
 
-      // Build the category name to ID mapping
       response.data.data.forEach((category) => {
         this.categoriesCache.set(category.categoryName, category.categoryId);
         this.logger.debug(
@@ -276,7 +252,6 @@ export class KiotVietService {
         );
       });
 
-      // Set cache expiry to 1 hour from now
       this.categoriesCacheExpiry = now + 3600000;
 
       this.logger.log(
@@ -291,10 +266,6 @@ export class KiotVietService {
     }
   }
 
-  /**
-   * Get category IDs for the specified category names
-   * This method resolves category names to their corresponding IDs for filtering
-   */
   async getCategoryIds(categoryNames: string[]): Promise<number[]> {
     this.logger.log(`Looking up category IDs for: ${categoryNames.join(', ')}`);
 
@@ -310,7 +281,9 @@ export class KiotVietService {
         );
       } else {
         this.logger.warn(
-          `Category "${categoryName}" not found in KiotViet. Available categories: ${Array.from(categoryMap.keys()).join(', ')}`,
+          `Category "${categoryName}" not found in KiotViet. Available categories: ${Array.from(
+            categoryMap.keys(),
+          ).join(', ')}`,
         );
       }
     }
@@ -327,20 +300,15 @@ export class KiotVietService {
     return categoryIds;
   }
 
-  /**
-   * Fetch a batch of products from KiotViet API with optional category filtering
-   * Enhanced to support filtering by specific categories
-   */
   private async fetchProductBatch(
     currentItem: number = 0,
     pageSize: number = 100,
     lastModifiedFrom?: string,
-    categoryIds?: number[], // New parameter for category filtering
+    categoryIds?: number[],
   ): Promise<KiotVietApiResponse> {
     await this.checkRateLimit();
     await this.setupAuthHeaders();
 
-    // Build request parameters according to KiotViet API documentation
     const params: any = {
       currentItem,
       pageSize,
@@ -350,11 +318,7 @@ export class KiotVietService {
       orderDirection: 'Asc',
     };
 
-    // Add category filtering if specified
     if (categoryIds && categoryIds.length > 0) {
-      // Note: KiotViet API supports categoryId parameter for filtering
-      // If there are multiple categories, we'll need to make separate calls
-      // For now, let's use the first category ID and handle multiple categories in the fetch loop
       params.categoryId = categoryIds[0];
       this.logger.debug(`Filtering by category ID: ${categoryIds[0]}`);
     }
@@ -365,18 +329,17 @@ export class KiotVietService {
 
     try {
       const response: AxiosResponse<KiotVietApiResponse> =
-        await this.axiosInstance.get('/products', {
-          params,
-        });
+        await this.axiosInstance.get('/products', { params });
 
       this.requestCount++;
       this.logger.debug(
-        `Fetched batch: currentItem=${currentItem}, returned ${response.data.data.length} products${categoryIds ? ` (filtered by category ${categoryIds[0]})` : ''}`,
+        `Fetched batch: currentItem=${currentItem}, returned ${response.data.data.length} products${
+          categoryIds ? ` (filtered by category ${categoryIds[0]})` : ''
+        }`,
       );
 
       return response.data;
     } catch (error) {
-      // Handle token expiration and retry once
       if (error.response?.status === 401 && this.currentToken) {
         this.logger.warn(
           'Received 401 error, clearing cached token and retrying once',
@@ -384,9 +347,7 @@ export class KiotVietService {
         this.currentToken = null;
         await this.setupAuthHeaders();
         const retryResponse: AxiosResponse<KiotVietApiResponse> =
-          await this.axiosInstance.get('/products', {
-            params,
-          });
+          await this.axiosInstance.get('/products', { params });
         this.requestCount++;
         return retryResponse.data;
       }
@@ -401,9 +362,6 @@ export class KiotVietService {
     }
   }
 
-  /**
-   * Test the connection to KiotViet API
-   */
   async testConnection(): Promise<{
     success: boolean;
     message: string;
@@ -444,13 +402,9 @@ export class KiotVietService {
     }
   }
 
-  /**
-   * Fetch all products from KiotViet with optional category filtering
-   * Enhanced to support filtering by specific categories like "Lermao" and "Trà Phượng Hoàng"
-   */
   async fetchAllProducts(
     lastModifiedFrom?: string,
-    categoryNames?: string[], // New parameter for category filtering
+    categoryNames?: string[],
   ): Promise<{
     products: KiotVietProduct[];
     deletedIds: number[];
@@ -460,11 +414,10 @@ export class KiotVietService {
       itemsFetched: number;
       currentItem: number;
     }>;
-    filteredCategories?: string[]; // Information about which categories were used for filtering
+    filteredCategories?: string[];
   }> {
     this.logger.log('Starting complete product synchronization from KiotViet');
 
-    // Handle category filtering if specified
     let categoryIds: number[] | undefined;
     if (categoryNames && categoryNames.length > 0) {
       this.logger.log(
@@ -482,8 +435,6 @@ export class KiotVietService {
     }> = [];
 
     try {
-      // If we're filtering by categories, we need to fetch products for each category separately
-      // because KiotViet API doesn't support multiple category IDs in a single request
       if (categoryIds && categoryIds.length > 0) {
         this.logger.log(
           `Fetching products for ${categoryIds.length} categories`,
@@ -497,7 +448,6 @@ export class KiotVietService {
             `Fetching products for category: ${categoryName} (ID: ${categoryId})`,
           );
 
-          // Fetch all products for this specific category
           const categoryResult = await this.fetchProductsForCategory(
             categoryId,
             lastModifiedFrom,
@@ -507,15 +457,13 @@ export class KiotVietService {
             `Category "${categoryName}": Found ${categoryResult.products.length} products`,
           );
 
-          // Add products from this category to our overall collection
           allProducts.push(...categoryResult.products);
           allDeletedIds.push(...categoryResult.deletedIds);
 
-          // Adjust batch info to include category information
           categoryResult.batchInfo.forEach((batch) => {
             batchInfo.push({
               ...batch,
-              batchNumber: batchInfo.length + 1, // Renumber batches across all categories
+              batchNumber: batchInfo.length + 1,
             });
           });
         }
@@ -524,13 +472,32 @@ export class KiotVietService {
           `Total products from all filtered categories: ${allProducts.length}`,
         );
       } else {
-        // No category filtering - fetch all products (original behavior)
         this.logger.log('Fetching all products (no category filtering)');
         const result =
           await this.fetchAllProductsWithoutFilter(lastModifiedFrom);
         allProducts.push(...result.products);
         allDeletedIds.push(...result.deletedIds);
         batchInfo.push(...result.batchInfo);
+      }
+
+      // Enhanced validation and logging for debugging
+      this.logger.log(`Final sync summary:
+        - Total products fetched: ${allProducts.length}
+        - Total deleted IDs: ${allDeletedIds.length}
+        - Total batches processed: ${batchInfo.length}`);
+
+      // Log sample of first few products for debugging
+      if (allProducts.length > 0) {
+        const sampleProducts = allProducts.slice(0, 3).map((p) => ({
+          id: p.id,
+          name: p.name,
+          category: p.categoryName,
+          price: p.basePrice,
+        }));
+        this.logger.log(
+          'Sample products fetched:',
+          JSON.stringify(sampleProducts, null, 2),
+        );
       }
 
       this.logger.log(
@@ -550,10 +517,6 @@ export class KiotVietService {
     }
   }
 
-  /**
-   * Fetch all products for a specific category
-   * This method handles pagination for a single category
-   */
   private async fetchProductsForCategory(
     categoryId: number,
     lastModifiedFrom?: string,
@@ -581,7 +544,9 @@ export class KiotVietService {
 
     while (hasMoreData) {
       this.logger.debug(
-        `Fetching batch ${batchNumber} for category ${categoryId} (items ${currentItem}-${currentItem + batchSize - 1})`,
+        `Fetching batch ${batchNumber} for category ${categoryId} (items ${currentItem}-${
+          currentItem + batchSize - 1
+        })`,
       );
 
       const batch = await this.fetchProductBatch(
@@ -607,26 +572,19 @@ export class KiotVietService {
         `Category ${categoryId} batch ${batchNumber}: Fetched ${batch.data.length} products`,
       );
 
-      // Check if we have more data to fetch
       if (batch.data.length < batchSize) {
-        // If we got fewer products than the batch size, we've reached the end
         hasMoreData = false;
       } else {
         currentItem += batchSize;
         batchNumber++;
       }
 
-      // Add small delay between requests to be respectful to the API
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
     return { products, deletedIds, batchInfo };
   }
 
-  /**
-   * Fetch all products without category filtering (original behavior)
-   * This maintains backward compatibility for syncing all products
-   */
   private async fetchAllProductsWithoutFilter(
     lastModifiedFrom?: string,
   ): Promise<{
@@ -651,7 +609,6 @@ export class KiotVietService {
     let totalProducts = 0;
     let batchNumber = 1;
 
-    // Fetch first batch to determine total count
     this.logger.log('Fetching initial batch to determine total product count');
     const firstBatch = await this.fetchProductBatch(
       currentItem,
@@ -667,7 +624,6 @@ export class KiotVietService {
       return { products: [], deletedIds: [], batchInfo: [] };
     }
 
-    // Process first batch
     allProducts.push(...firstBatch.data);
     if (firstBatch.removeId && Array.isArray(firstBatch.removeId)) {
       allDeletedIds.push(...firstBatch.removeId);
@@ -683,15 +639,16 @@ export class KiotVietService {
       `Batch ${batchNumber}: Fetched ${firstBatch.data.length} products`,
     );
 
-    // Calculate remaining batches
     const totalBatches = Math.ceil(totalProducts / batchSize);
     currentItem = batchSize;
     batchNumber++;
 
-    // Fetch remaining batches
     while (currentItem < totalProducts) {
       this.logger.log(
-        `Processing batch ${batchNumber}/${totalBatches} (items ${currentItem}-${Math.min(currentItem + batchSize - 1, totalProducts - 1)})`,
+        `Processing batch ${batchNumber}/${totalBatches} (items ${currentItem}-${Math.min(
+          currentItem + batchSize - 1,
+          totalProducts - 1,
+        )})`,
       );
 
       const batch = await this.fetchProductBatch(
@@ -728,9 +685,6 @@ export class KiotVietService {
     };
   }
 
-  /**
-   * Validate data integrity after fetching
-   */
   validateDataIntegrity(
     products: KiotVietProduct[],
     expectedTotal: number,
@@ -756,17 +710,15 @@ export class KiotVietService {
       (id, index) => productIds.indexOf(id) !== index,
     );
 
-    // Check for duplicate IDs
     if (duplicateIds.length > 0) {
       issues.push(
-        `Found ${duplicateIds.length} duplicate product IDs: ${duplicateIds.slice(0, 5).join(', ')}${duplicateIds.length > 5 ? '...' : ''}`,
+        `Found ${duplicateIds.length} duplicate product IDs: ${duplicateIds
+          .slice(0, 5)
+          .join(', ')}${duplicateIds.length > 5 ? '...' : ''}`,
       );
     }
 
-    // For filtered results, we can't validate against expectedTotal
-    // because expectedTotal represents all products, not just filtered ones
     if (expectedTotal > 0 && products.length !== expectedTotal) {
-      // This is just informational for filtered results
       this.logger.log(
         `Product count difference: expected ${expectedTotal}, got ${products.length} (this is normal for filtered results)`,
       );
