@@ -675,7 +675,7 @@ export class ProductController {
     }
   }
 
-  // ===== EXISTING PRODUCT ENDPOINTS (keeping all your current functionality) =====
+  // ===== MAIN PRODUCT ENDPOINTS =====
 
   @Get('get-by-id/:id')
   @ApiOperation({ summary: 'Get product by ID' })
@@ -688,7 +688,7 @@ export class ProductController {
 
   @Get('search')
   @ApiOperation({
-    summary: 'Search products with pagination and category filtering',
+    summary: 'Search products with pagination and filtering',
   })
   @ApiQuery({
     name: 'pageSize',
@@ -710,7 +710,13 @@ export class ProductController {
   @ApiQuery({
     name: 'type',
     required: false,
-    description: 'Search by product type',
+    description: 'Search by single product type',
+  })
+  @ApiQuery({
+    name: 'productTypes',
+    required: false,
+    description: 'Filter by multiple product types (comma-separated)',
+    example: 'Bột,Siro,Topping',
   })
   @ApiQuery({
     name: 'categoryNames',
@@ -730,10 +736,18 @@ export class ProductController {
     @Query('pageNumber') pageNumber: string = '0',
     @Query('title') title?: string,
     @Query('type') type?: string,
+    @Query('productTypes') productTypes?: string,
     @Query('categoryNames') categoryNames?: string,
     @Query('categoryIds') categoryIds?: string,
   ) {
-    // Parse comma-separated category names and IDs
+    // Parse comma-separated values
+    const productTypesList = productTypes
+      ? productTypes
+          .split(',')
+          .map((type) => type.trim())
+          .filter((type) => type.length > 0)
+      : undefined;
+
     const categoryNamesList = categoryNames
       ? categoryNames
           .split(',')
@@ -753,6 +767,7 @@ export class ProductController {
       pageNumber: parseInt(pageNumber),
       title,
       type,
+      productTypes: productTypesList,
       categoryNames: categoryNamesList,
       categoryIds: categoryIdsList,
     });
@@ -788,6 +803,60 @@ export class ProductController {
       categories,
       totalCount: categories.length,
     };
+  }
+
+  @Get('types-by-categories')
+  @ApiOperation({
+    summary: 'Get product types for specific categories',
+    description:
+      'Returns all product types found within the specified categories',
+  })
+  @ApiQuery({
+    name: 'categoryNames',
+    required: true,
+    description: 'Comma-separated list of category names',
+    example: 'Trà Phượng Hoàng,Lermao',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Product types retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        types: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              type: { type: 'string' },
+              count: { type: 'number' },
+              categoryName: { type: 'string' },
+            },
+          },
+        },
+        totalTypes: { type: 'number' },
+      },
+    },
+  })
+  async getProductTypesByCategories(
+    @Query('categoryNames') categoryNames: string,
+  ) {
+    if (!categoryNames) {
+      throw new BadRequestException('categoryNames parameter is required');
+    }
+
+    const categoryNamesList = categoryNames
+      .split(',')
+      .map((name) => name.trim())
+      .filter((name) => name.length > 0);
+
+    if (categoryNamesList.length === 0) {
+      throw new BadRequestException(
+        'At least one valid category name is required',
+      );
+    }
+
+    return this.productService.getProductTypesByCategories(categoryNamesList);
   }
 
   @Get('search/target-categories')
