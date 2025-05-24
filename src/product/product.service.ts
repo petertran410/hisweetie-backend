@@ -1612,7 +1612,7 @@ export class ProductService {
     };
   }
 
-  // Add method to get product types for specific categories
+  // Add method to get product types for specific categories - FIXED VERSION
   async getProductTypesByCategories(categoryNames: string[]): Promise<{
     types: Array<{
       type: string;
@@ -1643,10 +1643,13 @@ export class ProductService {
     }
 
     const categoryIds = categories.map((cat) => cat.id);
-    const categoryMap = categories.reduce((acc, cat) => {
-      acc[cat.id.toString()] = cat.name;
-      return acc;
-    }, {});
+    const categoryMap = categories.reduce(
+      (acc, cat) => {
+        acc[cat.id.toString()] = cat.name || 'Unknown Category'; // Handle null category names
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
 
     // Get products with their types for these categories
     const products = await this.prisma.product.findMany({
@@ -1674,7 +1677,7 @@ export class ProductService {
       },
     });
 
-    // Count types by category
+    // Count types by category - FIXED VERSION
     const typeCountMap = new Map<
       string,
       { count: number; categoryName: string }
@@ -1687,7 +1690,9 @@ export class ProductService {
         if (
           categoryIds.some((id) => id.toString() === pc.category.id.toString())
         ) {
-          const key = `${productType}|${pc.category.name}`;
+          // FIX: Handle null category names
+          const categoryName = pc.category.name || 'Unknown Category';
+          const key = `${productType}|${categoryName}`;
           const existing = typeCountMap.get(key);
 
           if (existing) {
@@ -1695,7 +1700,7 @@ export class ProductService {
           } else {
             typeCountMap.set(key, {
               count: 1,
-              categoryName: pc.category.name,
+              categoryName: categoryName, // FIX: Use the null-safe categoryName
             });
           }
         }
