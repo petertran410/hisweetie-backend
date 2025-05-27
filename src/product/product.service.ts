@@ -1231,4 +1231,106 @@ export class ProductService {
       };
     });
   }
+
+  async getProductsBySpecificCategories(params: {
+    pageSize: number;
+    pageNumber: number;
+    title?: string;
+    categoryIds: bigint[];
+    allowedTypes: string[];
+  }) {
+    const { pageSize, pageNumber, title, categoryIds, allowedTypes } = params;
+
+    // First, get all product IDs that belong to the specified categories
+    const productCategoryRelations =
+      await this.prisma.product_categories.findMany({
+        where: {
+          categories_id: {
+            in: categoryIds,
+          },
+        },
+        select: {
+          product_id: true,
+        },
+      });
+
+    const productIds = productCategoryRelations.map((rel) => rel.product_id);
+
+    if (productIds.length === 0) {
+      return {
+        content: [],
+        totalElements: 0,
+        pageable: {
+          pageNumber,
+          pageSize,
+        },
+      };
+    }
+
+    // Build where clause for products
+    const where: any = {
+      id: {
+        in: productIds,
+      },
+      type: {
+        in: allowedTypes,
+      },
+    };
+
+    if (title) {
+      where.title = { contains: title };
+    }
+
+    const totalElements = await this.prisma.product.count({ where });
+
+    const products = await this.prisma.product.findMany({
+      where,
+      skip: pageNumber * pageSize,
+      take: pageSize,
+      orderBy: { created_date: 'desc' },
+      include: {
+        product_categories: {
+          include: {
+            category: true,
+          },
+        },
+      },
+    });
+
+    const content = products.map((product) => {
+      let imagesUrl = [];
+      try {
+        imagesUrl = product.images_url ? JSON.parse(product.images_url) : [];
+      } catch (error) {
+        console.log(
+          `Failed to parse images_url for product ${product.id}:`,
+          error,
+        );
+      }
+
+      return {
+        ...product,
+        id: product.id.toString(),
+        price: product.price ? Number(product.price) : null,
+        quantity: product.quantity ? Number(product.quantity) : null,
+        imagesUrl,
+        isFeatured: product.is_featured,
+        generalDescription: product.general_description || '',
+        featuredThumbnail: product.featured_thumbnail,
+        ofCategories: product.product_categories.map((pc) => ({
+          id: pc.categories_id.toString(),
+          name: pc.category?.name || '',
+        })),
+      };
+    });
+
+    return {
+      content,
+      totalElements,
+      pageable: {
+        pageNumber,
+        pageSize,
+      },
+    };
+  }
 }

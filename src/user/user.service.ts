@@ -67,30 +67,6 @@ export class UserService {
     }));
   }
 
-  async findName(uName: string) {
-    const users = await this.prisma.user.findMany({
-      where: {
-        full_name: {
-          contains: uName,
-        },
-      },
-      include: {
-        authority: true,
-      },
-    });
-
-    return users.map((user) => ({
-      id: user.id,
-      fullName: user.full_name,
-      email: user.email,
-      phone: user.phone,
-      address: user.address,
-      avatarUrl: user.ava_url,
-      active: user.is_active,
-      authorities: user.authority.map((auth) => ({ role: auth.role })),
-    }));
-  }
-
   async create(createUserDto: CreateUserDto) {
     const { fullName, email, phone, password, address, avatarUrl, isActive } =
       createUserDto;

@@ -38,55 +38,6 @@ export class NewsController {
     });
   }
 
-  // Client endpoints
-  @Get('client/get-all')
-  @ApiOperation({ summary: 'Get paginated news for client (public view)' })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns paginated news list for public viewing',
-  })
-  @UsePipes(new ValidationPipe({ transform: true }))
-  findAllForClient(@Query() searchDto: ClientNewsSearchDto) {
-    return this.newsService.findAllForClient(searchDto);
-  }
-
-  @Get('client/featured')
-  @ApiOperation({ summary: 'Get featured news articles' })
-  @ApiResponse({ status: 200, description: 'Returns featured news articles' })
-  getFeaturedNews(
-    @Query('limit') limit: string = '5',
-    @Query('type') type?: string,
-  ) {
-    return this.newsService.getFeaturedNews(parseInt(limit), type);
-  }
-
-  @Get('client/related/:id')
-  @ApiOperation({ summary: 'Get related news articles' })
-  @ApiParam({ name: 'id', description: 'News article ID' })
-  @ApiResponse({ status: 200, description: 'Returns related news articles' })
-  getRelatedNews(@Param('id') id: string, @Query('limit') limit: string = '4') {
-    return this.newsService.getRelatedNews(+id, parseInt(limit));
-  }
-
-  @Get('client/:id')
-  @ApiOperation({ summary: 'Get news article details for client' })
-  @ApiParam({ name: 'id', description: 'News article ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns news article details for public viewing',
-  })
-  findOneForClient(@Param('id') id: string) {
-    return this.newsService.findOneForClient(+id);
-  }
-
-  @Post('client/increment-view/:id')
-  @ApiOperation({ summary: 'Increment view count for a news article' })
-  @ApiParam({ name: 'id', description: 'News article ID' })
-  @HttpCode(200)
-  incrementViewCount(@Param('id') id: string) {
-    return this.newsService.incrementViewCount(+id);
-  }
-
   // Other admin endpoints
   @Post()
   create(@Body() createNewsDto: CreateNewsDto) {

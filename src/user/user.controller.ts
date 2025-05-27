@@ -56,13 +56,6 @@ export class UserController {
     return this.userService.create(createUserDto);
   }
 
-  @Get('search/:uName')
-  @ApiOperation({ summary: 'Search users by name' })
-  @ApiParam({ name: 'uName', description: 'Name to search for' })
-  findName(@Param('uName') uName: string) {
-    return this.userService.findName(uName);
-  }
-
   @Get(':id')
   @ApiOperation({ summary: 'Get user by ID' })
   @ApiParam({ name: 'id', description: 'User ID' })

@@ -14,12 +14,14 @@ import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { OrderSearchDto } from './dto/order-search.dto';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { PrismaClient } from '@prisma/client';
 
-@ApiTags('products')
+@ApiTags('product')
 @Controller('product')
 export class ProductController {
   private readonly logger = new Logger(ProductController.name);
+  prisma = new PrismaClient();
 
   constructor(private readonly productService: ProductService) {}
 
@@ -295,8 +297,195 @@ export class ProductController {
     return this.productService.remove(+id);
   }
 
-  @Get('cache-list-products')
-  async getProductsByIds(@Query('productIds') productIds: string) {
-    return this.productService.getProductsByIds(productIds);
+  @Get('by-categories')
+  @ApiOperation({
+    summary:
+      'Get products from specific categories (Trà Phượng Hoàng and Lermao) with type filtering',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Returns paginated products from specified categories and types',
+  })
+  async getProductsByCategories(
+    @Query('pageSize') pageSize: string = '10',
+    @Query('pageNumber') pageNumber: string = '0',
+    @Query('title') title?: string,
+  ) {
+    try {
+      return await this.productService.getProductsBySpecificCategories({
+        pageSize: parseInt(pageSize),
+        pageNumber: parseInt(pageNumber),
+        title,
+        categoryIds: [],
+        allowedTypes: [],
+      });
+    } catch (error) {
+      this.logger.error('Failed to get products by categories:', error.message);
+      throw new BadRequestException(`Failed to get products: ${error.message}`);
+    }
+  }
+
+  // 2. Update src/product/product.service.ts
+  // Add this method to the ProductService class
+  async getProductsBySpecificCategories(params: {
+    pageSize: number;
+    pageNumber: number;
+    title?: string;
+  }) {
+    const { pageSize, pageNumber, title } = params;
+
+    // Category IDs for "Trà Phượng Hoàng" and "Lermao" from your database
+    const categoryIds = [
+      BigInt(1), // Trà phượng hoàng
+      BigInt(2), // Gấu Lermao
+      BigInt(2205374), // Trà Phượng Hoàng
+      BigInt(2205381), // Lermao
+    ];
+
+    // Allowed product types
+    const allowedTypes = [
+      'Bột',
+      'hàng sãn xuất',
+      'Mứt Sốt',
+      'Siro',
+      'Topping',
+      'Khác (Lermao)',
+      'Khác (Trà Phượng Hoàng)',
+      'Gói', // Add this based on your product.txt data
+      'Chai', // Add this based on your product.txt data
+      'Cái', // Add this based on your product.txt data
+      'Hộp', // Add this based on your product.txt data
+      'Túi', // Add this based on your product.txt data
+      'piece', // Add this based on your product.txt data
+    ];
+
+    try {
+      // First, get all product IDs that belong to the specified categories
+      const productCategoryRelations =
+        await this.prisma.product_categories.findMany({
+          where: {
+            categories_id: {
+              in: categoryIds,
+            },
+          },
+          select: {
+            product_id: true,
+          },
+        });
+
+      const productIds = [
+        ...new Set(productCategoryRelations.map((rel) => rel.product_id)),
+      ];
+
+      if (productIds.length === 0) {
+        this.logger.log('No products found for specified categories');
+        return {
+          content: [],
+          totalElements: 0,
+          pageable: {
+            pageNumber,
+            pageSize,
+          },
+        };
+      }
+
+      // Build where clause for products
+      const where: any = {
+        id: {
+          in: productIds,
+        },
+      };
+
+      // Only filter by type if the product type is in our allowed list
+      // This prevents filtering out products with different type values
+      const whereWithType: any = {
+        ...where,
+        type: {
+          in: allowedTypes,
+        },
+      };
+
+      if (title) {
+        where.title = { contains: title };
+        whereWithType.title = { contains: title };
+      }
+
+      // Try to get count with type filter first
+      let totalElements = await this.prisma.product.count({
+        where: whereWithType,
+      });
+      let useTypeFilter = true;
+
+      // If no products found with type filter, try without it
+      if (totalElements === 0) {
+        totalElements = await this.prisma.product.count({ where });
+        useTypeFilter = false;
+        this.logger.log(
+          'No products found with type filter, showing all products from categories',
+        );
+      }
+
+      const products = await this.prisma.product.findMany({
+        where: useTypeFilter ? whereWithType : where,
+        skip: pageNumber * pageSize,
+        take: pageSize,
+        orderBy: { created_date: 'desc' },
+        include: {
+          product_categories: {
+            include: {
+              category: true,
+            },
+          },
+        },
+      });
+
+      const content = products.map((product) => {
+        let imagesUrl = [];
+        try {
+          imagesUrl = product.images_url ? JSON.parse(product.images_url) : [];
+        } catch (error) {
+          this.logger.warn(
+            `Failed to parse images_url for product ${product.id}:`,
+            error,
+          );
+        }
+
+        return {
+          id: product.id.toString(),
+          title: product.title,
+          price: product.price ? Number(product.price) : null,
+          quantity: product.quantity ? Number(product.quantity) : null,
+          description: product.description,
+          imagesUrl,
+          generalDescription: product.general_description || '',
+          instruction: product.instruction || '',
+          isFeatured: product.is_featured || false,
+          featuredThumbnail: product.featured_thumbnail,
+          recipeThumbnail: product.recipe_thumbnail,
+          type: product.type,
+          createdDate: product.created_date,
+          updatedDate: product.updated_date,
+          ofCategories: product.product_categories.map((pc) => ({
+            id: pc.categories_id.toString(),
+            name: pc.category?.name || '',
+          })),
+        };
+      });
+
+      this.logger.log(`Found ${totalElements} products for categories`);
+
+      return {
+        content,
+        totalElements,
+        pageable: {
+          pageNumber,
+          pageSize,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error in getProductsBySpecificCategories:', error);
+      throw error;
+    }
   }
 }
