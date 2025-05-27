@@ -60,9 +60,6 @@ export class ProductService {
 
   constructor(private readonly kiotVietService: KiotVietService) {}
 
-  /**
-   * Safe BigInt conversion with extensive validation and logging
-   */
   private safeBigIntConversion(
     value: any,
     fieldName: string,
@@ -108,9 +105,6 @@ export class ProductService {
     }
   }
 
-  /**
-   * Safe JSON stringify with error handling
-   */
   private safeJsonStringify(
     data: any,
     fieldName: string,
@@ -140,9 +134,6 @@ export class ProductService {
     }
   }
 
-  /**
-   * Map KiotViet product to local database structure
-   */
   private mapKiotVietProductToLocal(kiotVietProduct: KiotVietProduct): any {
     const productId = kiotVietProduct.id;
 
@@ -733,16 +724,10 @@ export class ProductService {
     }
   }
 
-  /**
-   * Update the last sync timestamp
-   */
   private async updateLastSyncTimestamp(): Promise<void> {
     this.logger.log(`Last sync completed at: ${new Date().toISOString()}`);
   }
 
-  /**
-   * Clean database and sync only specific categories
-   */
   async cleanAndSyncCategories(categoryNames: string[]): Promise<
     SyncResult & {
       cleanupInfo: {
@@ -845,9 +830,6 @@ export class ProductService {
       throw new BadRequestException(`Clean and sync failed: ${error.message}`);
     }
   }
-
-  // Include all your existing methods here (search, findById, create, update, remove, etc.)
-  // ... (keeping all existing methods unchanged)
 
   async search(params: {
     pageSize: number;
