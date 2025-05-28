@@ -243,10 +243,12 @@ export class ProductController {
     }
   }
 
-  // FIXED: Enhanced hierarchical product search
-  // src/product/product.controller.ts - FIXED getProductsByHierarchicalCategories method
-
   @Get('by-hierarchical-categories')
+  @ApiOperation({
+    summary: 'Get products from hierarchical categories',
+    description:
+      'Returns products from Lermao and Trà Phượng Hoàng categories including all child categories',
+  })
   @UsePipes(new ValidationPipe({ transform: true }))
   async getProductsByHierarchicalCategories(
     @Query() searchDto: HierarchicalProductSearchDto,
@@ -263,12 +265,16 @@ export class ProductController {
         }
       }
 
-      // FIXED: Pass the parentCategoryIds to the service method
+      this.logger.log(
+        `Fetching products for parent categories: ${parentCategoryIds.join(', ')}`,
+      );
+
+      // FIXED: Pass parentCategoryIds to the service method
       const result = await this.productService.getProductsBySpecificCategories({
         pageSize: searchDto.pageSize || 10,
         pageNumber: searchDto.pageNumber || 0,
         title: searchDto.title,
-        parentCategoryIds: parentCategoryIds, // <-- This was missing!
+        parentCategoryIds: parentCategoryIds, // This was the missing piece!
       });
 
       return {
@@ -497,5 +503,287 @@ export class ProductController {
       pageNumber: parseInt(pageNumber),
       title,
     });
+  }
+
+  @Get('debug/database-info')
+  @ApiOperation({
+    summary: 'Debug: Get database information',
+    description:
+      'Returns information about products and categories in the database for debugging',
+  })
+  async getDatabaseInfo() {
+    try {
+      // Get total counts
+      const totalProducts = await this.prisma.product.count();
+      const totalCategories = await this.prisma.category.count();
+      const totalProductCategories =
+        await this.prisma.product_categories.count();
+
+      // Get sample products with their types
+      const sampleProducts = await this.prisma.product.findMany({
+        take: 10,
+        select: {
+          id: true,
+          title: true,
+          type: true,
+          created_date: true,
+        },
+        orderBy: { created_date: 'desc' },
+      });
+
+      // Get unique product types
+      const productTypes = await this.prisma.product.findMany({
+        select: { type: true },
+        distinct: ['type'],
+      });
+
+      // Get sample categories
+      const sampleCategories = await this.prisma.category.findMany({
+        take: 10,
+        select: {
+          id: true,
+          name: true,
+        },
+      });
+
+      // Get products with category relationships
+      const productsWithCategories = await this.prisma.product.findMany({
+        take: 5,
+        include: {
+          product_categories: {
+            include: {
+              category: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      return {
+        counts: {
+          totalProducts,
+          totalCategories,
+          totalProductCategories,
+        },
+        productTypes: productTypes.map((p) => p.type).filter(Boolean),
+        sampleProducts: sampleProducts.map((p) => ({
+          id: p.id.toString(),
+          title: p.title,
+          type: p.type,
+          createdDate: p.created_date,
+        })),
+        sampleCategories: sampleCategories.map((c) => ({
+          id: c.id.toString(),
+          name: c.name,
+        })),
+        productsWithCategories: productsWithCategories.map((p) => ({
+          id: p.id.toString(),
+          title: p.title,
+          type: p.type,
+          categories: p.product_categories.map((pc) => ({
+            id: pc.categories_id.toString(),
+            name: pc.category?.name || 'Unknown',
+          })),
+        })),
+      };
+    } catch (error) {
+      this.logger.error('Error getting database info:', error.message);
+      throw new BadRequestException(
+        `Failed to get database info: ${error.message}`,
+      );
+    }
+  }
+
+  @Get('debug/test-search')
+  @ApiOperation({
+    summary: 'Debug: Test product search',
+    description:
+      'Test different search parameters to debug the product listing issue',
+  })
+  async testProductSearch(
+    @Query('pageSize') pageSize: string = '10',
+    @Query('pageNumber') pageNumber: string = '0',
+    @Query('title') title?: string,
+    @Query('type') type?: string,
+  ) {
+    try {
+      this.logger.log(
+        `Testing search with params: pageSize=${pageSize}, pageNumber=${pageNumber}, title=${title}, type=${type}`,
+      );
+
+      const result = await this.productService.search({
+        pageSize: parseInt(pageSize),
+        pageNumber: parseInt(pageNumber),
+        title,
+        type,
+      });
+
+      return {
+        searchParams: {
+          pageSize: parseInt(pageSize),
+          pageNumber: parseInt(pageNumber),
+          title,
+          type,
+        },
+        result,
+        message: `Found ${result.totalElements} products`,
+      };
+    } catch (error) {
+      this.logger.error('Error in test search:', error.message);
+      return {
+        error: error.message,
+        searchParams: {
+          pageSize: parseInt(pageSize),
+          pageNumber: parseInt(pageNumber),
+          title,
+          type,
+        },
+      };
+    }
+  }
+
+  @Get('debug/test-hierarchical')
+  @ApiOperation({
+    summary: 'Debug: Test hierarchical product search',
+    description: 'Test the hierarchical category search that should be working',
+  })
+  async testHierarchicalSearch(
+    @Query('pageSize') pageSize: string = '10',
+    @Query('pageNumber') pageNumber: string = '0',
+    @Query('title') title?: string,
+  ) {
+    try {
+      this.logger.log(
+        `Testing hierarchical search with params: pageSize=${pageSize}, pageNumber=${pageNumber}, title=${title}`,
+      );
+
+      const result = await this.productService.getProductsBySpecificCategories({
+        pageSize: parseInt(pageSize),
+        pageNumber: parseInt(pageNumber),
+        title,
+      });
+
+      return {
+        searchParams: {
+          pageSize: parseInt(pageSize),
+          pageNumber: parseInt(pageNumber),
+          title,
+        },
+        result,
+        message: `Found ${result.totalElements} products`,
+      };
+    } catch (error) {
+      this.logger.error('Error in test hierarchical search:', error.message);
+      return {
+        error: error.message,
+        searchParams: {
+          pageSize: parseInt(pageSize),
+          pageNumber: parseInt(pageNumber),
+          title,
+        },
+      };
+    }
+  }
+
+  @Get('debug/category-mapping')
+  @ApiOperation({
+    summary: 'Debug: Check category mapping',
+    description:
+      'Debug endpoint to check how categories are mapped and what products exist',
+  })
+  @ApiQuery({
+    name: 'parentCategoryIds',
+    required: false,
+    description: 'Comma-separated parent category IDs',
+  })
+  async debugCategoryMapping(
+    @Query('parentCategoryIds') parentCategoryIds?: string,
+  ) {
+    try {
+      const targetIds = parentCategoryIds
+        ? KiotVietUtils.parseCategoryIds(parentCategoryIds)
+        : [2205381, 2205374];
+
+      this.logger.log(
+        `Debug: Checking category mapping for IDs: ${targetIds.join(', ')}`,
+      );
+
+      // Get descendant category IDs
+      const allDescendantIds =
+        await this.productService['kiotVietService'].findDescendantCategoryIds(
+          targetIds,
+        );
+
+      // Check products in these categories
+      const categoryIdsBigInt = allDescendantIds.map((id) => BigInt(id));
+      const productCategoryRelations =
+        await this.prisma.product_categories.findMany({
+          where: {
+            categories_id: {
+              in: categoryIdsBigInt,
+            },
+          },
+          include: {
+            category: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            product: {
+              select: {
+                id: true,
+                title: true,
+                type: true,
+              },
+            },
+          },
+          take: 20, // Limit for debugging
+        });
+
+      // Group by category
+      const categoryGroups = {};
+      productCategoryRelations.forEach((rel) => {
+        const catId = rel.categories_id.toString();
+        const catName = rel.category?.name || 'Unknown';
+
+        if (!categoryGroups[catId]) {
+          categoryGroups[catId] = {
+            categoryId: catId,
+            categoryName: catName,
+            products: [],
+          };
+        }
+
+        if (rel.product) {
+          categoryGroups[catId].products.push({
+            id: rel.product.id.toString(),
+            title: rel.product.title,
+            type: rel.product.type,
+          });
+        }
+      });
+
+      return {
+        requestedParentIds: targetIds,
+        allDescendantIds,
+        totalDescendantCategories: allDescendantIds.length,
+        totalProductRelations: productCategoryRelations.length,
+        categoryGroups: Object.values(categoryGroups),
+        summary: {
+          parentCategories: targetIds.length,
+          descendantCategories: allDescendantIds.length,
+          categoriesWithProducts: Object.keys(categoryGroups).length,
+          totalProductsFound: productCategoryRelations.length,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Debug category mapping failed:', error.message);
+      throw new BadRequestException(`Debug failed: ${error.message}`);
+    }
   }
 }

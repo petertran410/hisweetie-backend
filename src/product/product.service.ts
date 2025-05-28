@@ -1180,13 +1180,15 @@ export class ProductService {
   }) {
     const { pageSize, pageNumber, title, type } = params;
 
-    const where = {};
+    const where: any = {};
     if (title) {
-      where['title'] = { contains: title };
+      where.title = { contains: title, mode: 'insensitive' };
     }
-    if (type) {
-      where['type'] = type;
+    // Only filter by type if it's provided and not empty
+    if (type && type.trim() !== '') {
+      where.type = type;
     }
+
     const totalElements = await this.prisma.product.count({ where });
 
     const products = await this.prisma.product.findMany({
@@ -1680,7 +1682,7 @@ export class ProductService {
     pageSize: number;
     pageNumber: number;
     title?: string;
-    parentCategoryIds?: number[]; // <-- Added this parameter
+    parentCategoryIds?: number[];
   }) {
     const { pageSize, pageNumber, title, parentCategoryIds } = params;
 
@@ -1713,28 +1715,12 @@ export class ProductService {
           },
           select: {
             product_id: true,
-            categories_id: true, // <-- Added this for debugging
+            categories_id: true,
           },
         });
 
-      // Debug: Log the category relations found
       this.logger.log(
         `Found ${productCategoryRelations.length} product-category relationships`,
-      );
-
-      // Debug: Show distribution of products per category
-      const categoryDistribution = productCategoryRelations.reduce(
-        (acc, rel) => {
-          const catId = rel.categories_id.toString();
-          acc[catId] = (acc[catId] || 0) + 1;
-          return acc;
-        },
-        {} as Record<string, number>,
-      );
-
-      this.logger.log(
-        'Product distribution by category:',
-        categoryDistribution,
       );
 
       const productIds = [
@@ -1760,7 +1746,7 @@ export class ProductService {
         };
       }
 
-      // Build where clause for products
+      // Build where clause for products - REMOVED TYPE FILTER
       const where: any = {
         id: {
           in: productIds,
@@ -1768,7 +1754,7 @@ export class ProductService {
       };
 
       if (title) {
-        where.title = { contains: title };
+        where.title = { contains: title, mode: 'insensitive' };
       }
 
       const totalElements = await this.prisma.product.count({ where });
@@ -1838,7 +1824,6 @@ export class ProductService {
           allCategoryIds,
           totalCategoriesSearched: allCategoryIds.length,
           productsFoundInCategories: productIds.length,
-          categoryDistribution, // <-- Added for debugging
         },
       };
     } catch (error) {
