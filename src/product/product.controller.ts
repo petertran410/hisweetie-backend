@@ -19,9 +19,16 @@ import {
   KiotVietSyncDto,
   HierarchicalProductSearchDto,
 } from './dto/kiotviet-sync.dto';
-import { ApiOperation, ApiResponse, ApiTags, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  ApiQuery,
+  ApiParam,
+} from '@nestjs/swagger';
 import { PrismaClient } from '@prisma/client';
 import { KiotVietUtils } from '../common/utils/kiotviet.utils';
+import { OrderSearchDto } from './dto/order-search.dto';
 
 @ApiTags('product')
 @Controller('product')
@@ -30,6 +37,63 @@ export class ProductController {
   prisma = new PrismaClient();
 
   constructor(private readonly productService: ProductService) {}
+
+  @Get('order/admin-search')
+  @ApiOperation({
+    summary: 'Search orders for admin with pagination and filters',
+    description:
+      'Returns paginated orders with various filter options for admin dashboard',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns paginated order list with filters applied',
+  })
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async searchOrders(@Query() searchDto: OrderSearchDto) {
+    try {
+      this.logger.log('Searching orders with filters:', searchDto);
+
+      const result = await this.productService.searchOrders(searchDto);
+
+      this.logger.log(`Found ${result.totalElements} orders matching criteria`);
+      return result;
+    } catch (error) {
+      this.logger.error('Failed to search orders:', error.message);
+      throw new BadRequestException(
+        `Failed to search orders: ${error.message}`,
+      );
+    }
+  }
+
+  @Patch('order/:id/status/:status')
+  @ApiOperation({
+    summary: 'Change order status',
+    description: 'Updates the status of a specific order',
+  })
+  @ApiParam({ name: 'id', description: 'Order ID' })
+  @ApiParam({ name: 'status', description: 'New status for the order' })
+  @ApiResponse({
+    status: 200,
+    description: 'Order status updated successfully',
+  })
+  async changeOrderStatus(
+    @Param('id') id: string,
+    @Param('status') status: string,
+  ) {
+    try {
+      this.logger.log(`Changing order ${id} status to: ${status}`);
+
+      const result = await this.productService.changeOrderStatus(id, status);
+
+      this.logger.log(`Successfully updated order ${id} status to ${status}`);
+      return result;
+    } catch (error) {
+      this.logger.error(`Failed to change order ${id} status:`, error.message);
+      throw new BadRequestException(
+        `Failed to change order status: ${error.message}`,
+      );
+    }
+  }
 
   // FIXED: Enhanced sync endpoint with validation
   @Post('sync/full')
@@ -180,18 +244,16 @@ export class ProductController {
   }
 
   // FIXED: Enhanced hierarchical product search
+  // src/product/product.controller.ts - FIXED getProductsByHierarchicalCategories method
+
   @Get('by-hierarchical-categories')
-  @ApiOperation({
-    summary: 'Get products from hierarchical categories',
-    description:
-      'Returns products from Lermao and Trà Phượng Hoàng categories including all child categories',
-  })
   @UsePipes(new ValidationPipe({ transform: true }))
   async getProductsByHierarchicalCategories(
     @Query() searchDto: HierarchicalProductSearchDto,
   ) {
     try {
-      let parentCategoryIds: number[] = [2205381, 2205374];
+      let parentCategoryIds: number[] = [2205381, 2205374]; // Default: Lermao and Trà Phượng Hoàng
+
       if (searchDto.parentCategoryIds) {
         parentCategoryIds = KiotVietUtils.parseCategoryIds(
           searchDto.parentCategoryIds,
@@ -201,10 +263,12 @@ export class ProductController {
         }
       }
 
+      // FIXED: Pass the parentCategoryIds to the service method
       const result = await this.productService.getProductsBySpecificCategories({
         pageSize: searchDto.pageSize || 10,
         pageNumber: searchDto.pageNumber || 0,
         title: searchDto.title,
+        parentCategoryIds: parentCategoryIds, // <-- This was missing!
       });
 
       return {
@@ -214,7 +278,7 @@ export class ProductController {
           pageNumber: searchDto.pageNumber || 0,
           title: searchDto.title,
           includeChildren: searchDto.includeChildren !== false,
-          targetParentIds: parentCategoryIds || [2205381, 2205374],
+          targetParentIds: parentCategoryIds,
         },
       };
     } catch (error) {
@@ -367,7 +431,7 @@ export class ProductController {
         message: configMessage,
         targetCategories: {
           lermao: 2205381,
-          traPhongHoang: 2205374,
+          traPhuongngHoang: 2205374,
         },
       };
     } catch (error) {

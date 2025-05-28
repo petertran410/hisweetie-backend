@@ -1422,107 +1422,210 @@ export class ProductService {
       id,
     } = params;
 
-    const where: any = {};
+    try {
+      this.logger.log('Searching orders with params:', params);
 
-    if (id) {
-      where.id = BigInt(id);
-    }
-    if (type) {
-      where.type = type;
-    }
-    if (receiverFullName) {
-      where.receiver_full_name = {
-        contains: receiverFullName,
-      };
-    }
-    if (email) {
-      where.email = {
-        contains: email,
-      };
-    }
-    if (phoneNumber) {
-      where.phone_number = {
-        contains: phoneNumber,
-      };
-    }
-    if (status) {
-      where.status = status;
-    }
+      const where: any = {};
 
-    const totalElements = await this.prisma.product_order.count({
-      where,
-    });
+      // Build where conditions based on provided filters
+      if (id) {
+        where.id = BigInt(id);
+      }
+      if (type) {
+        where.type = type;
+      }
+      if (receiverFullName) {
+        where.receiver_full_name = {
+          contains: receiverFullName,
+          mode: 'insensitive', // Case insensitive search
+        };
+      }
+      if (email) {
+        where.email = {
+          contains: email,
+          mode: 'insensitive',
+        };
+      }
+      if (phoneNumber) {
+        where.phone_number = {
+          contains: phoneNumber,
+        };
+      }
+      if (status) {
+        where.status = status;
+      }
 
-    const orders = await this.prisma.product_order.findMany({
-      where,
-      include: {
-        orders: {
-          include: {
-            product: true,
+      this.logger.debug('Order search where conditions:', where);
+
+      // Get total count for pagination
+      const totalElements = await this.prisma.product_order.count({
+        where,
+      });
+
+      this.logger.log(`Found ${totalElements} orders matching criteria`);
+
+      // Get orders with relationships
+      const orders = await this.prisma.product_order.findMany({
+        where,
+        include: {
+          orders: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  title: true,
+                  price: true,
+                  images_url: true,
+                },
+              },
+            },
           },
         },
-      },
-      skip: Number(pageNumber) * Number(pageSize),
-      take: Number(pageSize),
-      orderBy: { created_date: 'desc' },
-    });
+        skip: Number(pageNumber) * Number(pageSize),
+        take: Number(pageSize),
+        orderBy: { created_date: 'desc' },
+      });
 
-    const content = orders.map((order) => ({
-      id: order.id.toString(),
-      createdDate: order.created_date ? order.created_date.toISOString() : null,
-      updatedDate: order.updated_date ? order.updated_date.toISOString() : null,
-      addressDetail: order.address_detail,
-      email: order.email,
-      note: order.note,
-      phoneNumber: order.phone_number,
-      price: order.price ? Number(order.price) : null,
-      quantity: order.quantity,
-      receiverFullName: order.receiver_full_name,
-      status: order.status,
-      type: order.type,
-      orders: order.orders.map((item) => ({
-        id: item.id.toString(),
-        quantity: item.quantity,
-        product: item.product
-          ? {
-              id: item.product.id.toString(),
-              title: item.product.title,
-              price: item.product.price ? Number(item.product.price) : null,
-            }
-          : null,
-      })),
-    }));
+      // Format the response to match frontend expectations
+      const content = orders.map((order) => {
+        try {
+          return {
+            id: order.id.toString(),
+            createdDate: order.created_date
+              ? order.created_date.toISOString()
+              : null,
+            updatedDate: order.updated_date
+              ? order.updated_date.toISOString()
+              : null,
+            addressDetail: order.address_detail,
+            email: order.email,
+            note: order.note,
+            phoneNumber: order.phone_number,
+            price: order.price ? Number(order.price) : null,
+            quantity: order.quantity,
+            receiverFullName: order.receiver_full_name,
+            status: order.status,
+            type: order.type,
+            orders:
+              order.orders?.map((item) => ({
+                id: item.id.toString(),
+                quantity: item.quantity,
+                product: item.product
+                  ? {
+                      id: item.product.id.toString(),
+                      title: item.product.title,
+                      price: item.product.price
+                        ? Number(item.product.price)
+                        : null,
+                      // Parse images if available
+                      imagesUrl: (() => {
+                        try {
+                          return item.product.images_url
+                            ? JSON.parse(item.product.images_url)
+                            : [];
+                        } catch (e) {
+                          this.logger.warn(
+                            `Failed to parse images for product ${item.product.id}:`,
+                            e.message,
+                          );
+                          return [];
+                        }
+                      })(),
+                    }
+                  : null,
+              })) || [],
+          };
+        } catch (orderError) {
+          this.logger.error(
+            `Error formatting order ${order.id}:`,
+            orderError.message,
+          );
+          // Return minimal order data if formatting fails
+          return {
+            id: order.id.toString(),
+            createdDate: order.created_date
+              ? order.created_date.toISOString()
+              : null,
+            updatedDate: order.updated_date
+              ? order.updated_date.toISOString()
+              : null,
+            addressDetail: order.address_detail || '',
+            email: order.email || '',
+            note: order.note || '',
+            phoneNumber: order.phone_number || '',
+            price: 0,
+            quantity: order.quantity || 0,
+            receiverFullName: order.receiver_full_name || '',
+            status: order.status || 'NEW',
+            type: order.type || 'CONTACT',
+            orders: [],
+          };
+        }
+      });
 
-    return {
-      content,
-      totalElements,
-      pageable: {
-        pageNumber: Number(pageNumber),
-        pageSize: Number(pageSize),
-      },
-    };
+      this.logger.log(`Successfully formatted ${content.length} orders`);
+
+      return {
+        content,
+        totalElements,
+        pageable: {
+          pageNumber: Number(pageNumber),
+          pageSize: Number(pageSize),
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error in searchOrders:', error.message);
+      this.logger.error('Stack trace:', error.stack);
+
+      // Return empty result instead of throwing to prevent total failure
+      return {
+        content: [],
+        totalElements: 0,
+        pageable: {
+          pageNumber: Number(pageNumber),
+          pageSize: Number(pageSize),
+        },
+        error: error.message,
+      };
+    }
   }
 
   async changeOrderStatus(id: string, status: string) {
-    const orderId = BigInt(id);
+    try {
+      this.logger.log(`Changing order ${id} status to: ${status}`);
 
-    const order = await this.prisma.product_order.findUnique({
-      where: { id: orderId },
-    });
+      const orderId = BigInt(id);
 
-    if (!order) {
-      throw new NotFoundException(`Order with ID ${id} not found`);
+      // Check if order exists
+      const order = await this.prisma.product_order.findUnique({
+        where: { id: orderId },
+      });
+
+      if (!order) {
+        throw new NotFoundException(`Order with ID ${id} not found`);
+      }
+
+      // Update the order status
+      const updatedOrder = await this.prisma.product_order.update({
+        where: { id: orderId },
+        data: {
+          status,
+          updated_date: new Date(),
+        },
+      });
+
+      this.logger.log(`Successfully updated order ${id} status to ${status}`);
+
+      return {
+        message: `Order status updated to ${status}`,
+        orderId: id,
+        newStatus: status,
+        updatedDate: updatedOrder.updated_date,
+      };
+    } catch (error) {
+      this.logger.error(`Error changing order ${id} status:`, error.message);
+      throw error;
     }
-
-    await this.prisma.product_order.update({
-      where: { id: orderId },
-      data: {
-        status,
-        updated_date: new Date(),
-      },
-    });
-
-    return { message: `Order status updated to ${status}` };
   }
 
   async getProductsByIds(productIds: string) {
@@ -1573,175 +1676,21 @@ export class ProductService {
     });
   }
 
-  // async getProductsBySpecificCategories(params: {
-  //   pageSize: number;
-  //   pageNumber: number;
-  //   title?: string;
-  //   categoryIds: bigint[];
-  //   allowedTypes: string[];
-  // }) {
-  //   const { pageSize, pageNumber, title } = params;
-
-  //   // Category IDs for "Trà Phượng Hoàng" and "Lermao" from your database
-  //   const categoryIds = [
-  //     BigInt(1), // Trà phượng hoàng
-  //     BigInt(2), // Gấu Lermao
-  //     BigInt(2205374), // Trà Phượng Hoàng
-  //     BigInt(2205381), // Lermao
-  //   ];
-
-  //   // Allowed product types
-  //   const allowedTypes = [
-  //     'Bột',
-  //     'Mứt Sốt',
-  //     'Siro',
-  //     'Topping',
-  //     'Khác (Lermao)',
-  //     'Khác (Trà Phượng Hoàng)',
-  //     'Gói',
-  //     'Chai',
-  //     'Cái',
-  //     'Hộp',
-  //     'Túi',
-  //     'piece',
-  //   ];
-
-  //   try {
-  //     const productCategoryRelations =
-  //       await this.prisma.product_categories.findMany({
-  //         where: {
-  //           categories_id: {
-  //             in: categoryIds,
-  //           },
-  //         },
-  //         select: {
-  //           product_id: true,
-  //         },
-  //       });
-
-  //     const productIds = [
-  //       ...new Set(productCategoryRelations.map((rel) => rel.product_id)),
-  //     ];
-
-  //     if (productIds.length === 0) {
-  //       this.logger.log('No products found for specified categories');
-  //       return {
-  //         content: [],
-  //         totalElements: 0,
-  //         pageable: {
-  //           pageNumber,
-  //           pageSize,
-  //         },
-  //       };
-  //     }
-
-  //     const where: any = {
-  //       id: {
-  //         in: productIds,
-  //       },
-  //     };
-
-  //     const whereWithType: any = {
-  //       ...where,
-  //       type: {
-  //         in: allowedTypes,
-  //       },
-  //     };
-
-  //     if (title) {
-  //       where.title = { contains: title };
-  //       whereWithType.title = { contains: title };
-  //     }
-
-  //     // Try to get count with type filter first
-  //     let totalElements = await this.prisma.product.count({
-  //       where: whereWithType,
-  //     });
-  //     let useTypeFilter = true;
-
-  //     if (totalElements === 0) {
-  //       totalElements = await this.prisma.product.count({ where });
-  //       useTypeFilter = false;
-  //       this.logger.log(
-  //         'No products found with type filter, showing all products from categories',
-  //       );
-  //     }
-
-  //     const products = await this.prisma.product.findMany({
-  //       where: useTypeFilter ? whereWithType : where,
-  //       skip: pageNumber * pageSize,
-  //       take: pageSize,
-  //       orderBy: { created_date: 'desc' },
-  //       include: {
-  //         product_categories: {
-  //           include: {
-  //             category: true,
-  //           },
-  //         },
-  //       },
-  //     });
-
-  //     const content = products.map((product) => {
-  //       let imagesUrl = [];
-  //       try {
-  //         imagesUrl = product.images_url ? JSON.parse(product.images_url) : [];
-  //       } catch (error) {
-  //         this.logger.warn(
-  //           `Failed to parse images_url for product ${product.id}:`,
-  //           error,
-  //         );
-  //       }
-
-  //       return {
-  //         id: product.id.toString(),
-  //         title: product.title,
-  //         price: product.price ? Number(product.price) : null,
-  //         quantity: product.quantity ? Number(product.quantity) : null,
-  //         description: product.description,
-  //         imagesUrl,
-  //         generalDescription: product.general_description || '',
-  //         instruction: product.instruction || '',
-  //         isFeatured: product.is_featured || false,
-  //         featuredThumbnail: product.featured_thumbnail,
-  //         recipeThumbnail: product.recipe_thumbnail,
-  //         type: product.type,
-  //         createdDate: product.created_date,
-  //         updatedDate: product.updated_date,
-  //         ofCategories: product.product_categories.map((pc) => ({
-  //           id: pc.categories_id.toString(),
-  //           name: pc.category?.name || '',
-  //         })),
-  //       };
-  //     });
-
-  //     return {
-  //       content,
-  //       totalElements,
-  //       pageable: {
-  //         pageNumber,
-  //         pageSize,
-  //       },
-  //     };
-  //   } catch (error) {
-  //     this.logger.error('Error in getProductsBySpecificCategories:', error);
-  //     throw error;
-  //   }
-  // }
-
   async getProductsBySpecificCategories(params: {
     pageSize: number;
     pageNumber: number;
     title?: string;
+    parentCategoryIds?: number[]; // <-- Added this parameter
   }) {
-    const { pageSize, pageNumber, title } = params;
+    const { pageSize, pageNumber, title, parentCategoryIds } = params;
 
     try {
-      this.logger.log(
-        'Fetching products from Lermao and Trà Phượng Hoàng categories including all children',
-      );
+      // Use provided parentCategoryIds or default to Lermao and Trà Phượng Hoàng
+      const targetParentIds = parentCategoryIds || [2205381, 2205374];
 
-      // Define the target parent category IDs
-      const targetParentIds = [2205381, 2205374]; // Lermao and Trà Phượng Hoàng
+      this.logger.log(
+        `Fetching products from categories: ${targetParentIds.join(', ')} including all children`,
+      );
 
       // Use KiotViet service to find all descendant category IDs
       const allCategoryIds =
@@ -1764,12 +1713,35 @@ export class ProductService {
           },
           select: {
             product_id: true,
+            categories_id: true, // <-- Added this for debugging
           },
         });
+
+      // Debug: Log the category relations found
+      this.logger.log(
+        `Found ${productCategoryRelations.length} product-category relationships`,
+      );
+
+      // Debug: Show distribution of products per category
+      const categoryDistribution = productCategoryRelations.reduce(
+        (acc, rel) => {
+          const catId = rel.categories_id.toString();
+          acc[catId] = (acc[catId] || 0) + 1;
+          return acc;
+        },
+        {} as Record<string, number>,
+      );
+
+      this.logger.log(
+        'Product distribution by category:',
+        categoryDistribution,
+      );
 
       const productIds = [
         ...new Set(productCategoryRelations.map((rel) => rel.product_id)),
       ];
+
+      this.logger.log(`Unique product IDs found: ${productIds.length}`);
 
       if (productIds.length === 0) {
         this.logger.log('No products found for specified category hierarchy');
@@ -1800,6 +1772,8 @@ export class ProductService {
       }
 
       const totalElements = await this.prisma.product.count({ where });
+
+      this.logger.log(`Total products matching criteria: ${totalElements}`);
 
       const products = await this.prisma.product.findMany({
         where,
@@ -1864,6 +1838,7 @@ export class ProductService {
           allCategoryIds,
           totalCategoriesSearched: allCategoryIds.length,
           productsFoundInCategories: productIds.length,
+          categoryDistribution, // <-- Added for debugging
         },
       };
     } catch (error) {
