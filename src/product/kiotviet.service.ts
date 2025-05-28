@@ -9,6 +9,9 @@ interface KiotVietCategory {
   parentId?: number;
   retailerId: number;
   createdDate: string;
+  hasChild?: boolean;
+  children?: KiotVietCategory[];
+  rank?: number;
 }
 
 interface KiotVietCategoryResponse {
@@ -80,6 +83,8 @@ export class KiotVietService {
 
   private categoriesCache: Map<string, number> = new Map();
   private categoriesCacheExpiry: number = 0;
+  private hierarchicalCategoriesCache: KiotVietCategory[] = [];
+  private hierarchicalCacheExpiry: number = 0;
 
   constructor(private readonly configService: ConfigService) {
     this.axiosInstance = axios.create({
@@ -216,6 +221,9 @@ export class KiotVietService {
     }
   }
 
+  /**
+   * Fetch flat categories (original implementation)
+   */
   async fetchCategories(): Promise<Map<string, number>> {
     const now = Date.now();
     if (this.categoriesCache.size > 0 && now < this.categoriesCacheExpiry) {
@@ -266,6 +274,124 @@ export class KiotVietService {
     }
   }
 
+  async fetchHierarchicalCategories(): Promise<KiotVietCategory[]> {
+    const now = Date.now();
+    if (
+      this.hierarchicalCategoriesCache.length > 0 &&
+      now < this.hierarchicalCacheExpiry
+    ) {
+      return this.hierarchicalCategoriesCache;
+    }
+    await this.checkRateLimit();
+    await this.setupAuthHeaders();
+
+    try {
+      const response: AxiosResponse<KiotVietCategoryResponse> =
+        await this.axiosInstance.get('/categories', {
+          params: {
+            pageSize: 100,
+            currentItem: 0,
+            hierachicalData: true,
+          },
+        });
+
+      this.requestCount++;
+
+      this.hierarchicalCategoriesCache = response.data.data;
+      this.hierarchicalCacheExpiry = now + 3600000;
+
+      const categoriesWithChildren = response.data.data.filter(
+        (cat) => cat.hasChild,
+      );
+      this.logger.log(
+        `Found ${categoriesWithChildren.length} categories with children out of ${response.data.data.length} total`,
+      );
+
+      return this.hierarchicalCategoriesCache;
+    } catch (error) {
+      this.logger.error(
+        'Failed to fetch hierarchical categories:',
+        error.message,
+      );
+      throw new BadRequestException(
+        `Failed to fetch hierarchical categories from KiotViet: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * NEW: Get all category IDs including nested children
+   */
+  private flattenCategoryHierarchy(
+    categories: KiotVietCategory[],
+  ): KiotVietCategory[] {
+    const flatList: KiotVietCategory[] = [];
+
+    const addToFlat = (cat: KiotVietCategory) => {
+      flatList.push({
+        categoryId: cat.categoryId,
+        categoryName: cat.categoryName,
+        parentId: cat.parentId,
+        retailerId: cat.retailerId,
+        createdDate: cat.createdDate,
+        hasChild: cat.hasChild,
+        rank: cat.rank,
+      });
+
+      if (cat.children && cat.children.length > 0) {
+        cat.children.forEach((child) => addToFlat(child));
+      }
+    };
+
+    categories.forEach((category) => addToFlat(category));
+    return flatList;
+  }
+
+  async findDescendantCategoryIds(parentIds: number[]): Promise<number[]> {
+    const hierarchicalCategories = await this.fetchHierarchicalCategories();
+    const allCategories = this.flattenCategoryHierarchy(hierarchicalCategories);
+
+    const descendantIds: number[] = [];
+
+    const findDescendants = (parentId: number) => {
+      const children = allCategories.filter((cat) => cat.parentId === parentId);
+
+      children.forEach((child) => {
+        descendantIds.push(child.categoryId);
+        this.logger.debug(
+          `Found child category: ${child.categoryName} (ID: ${child.categoryId}) under parent ${parentId}`,
+        );
+
+        findDescendants(child.categoryId);
+      });
+    };
+
+    parentIds.forEach((parentId) => {
+      descendantIds.push(parentId);
+      findDescendants(parentId);
+    });
+
+    const uniqueDescendantIds = [...new Set(descendantIds)];
+
+    return uniqueDescendantIds;
+  }
+
+  async getCategoryMappingForSync(): Promise<{
+    flatCategories: KiotVietCategory[];
+    hierarchicalCategories: KiotVietCategory[];
+    totalCount: number;
+  }> {
+    const hierarchicalCategories = await this.fetchHierarchicalCategories();
+    const flatCategories = this.flattenCategoryHierarchy(
+      hierarchicalCategories,
+    );
+    return {
+      flatCategories,
+      hierarchicalCategories,
+      totalCount: flatCategories.length,
+    };
+  }
+
   async getCategoryIds(categoryNames: string[]): Promise<number[]> {
     this.logger.log(`Looking up category IDs for: ${categoryNames.join(', ')}`);
 
@@ -276,9 +402,6 @@ export class KiotVietService {
       const categoryId = categoryMap.get(categoryName);
       if (categoryId) {
         categoryIds.push(categoryId);
-        this.logger.log(
-          `Found category "${categoryName}" with ID: ${categoryId}`,
-        );
       } else {
         this.logger.warn(
           `Category "${categoryName}" not found in KiotViet. Available categories: ${Array.from(
@@ -416,14 +539,13 @@ export class KiotVietService {
     }>;
     filteredCategories?: string[];
   }> {
-    this.logger.log('Starting complete product synchronization from KiotViet');
-
     let categoryIds: number[] | undefined;
     if (categoryNames && categoryNames.length > 0) {
-      this.logger.log(
-        `Filtering products by categories: ${categoryNames.join(', ')}`,
-      );
-      categoryIds = await this.getCategoryIds(categoryNames);
+      const targetParentIds = [2205381, 2205374];
+      const allDescendantIds =
+        await this.findDescendantCategoryIds(targetParentIds);
+
+      categoryIds = allDescendantIds;
     }
 
     const allProducts: KiotVietProduct[] = [];
@@ -436,25 +558,12 @@ export class KiotVietService {
 
     try {
       if (categoryIds && categoryIds.length > 0) {
-        this.logger.log(
-          `Fetching products for ${categoryIds.length} categories`,
-        );
-
         for (let i = 0; i < categoryIds.length; i++) {
           const categoryId = categoryIds[i];
-          const categoryName = categoryNames![i];
-
-          this.logger.log(
-            `Fetching products for category: ${categoryName} (ID: ${categoryId})`,
-          );
 
           const categoryResult = await this.fetchProductsForCategory(
             categoryId,
             lastModifiedFrom,
-          );
-
-          this.logger.log(
-            `Category "${categoryName}": Found ${categoryResult.products.length} products`,
           );
 
           allProducts.push(...categoryResult.products);
@@ -467,10 +576,6 @@ export class KiotVietService {
             });
           });
         }
-
-        this.logger.log(
-          `Total products from all filtered categories: ${allProducts.length}`,
-        );
       } else {
         this.logger.log('Fetching all products (no category filtering)');
         const result =

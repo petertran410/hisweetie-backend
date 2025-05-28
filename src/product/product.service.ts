@@ -313,6 +313,382 @@ export class ProductService {
     }
   }
 
+  private async syncProductCategoryRelationships(
+    productId: bigint,
+    kiotVietCategoryId?: number,
+  ): Promise<void> {
+    try {
+      if (!kiotVietCategoryId) {
+        this.logger.debug(`No category ID provided for product ${productId}`);
+        return;
+      }
+
+      // Check if the category exists in our local database
+      const categoryExists = await this.prisma.category.findUnique({
+        where: { id: BigInt(kiotVietCategoryId) },
+      });
+
+      if (!categoryExists) {
+        this.logger.warn(
+          `Category ${kiotVietCategoryId} not found in local database for product ${productId}`,
+        );
+        return;
+      }
+
+      // Check if relationship already exists
+      const existingRelation = await this.prisma.product_categories.findFirst({
+        where: {
+          product_id: productId,
+          categories_id: BigInt(kiotVietCategoryId),
+        },
+      });
+
+      if (!existingRelation) {
+        // Create the relationship
+        await this.prisma.product_categories.create({
+          data: {
+            product_id: productId,
+            categories_id: BigInt(kiotVietCategoryId),
+          },
+        });
+        this.logger.debug(
+          `Created category relationship: product ${productId} -> category ${kiotVietCategoryId}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to sync category relationship for product ${productId}: ${error.message}`,
+      );
+      // Don't throw error here, just log it so it doesn't break the entire sync
+    }
+  }
+
+  async syncProductsFromKiotVietEnhanced(
+    lastModifiedFrom?: string,
+    categoryNames?: string[],
+  ): Promise<SyncResult> {
+    this.logger.log('Starting enhanced product synchronization from KiotViet');
+
+    if (categoryNames && categoryNames.length > 0) {
+      this.logger.log(
+        `Filtering sync to categories: ${categoryNames.join(', ')}`,
+      );
+    } else {
+      this.logger.log('Syncing all products (no category filtering)');
+    }
+
+    const errors: string[] = [];
+    let totalSynced = 0;
+    let totalDeleted = 0;
+
+    try {
+      // Get current product count before sync
+      const beforeSyncCount = await this.prisma.product.count();
+      this.logger.log(`Current products in database: ${beforeSyncCount}`);
+
+      // Fetch products from KiotViet with optional category filtering
+      this.logger.log('Fetching products from KiotViet...');
+      const fetchResult = await this.kiotVietService.fetchAllProducts(
+        lastModifiedFrom,
+        categoryNames,
+      );
+
+      if (categoryNames) {
+        this.logger.log(
+          `Fetched ${fetchResult.products.length} products from categories: ${categoryNames.join(', ')}`,
+        );
+      } else {
+        this.logger.log(
+          `Fetched ${fetchResult.products.length} products from KiotViet`,
+        );
+      }
+
+      // Validate the fetched data structure
+      if (!Array.isArray(fetchResult.products)) {
+        throw new Error(
+          `Invalid products data structure: expected array, got ${typeof fetchResult.products}`,
+        );
+      }
+
+      // Process the synchronization with improved transaction handling
+      const syncResults = await this.prisma.$transaction(
+        async (transactionClient) => {
+          let newProducts = 0;
+          let updatedProducts = 0;
+
+          // Step 1: Handle deleted products
+          if (fetchResult.deletedIds && fetchResult.deletedIds.length > 0) {
+            this.logger.log(
+              `Processing ${fetchResult.deletedIds.length} deleted products`,
+            );
+
+            try {
+              const validDeletedIds = fetchResult.deletedIds
+                .filter((id) => typeof id === 'number' && !isNaN(id) && id > 0)
+                .map((id) => BigInt(id));
+
+              if (validDeletedIds.length > 0) {
+                // Delete associated records first to avoid foreign key constraints
+                await transactionClient.orders.deleteMany({
+                  where: {
+                    product: {
+                      id: { in: validDeletedIds },
+                    },
+                  },
+                });
+
+                await transactionClient.review.deleteMany({
+                  where: { product_id: { in: validDeletedIds } },
+                });
+
+                await transactionClient.product_categories.deleteMany({
+                  where: { product_id: { in: validDeletedIds } },
+                });
+
+                const deleteResult = await transactionClient.product.deleteMany(
+                  {
+                    where: { id: { in: validDeletedIds } },
+                  },
+                );
+
+                totalDeleted = deleteResult.count;
+                this.logger.log(
+                  `Successfully deleted ${totalDeleted} products from local database`,
+                );
+              }
+            } catch (error) {
+              const errorMsg = `Error deleting products: ${error.message}`;
+              this.logger.error(errorMsg);
+              errors.push(errorMsg);
+            }
+          }
+
+          // Step 2: Process products in smaller batches with improved error handling
+          const batchSize = 20; // Reduced batch size for better stability
+          const totalProducts = fetchResult.products.length;
+          this.logger.log(
+            `Processing ${totalProducts} products in batches of ${batchSize}`,
+          );
+
+          for (let i = 0; i < totalProducts; i += batchSize) {
+            const batch = fetchResult.products.slice(i, i + batchSize);
+            const batchNumber = Math.floor(i / batchSize) + 1;
+            const totalBatches = Math.ceil(totalProducts / batchSize);
+
+            this.logger.log(
+              `Processing batch ${batchNumber}/${totalBatches} (${batch.length} products)`,
+            );
+
+            for (const kiotVietProduct of batch) {
+              try {
+                // Validate essential product fields
+                if (!kiotVietProduct || typeof kiotVietProduct !== 'object') {
+                  errors.push(`Invalid product object`);
+                  continue;
+                }
+
+                if (
+                  !kiotVietProduct.id ||
+                  typeof kiotVietProduct.id !== 'number'
+                ) {
+                  errors.push(
+                    `Invalid or missing product ID: ${kiotVietProduct.id}`,
+                  );
+                  continue;
+                }
+
+                this.logger.debug(
+                  `Processing product ${kiotVietProduct.id} - ${kiotVietProduct.name}`,
+                );
+
+                // Map the product data to your schema structure
+                const productData =
+                  this.mapKiotVietProductToLocal(kiotVietProduct);
+
+                if (!productData || typeof productData !== 'object') {
+                  errors.push(
+                    `Product ${kiotVietProduct.id}: Failed to map product data`,
+                  );
+                  continue;
+                }
+
+                // Check if product exists
+                let existingProduct = null;
+                try {
+                  existingProduct = await transactionClient.product.findUnique({
+                    where: { id: BigInt(kiotVietProduct.id) },
+                  });
+                } catch (findError) {
+                  this.logger.warn(
+                    `Error checking if product ${kiotVietProduct.id} exists: ${findError.message}`,
+                  );
+                }
+
+                if (existingProduct) {
+                  // Update existing product
+                  try {
+                    await transactionClient.product.update({
+                      where: { id: BigInt(kiotVietProduct.id) },
+                      data: {
+                        ...productData,
+                        updated_date: new Date(),
+                      },
+                    });
+                    updatedProducts++;
+                    this.logger.debug(
+                      `Updated product ${kiotVietProduct.id} - ${kiotVietProduct.name}`,
+                    );
+                  } catch (updateError) {
+                    const errorMsg = `Failed to update product ${kiotVietProduct.id}: ${updateError.message}`;
+                    this.logger.error(errorMsg);
+                    errors.push(errorMsg);
+                  }
+                } else {
+                  // Create new product
+                  try {
+                    await transactionClient.product.create({
+                      data: {
+                        id: BigInt(kiotVietProduct.id),
+                        ...productData,
+                        created_date: kiotVietProduct.createdDate
+                          ? new Date(kiotVietProduct.createdDate)
+                          : new Date(),
+                        updated_date: new Date(),
+                      },
+                    });
+                    newProducts++;
+                    this.logger.debug(
+                      `Created new product ${kiotVietProduct.id} - ${kiotVietProduct.name}`,
+                    );
+                  } catch (createError) {
+                    const errorMsg = `Failed to create product ${kiotVietProduct.id}: ${createError.message}`;
+                    this.logger.error(errorMsg);
+                    errors.push(errorMsg);
+                  }
+                }
+
+                // Sync category relationships (outside of transaction for performance)
+                // We'll do this after the transaction completes
+              } catch (productError) {
+                const errorMsg = `Failed to process product ${kiotVietProduct?.id || 'unknown'}: ${productError.message}`;
+                this.logger.error(errorMsg);
+                errors.push(errorMsg);
+              }
+            }
+
+            // Progress update
+            this.logger.log(
+              `Completed batch ${batchNumber}/${totalBatches}. Progress: ${Math.round(((i + batch.length) / totalProducts) * 100)}%`,
+            );
+
+            // Add small delay between batches to prevent overwhelming the database
+            if (batchNumber < totalBatches) {
+              await new Promise((resolve) => setTimeout(resolve, 100));
+            }
+          }
+
+          totalSynced = newProducts + updatedProducts;
+          this.logger.log(
+            `Sync summary: ${newProducts} new, ${updatedProducts} updated, ${totalSynced} total synced`,
+          );
+
+          return { newProducts, updatedProducts };
+        },
+        {
+          timeout: 900000, // 15 minute timeout for very large syncs
+          isolationLevel: 'Serializable',
+        },
+      );
+
+      // Step 3: Sync category relationships after main transaction
+      this.logger.log('Syncing product-category relationships...');
+      let relationshipsSynced = 0;
+
+      for (const kiotVietProduct of fetchResult.products) {
+        if (kiotVietProduct.categoryId) {
+          try {
+            await this.syncProductCategoryRelationships(
+              BigInt(kiotVietProduct.id),
+              kiotVietProduct.categoryId,
+            );
+            relationshipsSynced++;
+          } catch (relationError) {
+            this.logger.warn(
+              `Failed to sync category relationship for product ${kiotVietProduct.id}: ${relationError.message}`,
+            );
+          }
+        }
+      }
+
+      this.logger.log(
+        `Synced ${relationshipsSynced} product-category relationships`,
+      );
+
+      // Get final count after sync
+      const afterSyncCount = await this.prisma.product.count();
+
+      const result: SyncResult = {
+        success: errors.length === 0,
+        totalSynced,
+        totalDeleted,
+        errors,
+        summary: {
+          beforeSync: beforeSyncCount,
+          afterSync: afterSyncCount,
+          newProducts: syncResults.newProducts,
+          updatedProducts: syncResults.updatedProducts,
+          deletedProducts: totalDeleted,
+        },
+        batchInfo: fetchResult.batchInfo,
+      };
+
+      if (result.success) {
+        this.logger.log(
+          'Enhanced product synchronization completed successfully',
+          {
+            totalSynced: result.totalSynced,
+            totalDeleted: result.totalDeleted,
+            relationshipsSynced,
+            filteredCategories: fetchResult.filteredCategories,
+          },
+        );
+      } else {
+        this.logger.warn(
+          'Enhanced product synchronization completed with errors',
+          {
+            totalSynced: result.totalSynced,
+            totalDeleted: result.totalDeleted,
+            relationshipsSynced,
+            errorCount: result.errors.length,
+            filteredCategories: fetchResult.filteredCategories,
+          },
+        );
+      }
+
+      return result;
+    } catch (error) {
+      this.logger.error(
+        'Enhanced product synchronization failed with critical error:',
+        error.message,
+      );
+
+      return {
+        success: false,
+        totalSynced: 0,
+        totalDeleted: 0,
+        errors: [`Critical sync error: ${error.message}`],
+        summary: {
+          beforeSync: 0,
+          afterSync: 0,
+          newProducts: 0,
+          updatedProducts: 0,
+          deletedProducts: 0,
+        },
+        batchInfo: [],
+      };
+    }
+  }
+
   /**
    * FIXED: Enhanced synchronization with robust error handling and proper transaction management
    */
@@ -337,10 +713,6 @@ export class ProductService {
     try {
       // Get current product count before sync
       const beforeSyncCount = await this.prisma.product.count();
-      this.logger.log(`Current products in database: ${beforeSyncCount}`);
-
-      // Fetch products from KiotViet with optional category filtering
-      this.logger.log('Fetching products from KiotViet...');
       const fetchResult = await this.kiotVietService.fetchAllProducts(
         lastModifiedFrom,
         categoryNames,
@@ -622,9 +994,6 @@ export class ProductService {
     }
   }
 
-  /**
-   * Force sync with category filtering
-   */
   async forceFullSync(categoryNames?: string[]): Promise<SyncResult> {
     if (categoryNames && categoryNames.length > 0) {
       this.logger.log(
@@ -670,9 +1039,6 @@ export class ProductService {
     }
   }
 
-  /**
-   * Incremental sync with category filtering
-   */
   async incrementalSync(
     since?: string,
     categoryNames?: string[],
@@ -738,45 +1104,28 @@ export class ProductService {
       };
     }
   > {
-    this.logger.log(
-      `Starting clean database and category sync for: ${categoryNames.join(', ')}`,
-    );
-
     if (!categoryNames || categoryNames.length === 0) {
       throw new BadRequestException('At least one category name is required');
     }
 
     try {
       const beforeCleanupCount = await this.prisma.product.count();
-      this.logger.log(
-        `Current products in database before cleanup: ${beforeCleanupCount}`,
-      );
 
       const beforeOrdersCount = await this.prisma.orders.count();
       const beforeReviewsCount = await this.prisma.review.count();
       const beforeRelationsCount = await this.prisma.product_categories.count();
-
-      this.logger.log(
-        `Related data before cleanup: ${beforeOrdersCount} orders, ${beforeReviewsCount} reviews, ${beforeRelationsCount} category relations`,
-      );
 
       // Clear all products and related data from database
       const cleanupResults = await this.prisma.$transaction(async (prisma) => {
         this.logger.log('Starting database cleanup transaction...');
 
         const deletedOrders = await prisma.orders.deleteMany({});
-        this.logger.log(`Deleted ${deletedOrders.count} orders`);
 
         const deletedReviews = await prisma.review.deleteMany({});
-        this.logger.log(`Deleted ${deletedReviews.count} reviews`);
 
         const deletedRelations = await prisma.product_categories.deleteMany({});
-        this.logger.log(
-          `Deleted ${deletedRelations.count} product-category relationships`,
-        );
 
         const deletedProducts = await prisma.product.deleteMany({});
-        this.logger.log(`Deleted ${deletedProducts.count} products`);
 
         return {
           deletedProducts: deletedProducts.count,
@@ -793,14 +1142,6 @@ export class ProductService {
           `Database cleanup failed: ${afterCleanupCount} products still remain`,
         );
       }
-      this.logger.log(
-        'Database successfully cleaned - no products or related data remain',
-      );
-
-      // Perform fresh sync with only specified categories
-      this.logger.log(
-        `Now syncing fresh data for categories: ${categoryNames.join(', ')}`,
-      );
       const syncResult = await this.syncProductsFromKiotViet(
         undefined,
         categoryNames,
@@ -1232,105 +1573,774 @@ export class ProductService {
     });
   }
 
+  // async getProductsBySpecificCategories(params: {
+  //   pageSize: number;
+  //   pageNumber: number;
+  //   title?: string;
+  //   categoryIds: bigint[];
+  //   allowedTypes: string[];
+  // }) {
+  //   const { pageSize, pageNumber, title } = params;
+
+  //   // Category IDs for "Trà Phượng Hoàng" and "Lermao" from your database
+  //   const categoryIds = [
+  //     BigInt(1), // Trà phượng hoàng
+  //     BigInt(2), // Gấu Lermao
+  //     BigInt(2205374), // Trà Phượng Hoàng
+  //     BigInt(2205381), // Lermao
+  //   ];
+
+  //   // Allowed product types
+  //   const allowedTypes = [
+  //     'Bột',
+  //     'Mứt Sốt',
+  //     'Siro',
+  //     'Topping',
+  //     'Khác (Lermao)',
+  //     'Khác (Trà Phượng Hoàng)',
+  //     'Gói',
+  //     'Chai',
+  //     'Cái',
+  //     'Hộp',
+  //     'Túi',
+  //     'piece',
+  //   ];
+
+  //   try {
+  //     const productCategoryRelations =
+  //       await this.prisma.product_categories.findMany({
+  //         where: {
+  //           categories_id: {
+  //             in: categoryIds,
+  //           },
+  //         },
+  //         select: {
+  //           product_id: true,
+  //         },
+  //       });
+
+  //     const productIds = [
+  //       ...new Set(productCategoryRelations.map((rel) => rel.product_id)),
+  //     ];
+
+  //     if (productIds.length === 0) {
+  //       this.logger.log('No products found for specified categories');
+  //       return {
+  //         content: [],
+  //         totalElements: 0,
+  //         pageable: {
+  //           pageNumber,
+  //           pageSize,
+  //         },
+  //       };
+  //     }
+
+  //     const where: any = {
+  //       id: {
+  //         in: productIds,
+  //       },
+  //     };
+
+  //     const whereWithType: any = {
+  //       ...where,
+  //       type: {
+  //         in: allowedTypes,
+  //       },
+  //     };
+
+  //     if (title) {
+  //       where.title = { contains: title };
+  //       whereWithType.title = { contains: title };
+  //     }
+
+  //     // Try to get count with type filter first
+  //     let totalElements = await this.prisma.product.count({
+  //       where: whereWithType,
+  //     });
+  //     let useTypeFilter = true;
+
+  //     if (totalElements === 0) {
+  //       totalElements = await this.prisma.product.count({ where });
+  //       useTypeFilter = false;
+  //       this.logger.log(
+  //         'No products found with type filter, showing all products from categories',
+  //       );
+  //     }
+
+  //     const products = await this.prisma.product.findMany({
+  //       where: useTypeFilter ? whereWithType : where,
+  //       skip: pageNumber * pageSize,
+  //       take: pageSize,
+  //       orderBy: { created_date: 'desc' },
+  //       include: {
+  //         product_categories: {
+  //           include: {
+  //             category: true,
+  //           },
+  //         },
+  //       },
+  //     });
+
+  //     const content = products.map((product) => {
+  //       let imagesUrl = [];
+  //       try {
+  //         imagesUrl = product.images_url ? JSON.parse(product.images_url) : [];
+  //       } catch (error) {
+  //         this.logger.warn(
+  //           `Failed to parse images_url for product ${product.id}:`,
+  //           error,
+  //         );
+  //       }
+
+  //       return {
+  //         id: product.id.toString(),
+  //         title: product.title,
+  //         price: product.price ? Number(product.price) : null,
+  //         quantity: product.quantity ? Number(product.quantity) : null,
+  //         description: product.description,
+  //         imagesUrl,
+  //         generalDescription: product.general_description || '',
+  //         instruction: product.instruction || '',
+  //         isFeatured: product.is_featured || false,
+  //         featuredThumbnail: product.featured_thumbnail,
+  //         recipeThumbnail: product.recipe_thumbnail,
+  //         type: product.type,
+  //         createdDate: product.created_date,
+  //         updatedDate: product.updated_date,
+  //         ofCategories: product.product_categories.map((pc) => ({
+  //           id: pc.categories_id.toString(),
+  //           name: pc.category?.name || '',
+  //         })),
+  //       };
+  //     });
+
+  //     return {
+  //       content,
+  //       totalElements,
+  //       pageable: {
+  //         pageNumber,
+  //         pageSize,
+  //       },
+  //     };
+  //   } catch (error) {
+  //     this.logger.error('Error in getProductsBySpecificCategories:', error);
+  //     throw error;
+  //   }
+  // }
+
   async getProductsBySpecificCategories(params: {
     pageSize: number;
     pageNumber: number;
     title?: string;
-    categoryIds: bigint[];
-    allowedTypes: string[];
   }) {
-    const { pageSize, pageNumber, title, categoryIds, allowedTypes } = params;
+    const { pageSize, pageNumber, title } = params;
 
-    // First, get all product IDs that belong to the specified categories
-    const productCategoryRelations =
-      await this.prisma.product_categories.findMany({
-        where: {
-          categories_id: {
-            in: categoryIds,
+    try {
+      this.logger.log(
+        'Fetching products from Lermao and Trà Phượng Hoàng categories including all children',
+      );
+
+      // Define the target parent category IDs
+      const targetParentIds = [2205381, 2205374]; // Lermao and Trà Phượng Hoàng
+
+      // Use KiotViet service to find all descendant category IDs
+      const allCategoryIds =
+        await this.kiotVietService.findDescendantCategoryIds(targetParentIds);
+
+      this.logger.log(
+        `Found ${allCategoryIds.length} category IDs including children: ${allCategoryIds.slice(0, 10).join(', ')}${allCategoryIds.length > 10 ? '...' : ''}`,
+      );
+
+      // Convert to BigInt for database query
+      const categoryIdsBigInt = allCategoryIds.map((id) => BigInt(id));
+
+      // Get all product IDs that belong to any of these categories
+      const productCategoryRelations =
+        await this.prisma.product_categories.findMany({
+          where: {
+            categories_id: {
+              in: categoryIdsBigInt,
+            },
           },
+          select: {
+            product_id: true,
+          },
+        });
+
+      const productIds = [
+        ...new Set(productCategoryRelations.map((rel) => rel.product_id)),
+      ];
+
+      if (productIds.length === 0) {
+        this.logger.log('No products found for specified category hierarchy');
+        return {
+          content: [],
+          totalElements: 0,
+          pageable: {
+            pageNumber,
+            pageSize,
+          },
+          categoryInfo: {
+            targetParentIds,
+            allCategoryIds,
+            totalCategoriesSearched: allCategoryIds.length,
+          },
+        };
+      }
+
+      // Build where clause for products
+      const where: any = {
+        id: {
+          in: productIds,
         },
-        select: {
-          product_id: true,
+      };
+
+      if (title) {
+        where.title = { contains: title };
+      }
+
+      const totalElements = await this.prisma.product.count({ where });
+
+      const products = await this.prisma.product.findMany({
+        where,
+        skip: pageNumber * pageSize,
+        take: pageSize,
+        orderBy: { created_date: 'desc' },
+        include: {
+          product_categories: {
+            include: {
+              category: true,
+            },
+          },
         },
       });
 
-    const productIds = productCategoryRelations.map((rel) => rel.product_id);
+      const content = products.map((product) => {
+        let imagesUrl = [];
+        try {
+          imagesUrl = product.images_url ? JSON.parse(product.images_url) : [];
+        } catch (error) {
+          this.logger.warn(
+            `Failed to parse images_url for product ${product.id}:`,
+            error,
+          );
+        }
 
-    if (productIds.length === 0) {
+        return {
+          id: product.id.toString(),
+          title: product.title,
+          price: product.price ? Number(product.price) : null,
+          quantity: product.quantity ? Number(product.quantity) : null,
+          description: product.description,
+          imagesUrl,
+          generalDescription: product.general_description || '',
+          instruction: product.instruction || '',
+          isFeatured: product.is_featured || false,
+          featuredThumbnail: product.featured_thumbnail,
+          recipeThumbnail: product.recipe_thumbnail,
+          type: product.type,
+          createdDate: product.created_date,
+          updatedDate: product.updated_date,
+          ofCategories: product.product_categories.map((pc) => ({
+            id: pc.categories_id.toString(),
+            name: pc.category?.name || '',
+          })),
+        };
+      });
+
+      this.logger.log(
+        `Successfully found ${totalElements} products from hierarchical category search`,
+      );
+
       return {
-        content: [],
-        totalElements: 0,
+        content,
+        totalElements,
         pageable: {
           pageNumber,
           pageSize,
         },
+        categoryInfo: {
+          targetParentIds,
+          allCategoryIds,
+          totalCategoriesSearched: allCategoryIds.length,
+          productsFoundInCategories: productIds.length,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error in getProductsBySpecificCategories:', error);
+      throw new BadRequestException(
+        `Failed to get products by categories: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * NEW: Enhanced fetchAllProducts with better hierarchical category filtering
+   */
+  private async fetchProductsForCategory(
+    categoryId: number,
+    lastModifiedFrom?: string,
+  ): Promise<{
+    products: KiotVietProduct[];
+    deletedIds: number[];
+    batchInfo: Array<{
+      batchNumber: number;
+      itemsFetched: number;
+      currentItem: number;
+    }>;
+  }> {
+    const products: KiotVietProduct[] = [];
+    const deletedIds: number[] = [];
+    const batchInfo: Array<{
+      batchNumber: number;
+      itemsFetched: number;
+      currentItem: number;
+    }> = [];
+
+    let currentItem = 0;
+    const batchSize = 100;
+    let batchNumber = 1;
+    let hasMoreData = true;
+    let consecutiveEmptyBatches = 0;
+    const maxEmptyBatches = 3; // Stop after 3 consecutive empty batches
+
+    while (hasMoreData && consecutiveEmptyBatches < maxEmptyBatches) {
+      this.logger.debug(
+        `Fetching batch ${batchNumber} for category ${categoryId} (items ${currentItem}-${
+          currentItem + batchSize - 1
+        })`,
+      );
+
+      try {
+        const batch = await this.kiotVietService['fetchProductBatch'](
+          currentItem,
+          batchSize,
+          lastModifiedFrom,
+          [categoryId],
+        );
+
+        products.push(...batch.data);
+
+        if (batch.removeId && Array.isArray(batch.removeId)) {
+          deletedIds.push(...batch.removeId);
+        }
+
+        batchInfo.push({
+          batchNumber,
+          itemsFetched: batch.data.length,
+          currentItem,
+        });
+
+        this.logger.debug(
+          `Category ${categoryId} batch ${batchNumber}: Fetched ${batch.data.length} products`,
+        );
+
+        if (batch.data.length === 0) {
+          consecutiveEmptyBatches++;
+          this.logger.debug(
+            `Empty batch ${consecutiveEmptyBatches}/${maxEmptyBatches} for category ${categoryId}`,
+          );
+        } else {
+          consecutiveEmptyBatches = 0; // Reset counter on successful batch
+        }
+
+        if (batch.data.length < batchSize) {
+          hasMoreData = false;
+        } else {
+          currentItem += batchSize;
+          batchNumber++;
+        }
+
+        // Add delay between batches to be nice to the API
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } catch (error) {
+        this.logger.error(
+          `Error fetching batch ${batchNumber} for category ${categoryId}: ${error.message}`,
+        );
+
+        // If it's a rate limit or temporary error, wait longer and retry
+        if (
+          error.message.includes('rate limit') ||
+          error.response?.status === 429
+        ) {
+          this.logger.warn(
+            `Rate limit hit for category ${categoryId}, waiting 60 seconds...`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 60000));
+          continue; // Retry the same batch
+        }
+
+        // For other errors, log and continue to next category
+        hasMoreData = false;
+      }
+    }
+
+    if (consecutiveEmptyBatches >= maxEmptyBatches) {
+      this.logger.warn(
+        `Stopped fetching for category ${categoryId} after ${maxEmptyBatches} consecutive empty batches`,
+      );
+    }
+
+    return { products, deletedIds, batchInfo };
+  }
+
+  async fetchAllProductsWithHierarchicalFilter(
+    parentCategoryIds: number[],
+    lastModifiedFrom?: string,
+  ): Promise<{
+    products: KiotVietProduct[];
+    deletedIds: number[];
+    totalFetched: number;
+    batchInfo: Array<{
+      batchNumber: number;
+      itemsFetched: number;
+      currentItem: number;
+    }>;
+    categoryInfo: {
+      parentIds: number[];
+      allDescendantIds: number[];
+      totalCategoriesSearched: number;
+    };
+  }> {
+    this.logger.log(
+      `Starting hierarchical product fetch for parent categories: ${parentCategoryIds.join(', ')}`,
+    );
+
+    try {
+      // Get all descendant category IDs
+      const allDescendantIds =
+        await this.kiotVietService.findDescendantCategoryIds(parentCategoryIds);
+
+      this.logger.log(
+        `Found ${allDescendantIds.length} total category IDs (including parents and children) for product filtering`,
+      );
+
+      const allProducts: KiotVietProduct[] = [];
+      const allDeletedIds: number[] = [];
+      const batchInfo: Array<{
+        batchNumber: number;
+        itemsFetched: number;
+        currentItem: number;
+      }> = [];
+
+      // Fetch products for each category
+      for (let i = 0; i < allDescendantIds.length; i++) {
+        const categoryId = allDescendantIds[i];
+
+        this.logger.log(
+          `Fetching products for category ID: ${categoryId} (${i + 1}/${allDescendantIds.length})`,
+        );
+
+        try {
+          const categoryResult = await this.fetchProductsForCategory(
+            categoryId,
+            lastModifiedFrom,
+          );
+
+          this.logger.log(
+            `Category ID ${categoryId}: Found ${categoryResult.products.length} products`,
+          );
+
+          allProducts.push(...categoryResult.products);
+          allDeletedIds.push(...categoryResult.deletedIds);
+
+          categoryResult.batchInfo.forEach((batch) => {
+            batchInfo.push({
+              ...batch,
+              batchNumber: batchInfo.length + 1,
+            });
+          });
+        } catch (categoryError) {
+          this.logger.warn(
+            `Failed to fetch products for category ${categoryId}: ${categoryError.message}`,
+          );
+          // Continue with other categories
+        }
+
+        // Small delay to be nice to the API
+        if (i < allDescendantIds.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+      }
+
+      // Remove duplicate products (in case a product belongs to multiple categories)
+      const uniqueProducts = [];
+      const seenProductIds = new Set();
+
+      for (const product of allProducts) {
+        if (!seenProductIds.has(product.id)) {
+          uniqueProducts.push(product);
+          seenProductIds.add(product.id);
+        }
+      }
+
+      this.logger.log(
+        `Hierarchical product fetch complete: ${uniqueProducts.length} unique products from ${allDescendantIds.length} categories`,
+      );
+
+      return {
+        products: uniqueProducts,
+        deletedIds: [...new Set(allDeletedIds)], // Remove duplicate deleted IDs
+        totalFetched: uniqueProducts.length,
+        batchInfo,
+        categoryInfo: {
+          parentIds: parentCategoryIds,
+          allDescendantIds,
+          totalCategoriesSearched: allDescendantIds.length,
+        },
+      };
+    } catch (error) {
+      this.logger.error(
+        'Failed to fetch products with hierarchical filter:',
+        error.message,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * NEW: Sync products specifically from Lermao and Trà Phượng Hoàng hierarchy
+   */
+  async syncProductsFromTargetCategories(lastModifiedFrom?: string): Promise<
+    SyncResult & {
+      categoryInfo: {
+        parentIds: number[];
+        allDescendantIds: number[];
+        totalCategoriesSearched: number;
       };
     }
+  > {
+    this.logger.log(
+      'Starting targeted product sync from Lermao and Trà Phượng Hoàng categories',
+    );
 
-    // Build where clause for products
-    const where: any = {
-      id: {
-        in: productIds,
-      },
-      type: {
-        in: allowedTypes,
-      },
-    };
+    const targetParentIds = [2205381, 2205374]; // Lermao and Trà Phượng Hoàng
 
-    if (title) {
-      where.title = { contains: title };
-    }
+    try {
+      // Use the new hierarchical fetch method
+      const fetchResult = await this.fetchAllProductsWithHierarchicalFilter(
+        targetParentIds,
+        lastModifiedFrom,
+      );
 
-    const totalElements = await this.prisma.product.count({ where });
+      this.logger.log(
+        `Fetched ${fetchResult.products.length} products from target category hierarchy`,
+      );
 
-    const products = await this.prisma.product.findMany({
-      where,
-      skip: pageNumber * pageSize,
-      take: pageSize,
-      orderBy: { created_date: 'desc' },
-      include: {
-        product_categories: {
-          include: {
-            category: true,
-          },
+      // Use existing sync logic but with the hierarchical fetch result
+      const errors: string[] = [];
+      let totalSynced = 0;
+      let totalDeleted = 0;
+
+      const beforeSyncCount = await this.prisma.product.count();
+      this.logger.log(`Current products in database: ${beforeSyncCount}`);
+
+      // Process the synchronization with improved transaction handling
+      const syncResults = await this.prisma.$transaction(
+        async (transactionClient) => {
+          let newProducts = 0;
+          let updatedProducts = 0;
+
+          // Handle deleted products
+          if (fetchResult.deletedIds && fetchResult.deletedIds.length > 0) {
+            this.logger.log(
+              `Processing ${fetchResult.deletedIds.length} deleted products`,
+            );
+
+            try {
+              const validDeletedIds = fetchResult.deletedIds
+                .filter((id) => typeof id === 'number' && !isNaN(id) && id > 0)
+                .map((id) => BigInt(id));
+
+              if (validDeletedIds.length > 0) {
+                await transactionClient.orders.deleteMany({
+                  where: {
+                    product: {
+                      id: { in: validDeletedIds },
+                    },
+                  },
+                });
+
+                await transactionClient.review.deleteMany({
+                  where: { product_id: { in: validDeletedIds } },
+                });
+
+                await transactionClient.product_categories.deleteMany({
+                  where: { product_id: { in: validDeletedIds } },
+                });
+
+                const deleteResult = await transactionClient.product.deleteMany(
+                  {
+                    where: { id: { in: validDeletedIds } },
+                  },
+                );
+
+                totalDeleted = deleteResult.count;
+                this.logger.log(
+                  `Successfully deleted ${totalDeleted} products from local database`,
+                );
+              }
+            } catch (error) {
+              const errorMsg = `Error deleting products: ${error.message}`;
+              this.logger.error(errorMsg);
+              errors.push(errorMsg);
+            }
+          }
+
+          // Process products in batches
+          const batchSize = 20;
+          const totalProducts = fetchResult.products.length;
+          this.logger.log(
+            `Processing ${totalProducts} products in batches of ${batchSize}`,
+          );
+
+          for (let i = 0; i < totalProducts; i += batchSize) {
+            const batch = fetchResult.products.slice(i, i + batchSize);
+            const batchNumber = Math.floor(i / batchSize) + 1;
+            const totalBatches = Math.ceil(totalProducts / batchSize);
+
+            this.logger.log(
+              `Processing batch ${batchNumber}/${totalBatches} (${batch.length} products)`,
+            );
+
+            for (const kiotVietProduct of batch) {
+              try {
+                if (!kiotVietProduct || typeof kiotVietProduct !== 'object') {
+                  errors.push(`Invalid product object`);
+                  continue;
+                }
+
+                if (
+                  !kiotVietProduct.id ||
+                  typeof kiotVietProduct.id !== 'number'
+                ) {
+                  errors.push(
+                    `Invalid or missing product ID: ${kiotVietProduct.id}`,
+                  );
+                  continue;
+                }
+
+                const productData =
+                  this.mapKiotVietProductToLocal(kiotVietProduct);
+                if (!productData || typeof productData !== 'object') {
+                  errors.push(
+                    `Product ${kiotVietProduct.id}: Failed to map product data`,
+                  );
+                  continue;
+                }
+
+                let existingProduct = null;
+                try {
+                  existingProduct = await transactionClient.product.findUnique({
+                    where: { id: BigInt(kiotVietProduct.id) },
+                  });
+                } catch (findError) {
+                  this.logger.warn(
+                    `Error checking if product ${kiotVietProduct.id} exists: ${findError.message}`,
+                  );
+                }
+
+                if (existingProduct) {
+                  try {
+                    await transactionClient.product.update({
+                      where: { id: BigInt(kiotVietProduct.id) },
+                      data: {
+                        ...productData,
+                        updated_date: new Date(),
+                      },
+                    });
+                    updatedProducts++;
+                  } catch (updateError) {
+                    const errorMsg = `Failed to update product ${kiotVietProduct.id}: ${updateError.message}`;
+                    this.logger.error(errorMsg);
+                    errors.push(errorMsg);
+                  }
+                } else {
+                  try {
+                    await transactionClient.product.create({
+                      data: {
+                        id: BigInt(kiotVietProduct.id),
+                        ...productData,
+                        created_date: kiotVietProduct.createdDate
+                          ? new Date(kiotVietProduct.createdDate)
+                          : new Date(),
+                        updated_date: new Date(),
+                      },
+                    });
+                    newProducts++;
+                  } catch (createError) {
+                    const errorMsg = `Failed to create product ${kiotVietProduct.id}: ${createError.message}`;
+                    this.logger.error(errorMsg);
+                    errors.push(errorMsg);
+                  }
+                }
+              } catch (productError) {
+                const errorMsg = `Failed to process product ${kiotVietProduct?.id || 'unknown'}: ${productError.message}`;
+                this.logger.error(errorMsg);
+                errors.push(errorMsg);
+              }
+            }
+
+            if (batchNumber < totalBatches) {
+              await new Promise((resolve) => setTimeout(resolve, 100));
+            }
+          }
+
+          totalSynced = newProducts + updatedProducts;
+          return { newProducts, updatedProducts };
         },
-      },
-    });
+        {
+          timeout: 900000, // 15 minute timeout
+          isolationLevel: 'Serializable',
+        },
+      );
 
-    const content = products.map((product) => {
-      let imagesUrl = [];
-      try {
-        imagesUrl = product.images_url ? JSON.parse(product.images_url) : [];
-      } catch (error) {
-        console.log(
-          `Failed to parse images_url for product ${product.id}:`,
-          error,
+      const afterSyncCount = await this.prisma.product.count();
+
+      const result = {
+        success: errors.length === 0,
+        totalSynced,
+        totalDeleted,
+        errors,
+        summary: {
+          beforeSync: beforeSyncCount,
+          afterSync: afterSyncCount,
+          newProducts: syncResults.newProducts,
+          updatedProducts: syncResults.updatedProducts,
+          deletedProducts: totalDeleted,
+        },
+        batchInfo: fetchResult.batchInfo,
+        categoryInfo: fetchResult.categoryInfo,
+      };
+
+      if (result.success) {
+        this.logger.log(
+          'Targeted category product synchronization completed successfully',
+          {
+            totalSynced: result.totalSynced,
+            categoryInfo: result.categoryInfo,
+          },
+        );
+      } else {
+        this.logger.warn(
+          'Targeted category product synchronization completed with errors',
+          {
+            totalSynced: result.totalSynced,
+            errorCount: result.errors.length,
+            categoryInfo: result.categoryInfo,
+          },
         );
       }
 
-      return {
-        ...product,
-        id: product.id.toString(),
-        price: product.price ? Number(product.price) : null,
-        quantity: product.quantity ? Number(product.quantity) : null,
-        imagesUrl,
-        isFeatured: product.is_featured,
-        generalDescription: product.general_description || '',
-        featuredThumbnail: product.featured_thumbnail,
-        ofCategories: product.product_categories.map((pc) => ({
-          id: pc.categories_id.toString(),
-          name: pc.category?.name || '',
-        })),
-      };
-    });
-
-    return {
-      content,
-      totalElements,
-      pageable: {
-        pageNumber,
-        pageSize,
-      },
-    };
+      return result;
+    } catch (error) {
+      this.logger.error(
+        'Targeted category product synchronization failed:',
+        error.message,
+      );
+      throw new BadRequestException(
+        `Targeted category sync failed: ${error.message}`,
+      );
+    }
   }
 }
