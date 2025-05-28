@@ -1,13 +1,14 @@
-// src/product/dto/kiotviet-sync.dto.ts
+// Create this file: src/product/dto/kiotviet-sync.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsOptional,
   IsString,
-  IsArray,
   IsDateString,
   IsEnum,
   IsBoolean,
+  IsNumber,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export enum SyncMode {
   FULL = 'FULL',
@@ -54,35 +55,15 @@ export class KiotVietSyncDto {
   cleanFirst?: boolean = false;
 }
 
-// src/category/dto/category-sync.dto.ts
-export class CategorySyncDto {
-  @ApiProperty({
-    description: 'Force clean database before sync',
-    default: false,
-    required: false,
-  })
-  @IsBoolean()
-  @IsOptional()
-  cleanFirst?: boolean = false;
-
-  @ApiProperty({
-    description: 'Preview only - do not actually sync',
-    default: false,
-    required: false,
-  })
-  @IsBoolean()
-  @IsOptional()
-  previewOnly?: boolean = false;
-}
-
-// src/product/dto/hierarchical-product-search.dto.ts
 export class HierarchicalProductSearchDto {
   @ApiProperty({
     description: 'Page size for pagination',
     default: 10,
     required: false,
   })
+  @IsNumber()
   @IsOptional()
+  @Type(() => Number)
   pageSize?: number = 10;
 
   @ApiProperty({
@@ -90,7 +71,9 @@ export class HierarchicalProductSearchDto {
     default: 0,
     required: false,
   })
+  @IsNumber()
   @IsOptional()
+  @Type(() => Number)
   pageNumber?: number = 0;
 
   @ApiProperty({
@@ -126,4 +109,25 @@ export class HierarchicalProductSearchDto {
   @IsBoolean()
   @IsOptional()
   includeChildren?: boolean = true;
+}
+
+// Create this file: src/category/dto/category-sync.dto.ts
+export class CategorySyncDto {
+  @ApiProperty({
+    description: 'Force clean database before sync',
+    default: false,
+    required: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  cleanFirst?: boolean = false;
+
+  @ApiProperty({
+    description: 'Preview only - do not actually sync',
+    default: false,
+    required: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  previewOnly?: boolean = false;
 }

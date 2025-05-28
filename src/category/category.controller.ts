@@ -1,4 +1,4 @@
-// src/category/category.controller.ts
+// src/category/category.controller.ts - FIXED VERSION
 import {
   Controller,
   Get,
@@ -21,6 +21,8 @@ import {
   ApiTags,
   ApiResponse,
 } from '@nestjs/swagger';
+// FIXED: Import types from the shared types file
+import { KiotVietCategory } from '../product/types/kiotviet.types';
 
 @ApiTags('category')
 @Controller('category')
@@ -129,7 +131,18 @@ export class CategoryController {
     status: 200,
     description: 'Returns KiotViet category hierarchy preview',
   })
-  async previewKiotVietCategories() {
+  // FIXED: Explicit return type to resolve the export issue
+  async previewKiotVietCategories(): Promise<{
+    message: string;
+    preview: boolean;
+    categories: KiotVietCategory[];
+    stats: {
+      totalCategories: number;
+      rootCategories: number;
+      categoriesWithChildren: number;
+      maxDepth: number;
+    };
+  }> {
     try {
       const result = await this.categoryService.getKiotVietCategoryHierarchy();
 

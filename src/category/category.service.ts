@@ -1,4 +1,4 @@
-// src/category/category.service.ts
+// src/category/category.service.ts - FIXED VERSION
 import {
   Injectable,
   NotFoundException,
@@ -90,8 +90,12 @@ export class CategoryService {
                 return; // Already processed
               }
 
-              // Check if category exists
-              let existingCategory:string = undefined;
+              this.logger.debug(
+                `Processing category ${category.categoryId} - ${category.categoryName} (depth: ${depth})`,
+              );
+
+              // FIXED: Correct type declaration - category object or null, not string
+              let existingCategory: any = null;
               try {
                 existingCategory = await transactionClient.category.findUnique({
                   where: { id: BigInt(category.categoryId) },

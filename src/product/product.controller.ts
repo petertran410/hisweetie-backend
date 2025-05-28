@@ -191,7 +191,7 @@ export class ProductController {
     @Query() searchDto: HierarchicalProductSearchDto,
   ) {
     try {
-      let parentCategoryIds: number[];
+      let parentCategoryIds: number[] = [2205381, 2205374];
       if (searchDto.parentCategoryIds) {
         parentCategoryIds = KiotVietUtils.parseCategoryIds(
           searchDto.parentCategoryIds,

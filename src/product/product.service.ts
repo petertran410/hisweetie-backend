@@ -513,7 +513,7 @@ export class ProductService {
                 }
 
                 // Check if product exists
-                let existingProduct = null;
+                let existingProduct: any = null;
                 try {
                   existingProduct = await transactionClient.product.findUnique({
                     where: { id: BigInt(kiotVietProduct.id) },
@@ -2064,8 +2064,8 @@ export class ProductService {
       }
 
       // Remove duplicate products (in case a product belongs to multiple categories)
-      const uniqueProducts = [];
-      const seenProductIds = new Set();
+      const uniqueProducts: KiotVietProduct[] = [];
+      const seenProductIds = new Set<number>();
 
       for (const product of allProducts) {
         if (!seenProductIds.has(product.id)) {
@@ -2080,7 +2080,7 @@ export class ProductService {
 
       return {
         products: uniqueProducts,
-        deletedIds: [...new Set(allDeletedIds)], // Remove duplicate deleted IDs
+        deletedIds: [...new Set(allDeletedIds)],
         totalFetched: uniqueProducts.length,
         batchInfo,
         categoryInfo: {
@@ -2229,7 +2229,7 @@ export class ProductService {
                   continue;
                 }
 
-                let existingProduct = null;
+                let existingProduct: any = null;
                 try {
                   existingProduct = await transactionClient.product.findUnique({
                     where: { id: BigInt(kiotVietProduct.id) },
