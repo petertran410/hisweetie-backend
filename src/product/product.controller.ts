@@ -372,15 +372,6 @@ export class ProductController {
 
   // Main Product Listing Endpoint (Used by Frontend)
   @Get('by-categories')
-  @ApiOperation({
-    summary: 'Get products from Lermao and Trà Phượng Hoàng categories',
-    description:
-      'Returns paginated products from Lermao (2205381) and Trà Phượng Hoàng (2205374) categories including all child categories. This is the main endpoint used by the frontend product listing.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns paginated products with category hierarchy',
-  })
   async getProductsByCategories(
     @Query('pageSize') pageSize: string = '10',
     @Query('pageNumber') pageNumber: string = '0',

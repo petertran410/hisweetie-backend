@@ -991,11 +991,6 @@ export class ProductService {
     }
 
     try {
-      const beforeCleanupCount = await this.prisma.product.count();
-      const beforeOrdersCount = await this.prisma.orders.count();
-      const beforeReviewsCount = await this.prisma.review.count();
-      const beforeRelationsCount = await this.prisma.product_categories.count();
-
       // Clear all products and related data from database
       const cleanupResults = await this.prisma.$transaction(async (prisma) => {
         this.logger.log('Starting database cleanup transaction...');
@@ -1355,7 +1350,9 @@ export class ProductService {
             // Define parent category context based on category hierarchy
             let parentContext = '';
             if (
-              [2205420, 2205421, 2205422, 2205423, 2282855].includes(categoryId)
+              [
+                2205420, 2205421, 2205422, 2205423, 2282855, 2205381, 2205374,
+              ].includes(categoryId)
             ) {
               // These are Lermao subcategories
               parentContext = 'Lermao';
@@ -1670,6 +1667,7 @@ export class ProductService {
     parentIds: number[],
   ): Promise<number> {
     try {
+      // Clear any potential caching issues by using a fresh query
       const count = await this.prisma.product_categories.count({
         where: {
           categories_id: {
@@ -1677,6 +1675,10 @@ export class ProductService {
           },
         },
       });
+
+      this.logger.debug(
+        `Found ${count} products assigned to parent categories ${parentIds.join(', ')}`,
+      );
       return count;
     } catch (error) {
       this.logger.error('Error counting parent category products:', error);

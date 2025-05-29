@@ -821,7 +821,11 @@ export class KiotVietService {
       );
     } else {
       // Default to Lermao and Trà Phượng Hoàng if no specific categories provided
-      const targetParentIds = [2205381, 2205374]; // Lermao and Trà Phượng Hoàng
+      const targetParentIds = [
+        2205381, 2205374, 2205387, 2205386, 2205385, 2205384, 2205383, 2205382,
+        2205380, 2205379, 2205378, 2205377, 2205376, 2205375, 2205401, 2205373,
+        2205372, 2276203,
+      ]; // Lermao and Trà Phượng Hoàng
       const allDescendantIds =
         await this.findDescendantCategoryIds(targetParentIds);
       categoryIds = allDescendantIds;
