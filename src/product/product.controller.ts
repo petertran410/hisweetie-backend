@@ -38,6 +38,7 @@ export class ProductController {
 
   constructor(private readonly productService: ProductService) {}
 
+  // Order Management Endpoints
   @Get('order/admin-search')
   @ApiOperation({
     summary: 'Search orders for admin with pagination and filters',
@@ -95,7 +96,7 @@ export class ProductController {
     }
   }
 
-  // FIXED: Enhanced sync endpoint with validation
+  // KiotViet Sync Endpoints
   @Post('sync/full')
   @ApiOperation({
     summary: 'Full product synchronization from KiotViet',
@@ -145,7 +146,6 @@ export class ProductController {
     }
   }
 
-  // FIXED: Enhanced incremental sync
   @Post('sync/incremental')
   @ApiOperation({
     summary: 'Incremental product synchronization',
@@ -196,12 +196,11 @@ export class ProductController {
     }
   }
 
-  // FIXED: Enhanced target categories sync
   @Post('sync/target-categories')
   @ApiOperation({
-    summary: 'Sync products from target categories (Lermao + Trà Phượng Hoàng)',
+    summary: 'Sync products from Lermao and Trà Phượng Hoàng categories',
     description:
-      'Syncs products from specific target categories and all their children using hierarchical filtering',
+      'Syncs products from Lermao (2205381) and Trà Phượng Hoàng (2205374) and all their children using hierarchical filtering',
   })
   @UsePipes(new ValidationPipe({ transform: true }))
   async syncTargetCategories(@Body() syncDto: KiotVietSyncDto = {}) {
@@ -230,7 +229,7 @@ export class ProductController {
 
       return {
         message: result.success
-          ? `Successfully synced ${result.totalSynced} products from target category hierarchy`
+          ? `Successfully synced ${result.totalSynced} products from Lermao and Trà Phượng Hoàng categories`
           : `Target category sync completed with ${result.errors.length} errors`,
         targetCategories: ['Lermao (2205381)', 'Trà Phượng Hoàng (2205374)'],
         ...formattedResult,
@@ -243,11 +242,190 @@ export class ProductController {
     }
   }
 
+  @Get('sync/test-connection')
+  @ApiOperation({
+    summary: 'Test KiotViet connection',
+    description: 'Test the connection to KiotViet API',
+  })
+  async testConnection() {
+    try {
+      const result =
+        await this.productService['kiotVietService'].testConnection();
+
+      if (result.success) {
+        this.logger.log('KiotViet connection test successful');
+      } else {
+        this.logger.warn('KiotViet connection test failed:', result.message);
+      }
+
+      return result;
+    } catch (error) {
+      this.logger.error('Connection test error:', error.message);
+      throw new BadRequestException(`Connection test failed: ${error.message}`);
+    }
+  }
+
+  @Get('sync/status')
+  @ApiOperation({
+    summary: 'Get sync status',
+    description: 'Get current synchronization status and statistics',
+  })
+  async getSyncStatus() {
+    try {
+      const totalProducts = await this.productService
+        .search({
+          pageSize: 1,
+          pageNumber: 0,
+        })
+        .then((result) => result.totalElements);
+
+      let kiotVietConfigured = false;
+      let configMessage = '';
+
+      try {
+        const connectionTest =
+          await this.productService['kiotVietService'].testConnection();
+        kiotVietConfigured = connectionTest.success;
+        configMessage = connectionTest.message;
+      } catch (error) {
+        this.logger.warn('KiotViet not configured:', error.message);
+        configMessage = `KiotViet configuration error: ${error.message}`;
+      }
+
+      return {
+        totalProducts,
+        lastSyncAttempt: null,
+        syncEnabled: true,
+        kiotVietConfigured,
+        message: configMessage,
+        targetCategories: {
+          lermao: 2205381,
+          traPhuongHoang: 2205374,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Failed to get sync status:', error.message);
+      throw new BadRequestException(
+        `Failed to get sync status: ${error.message}`,
+      );
+    }
+  }
+
+  // Product CRUD Endpoints
+  @Get('get-by-id/:id')
+  @ApiOperation({
+    summary: 'Get product by ID',
+    description: 'Retrieve a specific product by its ID',
+  })
+  @ApiParam({ name: 'id', description: 'Product ID' })
+  findById(@Param('id') id: string) {
+    return this.productService.findById(+id);
+  }
+
+  @Get('search')
+  @ApiOperation({
+    summary: 'Search products',
+    description: 'Search products with pagination and filters',
+  })
+  search(
+    @Query('pageSize') pageSize: string = '10',
+    @Query('pageNumber') pageNumber: string = '0',
+    @Query('title') title?: string,
+    @Query('type') type?: string,
+  ) {
+    return this.productService.search({
+      pageSize: parseInt(pageSize),
+      pageNumber: parseInt(pageNumber),
+      title,
+      type,
+    });
+  }
+
+  @Post()
+  @ApiOperation({
+    summary: 'Create product',
+    description: 'Create a new product',
+  })
+  create(@Body() createProductDto: CreateProductDto) {
+    return this.productService.create(createProductDto);
+  }
+
+  @Patch(':id')
+  @ApiOperation({
+    summary: 'Update product',
+    description: 'Update an existing product',
+  })
+  @ApiParam({ name: 'id', description: 'Product ID' })
+  update(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto) {
+    return this.productService.update(+id, updateProductDto);
+  }
+
+  @Delete(':id')
+  @ApiOperation({
+    summary: 'Delete product',
+    description: 'Delete a product by ID',
+  })
+  @ApiParam({ name: 'id', description: 'Product ID' })
+  remove(@Param('id') id: string) {
+    return this.productService.remove(+id);
+  }
+
+  // Main Product Listing Endpoint (Used by Frontend)
+  @Get('by-categories')
+  @ApiOperation({
+    summary: 'Get products from Lermao and Trà Phượng Hoàng categories',
+    description:
+      'Returns paginated products from Lermao (2205381) and Trà Phượng Hoàng (2205374) categories including all child categories. This is the main endpoint used by the frontend product listing.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns paginated products with category hierarchy',
+  })
+  async getProductsByCategories(
+    @Query('pageSize') pageSize: string = '10',
+    @Query('pageNumber') pageNumber: string = '0',
+    @Query('title') title?: string,
+  ) {
+    try {
+      this.logger.log(
+        `Fetching products from Lermao and Trà Phượng Hoàng categories - pageSize: ${pageSize}, pageNumber: ${pageNumber}, title: ${title || 'none'}`,
+      );
+
+      const result = await this.productService.getProductsBySpecificCategories({
+        pageSize: parseInt(pageSize),
+        pageNumber: parseInt(pageNumber),
+        title,
+        // Default to Lermao (2205381) and Trà Phượng Hoàng (2205374)
+        parentCategoryIds: [2205381, 2205374],
+      });
+
+      this.logger.log(
+        `Successfully found ${result.totalElements} products from target categories`,
+      );
+
+      return {
+        ...result,
+        searchCriteria: {
+          pageSize: parseInt(pageSize),
+          pageNumber: parseInt(pageNumber),
+          title,
+          targetCategories: [
+            { id: 2205381, name: 'Lermao' },
+            { id: 2205374, name: 'Trà Phượng Hoàng' },
+          ],
+        },
+      };
+    } catch (error) {
+      this.logger.error('Failed to get products by categories:', error.message);
+      throw new BadRequestException(`Failed to get products: ${error.message}`);
+    }
+  }
+
   @Get('by-hierarchical-categories')
   @ApiOperation({
-    summary: 'Get products from hierarchical categories',
+    summary: 'Get products from hierarchical categories (Advanced)',
     description:
-      'Returns products from Lermao and Trà Phượng Hoàng categories including all child categories',
+      'Advanced endpoint for getting products from hierarchical categories with custom parent category IDs',
   })
   @UsePipes(new ValidationPipe({ transform: true }))
   async getProductsByHierarchicalCategories(
@@ -269,12 +447,11 @@ export class ProductController {
         `Fetching products for parent categories: ${parentCategoryIds.join(', ')}`,
       );
 
-      // FIXED: Pass parentCategoryIds to the service method
       const result = await this.productService.getProductsBySpecificCategories({
         pageSize: searchDto.pageSize || 10,
         pageNumber: searchDto.pageNumber || 0,
         title: searchDto.title,
-        parentCategoryIds: parentCategoryIds, // This was the missing piece!
+        parentCategoryIds: parentCategoryIds,
       });
 
       return {
@@ -296,12 +473,11 @@ export class ProductController {
     }
   }
 
-  // FIXED: Enhanced category hierarchy info
   @Get('categories/hierarchy-info')
   @ApiOperation({
     summary: 'Get category hierarchy information',
     description:
-      'Returns detailed information about category hierarchies for target categories',
+      'Returns detailed information about Lermao and Trà Phượng Hoàng category hierarchies',
   })
   async getCategoryHierarchyInfo(@Query('categoryIds') categoryIds?: string) {
     try {
@@ -382,408 +558,6 @@ export class ProductController {
       throw new BadRequestException(
         `Failed to get hierarchy info: ${error.message}`,
       );
-    }
-  }
-
-  // EXISTING ENDPOINTS (keeping all your original functionality)
-
-  @Get('sync/test-connection')
-  async testConnection() {
-    try {
-      const result =
-        await this.productService['kiotVietService'].testConnection();
-
-      if (result.success) {
-        this.logger.log('KiotViet connection test successful');
-      } else {
-        this.logger.warn('KiotViet connection test failed:', result.message);
-      }
-
-      return result;
-    } catch (error) {
-      this.logger.error('Connection test error:', error.message);
-      throw new BadRequestException(`Connection test failed: ${error.message}`);
-    }
-  }
-
-  @Get('sync/status')
-  async getSyncStatus() {
-    try {
-      const totalProducts = await this.productService
-        .search({
-          pageSize: 1,
-          pageNumber: 0,
-        })
-        .then((result) => result.totalElements);
-
-      let kiotVietConfigured = false;
-      let configMessage = '';
-
-      try {
-        const connectionTest =
-          await this.productService['kiotVietService'].testConnection();
-        kiotVietConfigured = connectionTest.success;
-        configMessage = connectionTest.message;
-      } catch (error) {
-        this.logger.warn('KiotViet not configured:', error.message);
-        configMessage = `KiotViet configuration error: ${error.message}`;
-      }
-
-      return {
-        totalProducts,
-        lastSyncAttempt: null,
-        syncEnabled: true,
-        kiotVietConfigured,
-        message: configMessage,
-        targetCategories: {
-          lermao: 2205381,
-          traPhuongngHoang: 2205374,
-        },
-      };
-    } catch (error) {
-      this.logger.error('Failed to get sync status:', error.message);
-      throw new BadRequestException(
-        `Failed to get sync status: ${error.message}`,
-      );
-    }
-  }
-
-  // Keep all your existing endpoints...
-  @Get('get-by-id/:id')
-  findById(@Param('id') id: string) {
-    return this.productService.findById(+id);
-  }
-
-  @Get('search')
-  search(
-    @Query('pageSize') pageSize: string = '10',
-    @Query('pageNumber') pageNumber: string = '0',
-    @Query('title') title?: string,
-    @Query('type') type?: string,
-  ) {
-    return this.productService.search({
-      pageSize: parseInt(pageSize),
-      pageNumber: parseInt(pageNumber),
-      title,
-      type,
-    });
-  }
-
-  @Post()
-  create(@Body() createProductDto: CreateProductDto) {
-    return this.productService.create(createProductDto);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto) {
-    return this.productService.update(+id, updateProductDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.productService.remove(+id);
-  }
-
-  // Updated by-categories endpoint
-  @Get('by-categories')
-  @ApiOperation({
-    summary:
-      'Get products from specific categories (Legacy endpoint - use by-hierarchical-categories instead)',
-    description:
-      'Returns paginated products from Lermao and Trà Phượng Hoàng categories including all child categories',
-  })
-  async getProductsByCategories(
-    @Query('pageSize') pageSize: string = '10',
-    @Query('pageNumber') pageNumber: string = '0',
-    @Query('title') title?: string,
-  ) {
-    // Redirect to the new hierarchical method
-    return this.getProductsByHierarchicalCategories({
-      pageSize: parseInt(pageSize),
-      pageNumber: parseInt(pageNumber),
-      title,
-    });
-  }
-
-  @Get('debug/database-info')
-  @ApiOperation({
-    summary: 'Debug: Get database information',
-    description:
-      'Returns information about products and categories in the database for debugging',
-  })
-  async getDatabaseInfo() {
-    try {
-      // Get total counts
-      const totalProducts = await this.prisma.product.count();
-      const totalCategories = await this.prisma.category.count();
-      const totalProductCategories =
-        await this.prisma.product_categories.count();
-
-      // Get sample products with their types
-      const sampleProducts = await this.prisma.product.findMany({
-        take: 10,
-        select: {
-          id: true,
-          title: true,
-          type: true,
-          created_date: true,
-        },
-        orderBy: { created_date: 'desc' },
-      });
-
-      // Get unique product types
-      const productTypes = await this.prisma.product.findMany({
-        select: { type: true },
-        distinct: ['type'],
-      });
-
-      // Get sample categories
-      const sampleCategories = await this.prisma.category.findMany({
-        take: 10,
-        select: {
-          id: true,
-          name: true,
-        },
-      });
-
-      // Get products with category relationships
-      const productsWithCategories = await this.prisma.product.findMany({
-        take: 5,
-        include: {
-          product_categories: {
-            include: {
-              category: {
-                select: {
-                  id: true,
-                  name: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      return {
-        counts: {
-          totalProducts,
-          totalCategories,
-          totalProductCategories,
-        },
-        productTypes: productTypes.map((p) => p.type).filter(Boolean),
-        sampleProducts: sampleProducts.map((p) => ({
-          id: p.id.toString(),
-          title: p.title,
-          type: p.type,
-          createdDate: p.created_date,
-        })),
-        sampleCategories: sampleCategories.map((c) => ({
-          id: c.id.toString(),
-          name: c.name,
-        })),
-        productsWithCategories: productsWithCategories.map((p) => ({
-          id: p.id.toString(),
-          title: p.title,
-          type: p.type,
-          categories: p.product_categories.map((pc) => ({
-            id: pc.categories_id.toString(),
-            name: pc.category?.name || 'Unknown',
-          })),
-        })),
-      };
-    } catch (error) {
-      this.logger.error('Error getting database info:', error.message);
-      throw new BadRequestException(
-        `Failed to get database info: ${error.message}`,
-      );
-    }
-  }
-
-  @Get('debug/test-search')
-  @ApiOperation({
-    summary: 'Debug: Test product search',
-    description:
-      'Test different search parameters to debug the product listing issue',
-  })
-  async testProductSearch(
-    @Query('pageSize') pageSize: string = '10',
-    @Query('pageNumber') pageNumber: string = '0',
-    @Query('title') title?: string,
-    @Query('type') type?: string,
-  ) {
-    try {
-      this.logger.log(
-        `Testing search with params: pageSize=${pageSize}, pageNumber=${pageNumber}, title=${title}, type=${type}`,
-      );
-
-      const result = await this.productService.search({
-        pageSize: parseInt(pageSize),
-        pageNumber: parseInt(pageNumber),
-        title,
-        type,
-      });
-
-      return {
-        searchParams: {
-          pageSize: parseInt(pageSize),
-          pageNumber: parseInt(pageNumber),
-          title,
-          type,
-        },
-        result,
-        message: `Found ${result.totalElements} products`,
-      };
-    } catch (error) {
-      this.logger.error('Error in test search:', error.message);
-      return {
-        error: error.message,
-        searchParams: {
-          pageSize: parseInt(pageSize),
-          pageNumber: parseInt(pageNumber),
-          title,
-          type,
-        },
-      };
-    }
-  }
-
-  @Get('debug/test-hierarchical')
-  @ApiOperation({
-    summary: 'Debug: Test hierarchical product search',
-    description: 'Test the hierarchical category search that should be working',
-  })
-  async testHierarchicalSearch(
-    @Query('pageSize') pageSize: string = '10',
-    @Query('pageNumber') pageNumber: string = '0',
-    @Query('title') title?: string,
-  ) {
-    try {
-      this.logger.log(
-        `Testing hierarchical search with params: pageSize=${pageSize}, pageNumber=${pageNumber}, title=${title}`,
-      );
-
-      const result = await this.productService.getProductsBySpecificCategories({
-        pageSize: parseInt(pageSize),
-        pageNumber: parseInt(pageNumber),
-        title,
-      });
-
-      return {
-        searchParams: {
-          pageSize: parseInt(pageSize),
-          pageNumber: parseInt(pageNumber),
-          title,
-        },
-        result,
-        message: `Found ${result.totalElements} products`,
-      };
-    } catch (error) {
-      this.logger.error('Error in test hierarchical search:', error.message);
-      return {
-        error: error.message,
-        searchParams: {
-          pageSize: parseInt(pageSize),
-          pageNumber: parseInt(pageNumber),
-          title,
-        },
-      };
-    }
-  }
-
-  @Get('debug/category-mapping')
-  @ApiOperation({
-    summary: 'Debug: Check category mapping',
-    description:
-      'Debug endpoint to check how categories are mapped and what products exist',
-  })
-  @ApiQuery({
-    name: 'parentCategoryIds',
-    required: false,
-    description: 'Comma-separated parent category IDs',
-  })
-  async debugCategoryMapping(
-    @Query('parentCategoryIds') parentCategoryIds?: string,
-  ) {
-    try {
-      const targetIds = parentCategoryIds
-        ? KiotVietUtils.parseCategoryIds(parentCategoryIds)
-        : [2205381, 2205374];
-
-      this.logger.log(
-        `Debug: Checking category mapping for IDs: ${targetIds.join(', ')}`,
-      );
-
-      // Get descendant category IDs
-      const allDescendantIds =
-        await this.productService['kiotVietService'].findDescendantCategoryIds(
-          targetIds,
-        );
-
-      // Check products in these categories
-      const categoryIdsBigInt = allDescendantIds.map((id) => BigInt(id));
-      const productCategoryRelations =
-        await this.prisma.product_categories.findMany({
-          where: {
-            categories_id: {
-              in: categoryIdsBigInt,
-            },
-          },
-          include: {
-            category: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-            product: {
-              select: {
-                id: true,
-                title: true,
-                type: true,
-              },
-            },
-          },
-          take: 20, // Limit for debugging
-        });
-
-      // Group by category
-      const categoryGroups = {};
-      productCategoryRelations.forEach((rel) => {
-        const catId = rel.categories_id.toString();
-        const catName = rel.category?.name || 'Unknown';
-
-        if (!categoryGroups[catId]) {
-          categoryGroups[catId] = {
-            categoryId: catId,
-            categoryName: catName,
-            products: [],
-          };
-        }
-
-        if (rel.product) {
-          categoryGroups[catId].products.push({
-            id: rel.product.id.toString(),
-            title: rel.product.title,
-            type: rel.product.type,
-          });
-        }
-      });
-
-      return {
-        requestedParentIds: targetIds,
-        allDescendantIds,
-        totalDescendantCategories: allDescendantIds.length,
-        totalProductRelations: productCategoryRelations.length,
-        categoryGroups: Object.values(categoryGroups),
-        summary: {
-          parentCategories: targetIds.length,
-          descendantCategories: allDescendantIds.length,
-          categoriesWithProducts: Object.keys(categoryGroups).length,
-          totalProductsFound: productCategoryRelations.length,
-        },
-      };
-    } catch (error) {
-      this.logger.error('Debug category mapping failed:', error.message);
-      throw new BadRequestException(`Debug failed: ${error.message}`);
     }
   }
 }

@@ -1,4 +1,4 @@
-// src/product/kiotviet.service.ts
+// src/product/kiotviet.service.ts - CLEANED VERSION
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
@@ -81,6 +81,7 @@ export class KiotVietService {
   private hourStartTime = Date.now();
   private readonly maxRequestsPerHour = 4900;
 
+  // Cache for category data
   private categoriesCache: Map<string, number> = new Map();
   private categoriesCacheExpiry: number = 0;
   private hierarchicalCategoriesCache: KiotVietCategory[] = [];
@@ -222,7 +223,57 @@ export class KiotVietService {
   }
 
   /**
-   * Fetch flat categories (original implementation)
+   * Fetch hierarchical categories from KiotViet
+   */
+  async fetchHierarchicalCategories(): Promise<KiotVietCategory[]> {
+    const now = Date.now();
+    if (
+      this.hierarchicalCategoriesCache.length > 0 &&
+      now < this.hierarchicalCacheExpiry
+    ) {
+      this.logger.debug('Using cached hierarchical categories');
+      return this.hierarchicalCategoriesCache;
+    }
+
+    await this.checkRateLimit();
+    await this.setupAuthHeaders();
+
+    try {
+      const response: AxiosResponse<KiotVietCategoryResponse> =
+        await this.axiosInstance.get('/categories', {
+          params: {
+            pageSize: 100,
+            currentItem: 0,
+            hierachicalData: true,
+          },
+        });
+
+      this.requestCount++;
+
+      this.hierarchicalCategoriesCache = response.data.data;
+      this.hierarchicalCacheExpiry = now + 3600000; // Cache for 1 hour
+
+      const categoriesWithChildren = response.data.data.filter(
+        (cat) => cat.hasChild,
+      );
+      this.logger.log(
+        `Fetched ${response.data.data.length} hierarchical categories, ${categoriesWithChildren.length} with children`,
+      );
+
+      return this.hierarchicalCategoriesCache;
+    } catch (error) {
+      this.logger.error(
+        'Failed to fetch hierarchical categories:',
+        error.message,
+      );
+      throw new BadRequestException(
+        `Failed to fetch hierarchical categories from KiotViet: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Fetch flat categories (for name-to-ID mapping)
    */
   async fetchCategories(): Promise<Map<string, number>> {
     const now = Date.now();
@@ -260,7 +311,7 @@ export class KiotVietService {
         );
       });
 
-      this.categoriesCacheExpiry = now + 3600000;
+      this.categoriesCacheExpiry = now + 3600000; // Cache for 1 hour
 
       this.logger.log(
         `Built category mapping with ${this.categoriesCache.size} categories`,
@@ -274,53 +325,27 @@ export class KiotVietService {
     }
   }
 
-  async fetchHierarchicalCategories(): Promise<KiotVietCategory[]> {
-    const now = Date.now();
-    if (
-      this.hierarchicalCategoriesCache.length > 0 &&
-      now < this.hierarchicalCacheExpiry
-    ) {
-      return this.hierarchicalCategoriesCache;
-    }
-    await this.checkRateLimit();
-    await this.setupAuthHeaders();
-
-    try {
-      const response: AxiosResponse<KiotVietCategoryResponse> =
-        await this.axiosInstance.get('/categories', {
-          params: {
-            pageSize: 100,
-            currentItem: 0,
-            hierachicalData: true,
-          },
-        });
-
-      this.requestCount++;
-
-      this.hierarchicalCategoriesCache = response.data.data;
-      this.hierarchicalCacheExpiry = now + 3600000;
-
-      const categoriesWithChildren = response.data.data.filter(
-        (cat) => cat.hasChild,
-      );
-      this.logger.log(
-        `Found ${categoriesWithChildren.length} categories with children out of ${response.data.data.length} total`,
-      );
-
-      return this.hierarchicalCategoriesCache;
-    } catch (error) {
-      this.logger.error(
-        'Failed to fetch hierarchical categories:',
-        error.message,
-      );
-      throw new BadRequestException(
-        `Failed to fetch hierarchical categories from KiotViet: ${error.message}`,
-      );
-    }
+  /**
+   * Get category mapping for sync operations
+   */
+  async getCategoryMappingForSync(): Promise<{
+    flatCategories: KiotVietCategory[];
+    hierarchicalCategories: KiotVietCategory[];
+    totalCount: number;
+  }> {
+    const hierarchicalCategories = await this.fetchHierarchicalCategories();
+    const flatCategories = this.flattenCategoryHierarchy(
+      hierarchicalCategories,
+    );
+    return {
+      flatCategories,
+      hierarchicalCategories,
+      totalCount: flatCategories.length,
+    };
   }
 
   /**
-   * NEW: Get all category IDs including nested children
+   * Flatten the hierarchical category structure
    */
   private flattenCategoryHierarchy(
     categories: KiotVietCategory[],
@@ -369,13 +394,17 @@ export class KiotVietService {
     return flatList;
   }
 
+  /**
+   * Find all descendant category IDs for given parent IDs
+   * This method specifically handles Lermao (2205381) and Trà Phượng Hoàng (2205374)
+   */
   async findDescendantCategoryIds(parentIds: number[]): Promise<number[]> {
     this.logger.log(
       `Finding descendant categories for parent IDs: ${parentIds.join(', ')}`,
     );
 
     try {
-      // Method 1: Use KiotViet hierarchical data
+      // Fetch hierarchical categories from KiotViet
       const hierarchicalCategories = await this.fetchHierarchicalCategories();
       const allCategories = this.flattenCategoryHierarchy(
         hierarchicalCategories,
@@ -413,7 +442,7 @@ export class KiotVietService {
         });
       };
 
-      // Add parent IDs first
+      // Add parent IDs first (include the parent categories themselves)
       parentIds.forEach((parentId) => {
         if (!descendantIds.includes(parentId)) {
           descendantIds.push(parentId);
@@ -424,70 +453,35 @@ export class KiotVietService {
       const uniqueDescendantIds = [...new Set(descendantIds)];
 
       this.logger.log(
-        `KiotViet hierarchy method found ${uniqueDescendantIds.length} total categories (including parents)`,
+        `Found ${uniqueDescendantIds.length} total categories (including parents and children)`,
       );
 
-      // Method 2: Also try database-based lookup as fallback/comparison
-      const dbDescendantIds =
-        await this.findDescendantCategoryIdsFromDatabase(parentIds);
+      // Log the specific categories found for Lermao and Trà Phượng Hoàng
+      if (parentIds.includes(2205381) || parentIds.includes(2205374)) {
+        const categoryNames = uniqueDescendantIds.map((id) => {
+          const category = allCategories.find((cat) => cat.categoryId === id);
+          return category
+            ? `${category.categoryName} (${id})`
+            : `Unknown (${id})`;
+        });
 
-      // Combine both methods and remove duplicates
-      const combinedIds = [
-        ...new Set([...uniqueDescendantIds, ...dbDescendantIds]),
-      ];
+        this.logger.log(
+          `Lermao and Trà Phượng Hoàng category hierarchy: ${categoryNames.join(', ')}`,
+        );
+      }
 
-      this.logger.log(
-        `Combined method found ${combinedIds.length} total categories`,
-      );
-      this.logger.log(
-        `Category IDs: ${combinedIds.slice(0, 20).join(', ')}${combinedIds.length > 20 ? '...' : ''}`,
-      );
-
-      return combinedIds;
+      return uniqueDescendantIds;
     } catch (error) {
       this.logger.error('Error in findDescendantCategoryIds:', error.message);
-
-      // Fallback to database method only
-      this.logger.log('Falling back to database-only method');
-      return await this.findDescendantCategoryIdsFromDatabase(parentIds);
+      // Fallback to just the parent IDs if hierarchy fetching fails
+      this.logger.log('Falling back to parent IDs only');
+      return parentIds;
     }
   }
 
-  private async findDescendantCategoryIdsFromDatabase(
-    parentIds: number[],
-  ): Promise<number[]> {
-    this.logger.log(
-      `Finding descendant categories from database for parent IDs: ${parentIds.join(', ')}`,
-    );
-
-    try {
-      // This would require access to the database, but KiotVietService doesn't have Prisma
-      // We'll need to implement this differently or access it through the ProductService
-
-      // For now, let's enhance the KiotViet-based method
-      return parentIds; // Return at least the parent IDs
-    } catch (error) {
-      this.logger.error('Database fallback failed:', error.message);
-      return parentIds; // Return at least the parent IDs
-    }
-  }
-
-  async getCategoryMappingForSync(): Promise<{
-    flatCategories: KiotVietCategory[];
-    hierarchicalCategories: KiotVietCategory[];
-    totalCount: number;
-  }> {
-    const hierarchicalCategories = await this.fetchHierarchicalCategories();
-    const flatCategories = this.flattenCategoryHierarchy(
-      hierarchicalCategories,
-    );
-    return {
-      flatCategories,
-      hierarchicalCategories,
-      totalCount: flatCategories.length,
-    };
-  }
-
+  /**
+   * Get category IDs from category names
+   */
   async getCategoryIds(categoryNames: string[]): Promise<number[]> {
     this.logger.log(`Looking up category IDs for: ${categoryNames.join(', ')}`);
 
@@ -519,6 +513,9 @@ export class KiotVietService {
     return categoryIds;
   }
 
+  /**
+   * Fetch a batch of products from KiotViet
+   */
   private async fetchProductBatch(
     currentItem: number = 0,
     pageSize: number = 100,
@@ -581,143 +578,9 @@ export class KiotVietService {
     }
   }
 
-  async testConnection(): Promise<{
-    success: boolean;
-    message: string;
-    tokenInfo?: {
-      expiresAt: string;
-      tokenType: string;
-    };
-  }> {
-    try {
-      this.logger.log('Testing KiotViet connection and authentication');
-
-      const credentials = this.getCredentials();
-      const token = await this.getValidAccessToken();
-      await this.setupAuthHeaders();
-
-      const testResponse = await this.axiosInstance.get('/products', {
-        params: { currentItem: 0, pageSize: 1 },
-      });
-
-      this.requestCount++;
-
-      return {
-        success: true,
-        message: `Successfully connected to KiotViet for retailer: ${credentials.retailerName}. Found ${testResponse.data.total} total products.`,
-        tokenInfo: this.currentToken
-          ? {
-              expiresAt: this.currentToken.expiresAt.toISOString(),
-              tokenType: this.currentToken.tokenType,
-            }
-          : undefined,
-      };
-    } catch (error) {
-      this.logger.error('KiotViet connection test failed:', error.message);
-      return {
-        success: false,
-        message: `Connection test failed: ${error.message}`,
-      };
-    }
-  }
-
-  async fetchAllProducts(
-    lastModifiedFrom?: string,
-    categoryNames?: string[],
-  ): Promise<{
-    products: KiotVietProduct[];
-    deletedIds: number[];
-    totalFetched: number;
-    batchInfo: Array<{
-      batchNumber: number;
-      itemsFetched: number;
-      currentItem: number;
-    }>;
-    filteredCategories?: string[];
-  }> {
-    let categoryIds: number[] | undefined;
-    if (categoryNames && categoryNames.length > 0) {
-      const targetParentIds = [2205381, 2205374];
-      const allDescendantIds =
-        await this.findDescendantCategoryIds(targetParentIds);
-
-      categoryIds = allDescendantIds;
-    }
-
-    const allProducts: KiotVietProduct[] = [];
-    const allDeletedIds: number[] = [];
-    const batchInfo: Array<{
-      batchNumber: number;
-      itemsFetched: number;
-      currentItem: number;
-    }> = [];
-
-    try {
-      if (categoryIds && categoryIds.length > 0) {
-        for (let i = 0; i < categoryIds.length; i++) {
-          const categoryId = categoryIds[i];
-
-          const categoryResult = await this.fetchProductsForCategory(
-            categoryId,
-            lastModifiedFrom,
-          );
-
-          allProducts.push(...categoryResult.products);
-          allDeletedIds.push(...categoryResult.deletedIds);
-
-          categoryResult.batchInfo.forEach((batch) => {
-            batchInfo.push({
-              ...batch,
-              batchNumber: batchInfo.length + 1,
-            });
-          });
-        }
-      } else {
-        this.logger.log('Fetching all products (no category filtering)');
-        const result =
-          await this.fetchAllProductsWithoutFilter(lastModifiedFrom);
-        allProducts.push(...result.products);
-        allDeletedIds.push(...result.deletedIds);
-        batchInfo.push(...result.batchInfo);
-      }
-
-      // Enhanced validation and logging for debugging
-      this.logger.log(`Final sync summary:
-        - Total products fetched: ${allProducts.length}
-        - Total deleted IDs: ${allDeletedIds.length}
-        - Total batches processed: ${batchInfo.length}`);
-
-      // Log sample of first few products for debugging
-      if (allProducts.length > 0) {
-        const sampleProducts = allProducts.slice(0, 3).map((p) => ({
-          id: p.id,
-          name: p.name,
-          category: p.categoryName,
-          price: p.basePrice,
-        }));
-        this.logger.log(
-          'Sample products fetched:',
-          JSON.stringify(sampleProducts, null, 2),
-        );
-      }
-
-      this.logger.log(
-        `Successfully fetched all products. Total: ${allProducts.length}, Deleted: ${allDeletedIds.length}`,
-      );
-
-      return {
-        products: allProducts,
-        deletedIds: allDeletedIds,
-        totalFetched: allProducts.length,
-        batchInfo,
-        filteredCategories: categoryNames,
-      };
-    } catch (error) {
-      this.logger.error('Failed to fetch all products:', error.message);
-      throw error;
-    }
-  }
-
+  /**
+   * Fetch products for a specific category
+   */
   private async fetchProductsForCategory(
     categoryId: number,
     lastModifiedFrom?: string,
@@ -742,50 +605,90 @@ export class KiotVietService {
     const batchSize = 100;
     let batchNumber = 1;
     let hasMoreData = true;
+    let consecutiveEmptyBatches = 0;
+    const maxEmptyBatches = 3;
 
-    while (hasMoreData) {
+    while (hasMoreData && consecutiveEmptyBatches < maxEmptyBatches) {
       this.logger.debug(
         `Fetching batch ${batchNumber} for category ${categoryId} (items ${currentItem}-${
           currentItem + batchSize - 1
         })`,
       );
 
-      const batch = await this.fetchProductBatch(
-        currentItem,
-        batchSize,
-        lastModifiedFrom,
-        [categoryId],
-      );
+      try {
+        const batch = await this.fetchProductBatch(
+          currentItem,
+          batchSize,
+          lastModifiedFrom,
+          [categoryId],
+        );
 
-      products.push(...batch.data);
+        products.push(...batch.data);
 
-      if (batch.removeId && Array.isArray(batch.removeId)) {
-        deletedIds.push(...batch.removeId);
-      }
+        if (batch.removeId && Array.isArray(batch.removeId)) {
+          deletedIds.push(...batch.removeId);
+        }
 
-      batchInfo.push({
-        batchNumber,
-        itemsFetched: batch.data.length,
-        currentItem,
-      });
+        batchInfo.push({
+          batchNumber,
+          itemsFetched: batch.data.length,
+          currentItem,
+        });
 
-      this.logger.debug(
-        `Category ${categoryId} batch ${batchNumber}: Fetched ${batch.data.length} products`,
-      );
+        this.logger.debug(
+          `Category ${categoryId} batch ${batchNumber}: Fetched ${batch.data.length} products`,
+        );
 
-      if (batch.data.length < batchSize) {
+        if (batch.data.length === 0) {
+          consecutiveEmptyBatches++;
+          this.logger.debug(
+            `Empty batch ${consecutiveEmptyBatches}/${maxEmptyBatches} for category ${categoryId}`,
+          );
+        } else {
+          consecutiveEmptyBatches = 0;
+        }
+
+        if (batch.data.length < batchSize) {
+          hasMoreData = false;
+        } else {
+          currentItem += batchSize;
+          batchNumber++;
+        }
+
+        // Add delay between batches
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } catch (error) {
+        this.logger.error(
+          `Error fetching batch ${batchNumber} for category ${categoryId}: ${error.message}`,
+        );
+
+        if (
+          error.message.includes('rate limit') ||
+          error.response?.status === 429
+        ) {
+          this.logger.warn(
+            `Rate limit hit for category ${categoryId}, waiting 60 seconds...`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 60000));
+          continue;
+        }
+
         hasMoreData = false;
-      } else {
-        currentItem += batchSize;
-        batchNumber++;
       }
+    }
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+    if (consecutiveEmptyBatches >= maxEmptyBatches) {
+      this.logger.warn(
+        `Stopped fetching for category ${categoryId} after ${maxEmptyBatches} consecutive empty batches`,
+      );
     }
 
     return { products, deletedIds, batchInfo };
   }
 
+  /**
+   * Fetch all products without category filter
+   */
   private async fetchAllProductsWithoutFilter(
     lastModifiedFrom?: string,
   ): Promise<{
@@ -886,6 +789,191 @@ export class KiotVietService {
     };
   }
 
+  /**
+   * Main method to fetch all products with optional category filtering
+   * Specifically optimized for Lermao and Trà Phượng Hoàng categories
+   */
+  async fetchAllProducts(
+    lastModifiedFrom?: string,
+    categoryNames?: string[],
+  ): Promise<{
+    products: KiotVietProduct[];
+    deletedIds: number[];
+    totalFetched: number;
+    batchInfo: Array<{
+      batchNumber: number;
+      itemsFetched: number;
+      currentItem: number;
+    }>;
+    filteredCategories?: string[];
+  }> {
+    let categoryIds: number[] | undefined;
+
+    if (categoryNames && categoryNames.length > 0) {
+      // If specific category names are provided, get their descendant IDs
+      const targetParentIds = await this.getCategoryIds(categoryNames);
+      const allDescendantIds =
+        await this.findDescendantCategoryIds(targetParentIds);
+      categoryIds = allDescendantIds;
+
+      this.logger.log(
+        `Filtering products by categories: ${categoryNames.join(', ')} (${categoryIds.length} total category IDs including children)`,
+      );
+    } else {
+      // Default to Lermao and Trà Phượng Hoàng if no specific categories provided
+      const targetParentIds = [2205381, 2205374]; // Lermao and Trà Phượng Hoàng
+      const allDescendantIds =
+        await this.findDescendantCategoryIds(targetParentIds);
+      categoryIds = allDescendantIds;
+
+      this.logger.log(
+        `No specific categories provided, defaulting to Lermao and Trà Phượng Hoàng (${categoryIds.length} total category IDs including children)`,
+      );
+    }
+
+    const allProducts: KiotVietProduct[] = [];
+    const allDeletedIds: number[] = [];
+    const batchInfo: Array<{
+      batchNumber: number;
+      itemsFetched: number;
+      currentItem: number;
+    }> = [];
+
+    try {
+      if (categoryIds && categoryIds.length > 0) {
+        // Fetch products for each category in the hierarchy
+        this.logger.log(
+          `Fetching products from ${categoryIds.length} categories`,
+        );
+
+        for (let i = 0; i < categoryIds.length; i++) {
+          const categoryId = categoryIds[i];
+
+          this.logger.log(
+            `Fetching products for category ${categoryId} (${i + 1}/${categoryIds.length})`,
+          );
+
+          try {
+            const categoryResult = await this.fetchProductsForCategory(
+              categoryId,
+              lastModifiedFrom,
+            );
+
+            this.logger.log(
+              `Category ${categoryId}: Found ${categoryResult.products.length} products`,
+            );
+
+            allProducts.push(...categoryResult.products);
+            allDeletedIds.push(...categoryResult.deletedIds);
+
+            // Adjust batch numbering to be sequential across categories
+            categoryResult.batchInfo.forEach((batch) => {
+              batchInfo.push({
+                ...batch,
+                batchNumber: batchInfo.length + 1,
+              });
+            });
+
+            // Small delay between categories
+            if (i < categoryIds.length - 1) {
+              await new Promise((resolve) => setTimeout(resolve, 200));
+            }
+          } catch (categoryError) {
+            this.logger.warn(
+              `Failed to fetch products for category ${categoryId}: ${categoryError.message}`,
+            );
+            // Continue with other categories
+          }
+        }
+
+        // Remove duplicate products (in case a product belongs to multiple categories)
+        const uniqueProducts: KiotVietProduct[] = [];
+        const seenProductIds = new Set<number>();
+
+        for (const product of allProducts) {
+          if (!seenProductIds.has(product.id)) {
+            uniqueProducts.push(product);
+            seenProductIds.add(product.id);
+          }
+        }
+
+        this.logger.log(
+          `Removed ${allProducts.length - uniqueProducts.length} duplicate products. Final count: ${uniqueProducts.length}`,
+        );
+
+        return {
+          products: uniqueProducts,
+          deletedIds: [...new Set(allDeletedIds)],
+          totalFetched: uniqueProducts.length,
+          batchInfo,
+          filteredCategories: categoryNames,
+        };
+      } else {
+        // Fetch all products without category filtering
+        this.logger.log('Fetching all products (no category filtering)');
+        const result =
+          await this.fetchAllProductsWithoutFilter(lastModifiedFrom);
+
+        return {
+          products: result.products,
+          deletedIds: result.deletedIds,
+          totalFetched: result.products.length,
+          batchInfo: result.batchInfo,
+          filteredCategories: categoryNames,
+        };
+      }
+    } catch (error) {
+      this.logger.error('Failed to fetch all products:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Test KiotViet connection
+   */
+  async testConnection(): Promise<{
+    success: boolean;
+    message: string;
+    tokenInfo?: {
+      expiresAt: string;
+      tokenType: string;
+    };
+  }> {
+    try {
+      this.logger.log('Testing KiotViet connection and authentication');
+
+      const credentials = this.getCredentials();
+      const token = await this.getValidAccessToken();
+      await this.setupAuthHeaders();
+
+      const testResponse = await this.axiosInstance.get('/products', {
+        params: { currentItem: 0, pageSize: 1 },
+      });
+
+      this.requestCount++;
+
+      return {
+        success: true,
+        message: `Successfully connected to KiotViet for retailer: ${credentials.retailerName}. Found ${testResponse.data.total} total products.`,
+        tokenInfo: this.currentToken
+          ? {
+              expiresAt: this.currentToken.expiresAt.toISOString(),
+              tokenType: this.currentToken.tokenType,
+            }
+          : undefined,
+      };
+    } catch (error) {
+      this.logger.error('KiotViet connection test failed:', error.message);
+      return {
+        success: false,
+        message: `Connection test failed: ${error.message}`,
+      };
+    }
+  }
+
+  /**
+   * Validate data integrity after fetching
+   */
   validateDataIntegrity(
     products: KiotVietProduct[],
     expectedTotal: number,
