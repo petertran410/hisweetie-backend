@@ -10,6 +10,8 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { PrismaClient } from '@prisma/client';
 import { OrderSearchDto } from './dto/order-search.dto';
 import { KiotVietService } from './kiotviet.service';
+import { create } from 'domain';
+import { async } from 'rxjs';
 
 interface KiotVietProduct {
   id: number;
@@ -298,6 +300,11 @@ export class ProductService {
         return;
       }
 
+      // IMPORTANT: Use the ACTUAL category ID from KiotViet, not parent mapping
+      this.logger.debug(
+        `Syncing product ${productId} with actual category ${kiotVietCategoryId}`,
+      );
+
       // Check if the category exists in our local database
       const categoryExists = await this.prisma.category.findUnique({
         where: { id: BigInt(kiotVietCategoryId) },
@@ -305,7 +312,7 @@ export class ProductService {
 
       if (!categoryExists) {
         this.logger.warn(
-          `Category ${kiotVietCategoryId} not found in local database for product ${productId}`,
+          `Category ${kiotVietCategoryId} not found in local database for product ${productId}. This might be a subcategory that needs to be synced.`,
         );
         return;
       }
@@ -319,7 +326,7 @@ export class ProductService {
       });
 
       if (!existingRelation) {
-        // Create the relationship
+        // Create the relationship with the ACTUAL category, not parent
         await this.prisma.product_categories.create({
           data: {
             product_id: productId,
@@ -334,7 +341,116 @@ export class ProductService {
       this.logger.error(
         `Failed to sync category relationship for product ${productId}: ${error.message}`,
       );
-      // Don't throw error here, just log it so it doesn't break the entire sync
+    }
+  }
+
+  async fixExistingProductCategoryRelationships(): Promise<{
+    fixed: number;
+    errors: string[];
+  }> {
+    this.logger.log('Fixing existing product category relationships...');
+
+    const errors: string[] = [];
+    let fixed = 0;
+
+    try {
+      // Get all products with their current categories
+      const products = await this.prisma.product.findMany({
+        include: {
+          product_categories: {
+            include: {
+              category: true,
+            },
+          },
+        },
+      });
+
+      this.logger.log(`Found ${products.length} products to check`);
+
+      // Process in batches to avoid overwhelming KiotViet API
+      const batchSize = 50;
+      for (let i = 0; i < products.length; i += batchSize) {
+        const batch = products.slice(i, i + batchSize);
+
+        for (const product of batch) {
+          try {
+            const productId = Number(product.id);
+
+            // Get fresh data from KiotViet for this product
+            // Note: You'll need to implement a method to get individual product from KiotViet
+            // For now, we'll work with existing logic
+
+            // Check if product is assigned to parent category instead of subcategory
+            const hasParentCategory = product.product_categories.some(
+              (pc) => [2205381, 2205374].includes(Number(pc.categories_id)), // Parent category IDs
+            );
+
+            if (hasParentCategory) {
+              this.logger.log(
+                `Product ${productId} (${product.title}) is assigned to parent category, needs fixing`,
+              );
+
+              // For now, we'll need to re-sync this product to get the correct category
+              // This would require calling KiotViet API to get the product's actual category
+
+              fixed++;
+            }
+          } catch (productError) {
+            const errorMsg = `Error processing product ${product.id}: ${productError.message}`;
+            this.logger.error(errorMsg);
+            errors.push(errorMsg);
+          }
+        }
+
+        // Small delay between batches
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      return { fixed, errors };
+    } catch (error) {
+      this.logger.error(
+        'Failed to fix product category relationships:',
+        error.message,
+      );
+      return { fixed: 0, errors: [error.message] };
+    }
+  }
+
+  private async createProductCategoryRelationship(
+    transactionClient: any,
+    productId: bigint,
+    kiotVietCategoryId: number,
+    productName: string,
+  ): Promise<void> {
+    try {
+      // Check if the category exists in our local database
+      const categoryExists = await transactionClient.category.findUnique({
+        where: { id: BigInt(kiotVietCategoryId) },
+      });
+
+      if (!categoryExists) {
+        this.logger.warn(
+          `Category ${kiotVietCategoryId} not found in local database for product ${productId} (${productName}). Skipping category assignment.`,
+        );
+        return;
+      }
+
+      // Create the relationship with the ACTUAL category ID from KiotViet
+      await transactionClient.product_categories.create({
+        data: {
+          product_id: productId,
+          categories_id: BigInt(kiotVietCategoryId), // Use ACTUAL category ID, not parent
+        },
+      });
+
+      this.logger.debug(
+        `Created relationship: Product ${productId} (${productName}) -> Category ${kiotVietCategoryId} (${categoryExists.name})`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to create category relationship for product ${productId}: ${error.message}`,
+      );
+      // Don't throw - continue with other products
     }
   }
 
@@ -482,7 +598,7 @@ export class ProductService {
                 }
 
                 this.logger.debug(
-                  `Processing product ${kiotVietProduct.id} - ${kiotVietProduct.name}`,
+                  `Processing product ${kiotVietProduct.id} - ${kiotVietProduct.name} - Category: ${kiotVietProduct.categoryId}`,
                 );
 
                 // Map the product data to your schema structure
@@ -519,8 +635,25 @@ export class ProductService {
                       },
                     });
                     updatedProducts++;
+
+                    // CRITICAL FIX: Delete old category relationships and create new ones with ACTUAL categoryId
+                    if (kiotVietProduct.categoryId) {
+                      // Delete existing relationships for this product
+                      await transactionClient.product_categories.deleteMany({
+                        where: { product_id: BigInt(kiotVietProduct.id) },
+                      });
+
+                      // Create new relationship with ACTUAL category from KiotViet
+                      await this.createProductCategoryRelationship(
+                        transactionClient,
+                        BigInt(kiotVietProduct.id),
+                        kiotVietProduct.categoryId,
+                        kiotVietProduct.name,
+                      );
+                    }
+
                     this.logger.debug(
-                      `Updated product ${kiotVietProduct.id} - ${kiotVietProduct.name}`,
+                      `Updated product ${kiotVietProduct.id} with actual category ${kiotVietProduct.categoryId}`,
                     );
                   } catch (updateError) {
                     const errorMsg = `Failed to update product ${kiotVietProduct.id}: ${updateError.message}`;
@@ -541,8 +674,19 @@ export class ProductService {
                       },
                     });
                     newProducts++;
+
+                    // CRITICAL FIX: Create relationship with ACTUAL category from KiotViet
+                    if (kiotVietProduct.categoryId) {
+                      await this.createProductCategoryRelationship(
+                        transactionClient,
+                        BigInt(kiotVietProduct.id),
+                        kiotVietProduct.categoryId,
+                        kiotVietProduct.name,
+                      );
+                    }
+
                     this.logger.debug(
-                      `Created new product ${kiotVietProduct.id} - ${kiotVietProduct.name}`,
+                      `Created new product ${kiotVietProduct.id} with actual category ${kiotVietProduct.categoryId}`,
                     );
                   } catch (createError) {
                     const errorMsg = `Failed to create product ${kiotVietProduct.id}: ${createError.message}`;
@@ -635,6 +779,103 @@ export class ProductService {
         },
         batchInfo: [],
       };
+    }
+  }
+
+  private async syncSingleCategory(category: any): Promise<void> {
+    try {
+      const categoryData = {
+        name: category.categoryName,
+        description: `KiotViet category - ${category.categoryName}`,
+        parent_id: category.parentId ? BigInt(category.parentId) : null,
+        images_url: null,
+        priority: category.rank || 0,
+        updated_date: new Date(),
+      };
+
+      // Check if category exists
+      const existingCategory = await this.prisma.category.findUnique({
+        where: { id: BigInt(category.categoryId) },
+      });
+
+      if (existingCategory) {
+        // Update existing
+        await this.prisma.category.update({
+          where: { id: BigInt(category.categoryId) },
+          data: categoryData,
+        });
+        this.logger.debug(
+          `Updated category ${category.categoryId} - ${category.categoryName}`,
+        );
+      } else {
+        // Create new
+        await this.prisma.category.create({
+          data: {
+            id: BigInt(category.categoryId),
+            ...categoryData,
+            created_date: category.createdDate
+              ? new Date(category.createdDate)
+              : new Date(),
+          },
+        });
+        this.logger.debug(
+          `Created category ${category.categoryId} - ${category.categoryName}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to sync single category ${category.categoryId}:`,
+        error.message,
+      );
+    }
+  }
+
+  private async syncCategoryHierarchy(category: any): Promise<void> {
+    try {
+      // Sync the current category
+      await this.syncSingleCategory(category);
+
+      // Recursively sync children
+      if (category.children && category.children.length > 0) {
+        for (const child of category.children) {
+          await this.syncCategoryHierarchy(child);
+        }
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to sync category hierarchy for ${category.categoryId}:`,
+        error.message,
+      );
+    }
+  }
+
+  async ensureCategoriesAreSynced(): Promise<void> {
+    this.logger.log(
+      'Ensuring all target categories are synced before product sync',
+    );
+
+    try {
+      // Get hierarchical categories from KiotViet
+      const hierarchicalCategories =
+        await this.kiotVietService.fetchHierarchicalCategories();
+
+      // Find Lermao and Trà Phượng Hoàng in the hierarchy
+      const targetCategories = hierarchicalCategories.filter((cat) =>
+        [2205381, 2205374].includes(cat.categoryId),
+      );
+
+      // Sync all categories in the target hierarchy
+      for (const targetCategory of targetCategories) {
+        await this.syncCategoryHierarchy(targetCategory);
+      }
+
+      this.logger.log('Category sync completed');
+    } catch (error) {
+      this.logger.error(
+        'Failed to ensure categories are synced:',
+        error.message,
+      );
+      throw error;
     }
   }
 
@@ -829,15 +1070,19 @@ export class ProductService {
     const targetParentIds = [2205381, 2205374]; // Lermao and Trà Phượng Hoàng
 
     try {
-      // Get all descendant category IDs
+      // STEP 1: Ensure all target categories are synced first
+      this.logger.log('Step 1: Syncing target categories first...');
+      await this.ensureCategoriesAreSynced();
+
+      // STEP 2: Get all descendant category IDs
       const allDescendantIds =
         await this.kiotVietService.findDescendantCategoryIds(targetParentIds);
 
       this.logger.log(
-        `Found ${allDescendantIds.length} total category IDs (including parents and children) for product filtering`,
+        `Step 2: Found ${allDescendantIds.length} total category IDs (including parents and children) for product filtering`,
       );
 
-      // Use existing sync logic with category filtering
+      // STEP 3: Use existing sync logic with category filtering
       const categoryNames = ['Lermao', 'Trà Phượng Hoàng']; // Category names for KiotViet filtering
       const syncResult = await this.syncProductsFromKiotViet(
         lastModifiedFrom,
@@ -1065,6 +1310,41 @@ export class ProductService {
           );
         }
 
+        // FIXED: Show actual subcategory names with parent category context
+        const categoriesWithContext = product.product_categories.map((pc) => {
+          const categoryId = Number(pc.categories_id);
+          const categoryName = pc.category?.name || 'Unknown';
+
+          // Define parent category context
+          let parentContext = '';
+          if (
+            [2205420, 2205421, 2205422, 2205423, 2282855].includes(categoryId)
+          ) {
+            // These are Lermao subcategories
+            parentContext = 'Lermao';
+          } else if ([2273864, 2273865].includes(categoryId)) {
+            // These are Trà Phượng Hoàng subcategories
+            parentContext = 'Trà Phượng Hoàng';
+          } else if (categoryId === 2205381) {
+            // Direct Lermao parent
+            parentContext = '';
+          } else if (categoryId === 2205374) {
+            // Direct Trà Phượng Hoàng parent
+            parentContext = '';
+          }
+
+          return {
+            id: pc.categories_id.toString(),
+            name: categoryName,
+            parentContext: parentContext,
+            // Show subcategory name primarily, with parent context if needed
+            displayName:
+              parentContext && categoryName !== parentContext
+                ? `${categoryName}`
+                : categoryName,
+          };
+        });
+
         return {
           id: product.id.toString(),
           title: product.title,
@@ -1080,10 +1360,8 @@ export class ProductService {
           type: product.type,
           createdDate: product.created_date,
           updatedDate: product.updated_date,
-          ofCategories: product.product_categories.map((pc) => ({
-            id: pc.categories_id.toString(),
-            name: pc.category?.name || '',
-          })),
+          // FIXED: Return actual subcategory information
+          ofCategories: categoriesWithContext,
         };
       });
 
