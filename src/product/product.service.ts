@@ -481,32 +481,33 @@ export class ProductService {
         categoryNames,
       );
 
-      this.logger.log(
-        `Fetched ${fetchResult.products.length} products from KiotViet`,
-      );
-
-      // CRITICAL: Log category information for debugging
-      const productsWithCategories = fetchResult.products.filter(
-        (p) => p.categoryId,
-      );
-      const productsWithoutCategories = fetchResult.products.filter(
-        (p) => !p.categoryId,
-      );
-
-      this.logger.log(
-        `Products WITH category info: ${productsWithCategories.length}`,
-      );
-      this.logger.log(
-        `Products WITHOUT category info: ${productsWithoutCategories.length}`,
-      );
-
-      if (productsWithCategories.length > 0) {
+      if (categoryNames) {
         this.logger.log(
-          `Sample categories found: ${productsWithCategories
-            .slice(0, 5)
-            .map((p) => `${p.name} -> ${p.categoryId} (${p.categoryName})`)
-            .join(', ')}`,
+          `Fetched ${fetchResult.products.length} products from categories: ${categoryNames.join(', ')}`,
         );
+      } else {
+        this.logger.log(
+          `Fetched ${fetchResult.products.length} products from KiotViet`,
+        );
+      }
+
+      // Validate the fetched data structure
+      if (!Array.isArray(fetchResult.products)) {
+        throw new Error(
+          `Invalid products data structure: expected array, got ${typeof fetchResult.products}`,
+        );
+      }
+
+      // Validate data integrity
+      const validation = this.kiotVietService.validateDataIntegrity(
+        fetchResult.products,
+        fetchResult.totalFetched,
+        fetchResult.batchInfo,
+      );
+
+      if (!validation.isValid) {
+        this.logger.warn('Data integrity issues detected:', validation.issues);
+        errors.push(...validation.issues);
       }
 
       // Process the synchronization with improved transaction handling
@@ -514,12 +515,60 @@ export class ProductService {
         async (transactionClient) => {
           let newProducts = 0;
           let updatedProducts = 0;
-          let categoryRelationshipsCreated = 0;
-          let categoryRelationshipsFailed = 0;
 
-          // Process products in smaller batches
+          // Step 1: Handle deleted products
+          if (fetchResult.deletedIds && fetchResult.deletedIds.length > 0) {
+            this.logger.log(
+              `Processing ${fetchResult.deletedIds.length} deleted products`,
+            );
+
+            try {
+              const validDeletedIds = fetchResult.deletedIds
+                .filter((id) => typeof id === 'number' && !isNaN(id) && id > 0)
+                .map((id) => BigInt(id));
+
+              if (validDeletedIds.length > 0) {
+                // Delete associated records first to avoid foreign key constraints
+                await transactionClient.orders.deleteMany({
+                  where: {
+                    product: {
+                      id: { in: validDeletedIds },
+                    },
+                  },
+                });
+
+                await transactionClient.review.deleteMany({
+                  where: { product_id: { in: validDeletedIds } },
+                });
+
+                await transactionClient.product_categories.deleteMany({
+                  where: { product_id: { in: validDeletedIds } },
+                });
+
+                const deleteResult = await transactionClient.product.deleteMany(
+                  {
+                    where: { id: { in: validDeletedIds } },
+                  },
+                );
+
+                totalDeleted = deleteResult.count;
+                this.logger.log(
+                  `Successfully deleted ${totalDeleted} products from local database`,
+                );
+              }
+            } catch (error) {
+              const errorMsg = `Error deleting products: ${error.message}`;
+              this.logger.error(errorMsg);
+              errors.push(errorMsg);
+            }
+          }
+
+          // Step 2: Process products in smaller batches
           const batchSize = 20;
           const totalProducts = fetchResult.products.length;
+          this.logger.log(
+            `Processing ${totalProducts} products in batches of ${batchSize}`,
+          );
 
           for (let i = 0; i < totalProducts; i += batchSize) {
             const batch = fetchResult.products.slice(i, i + batchSize);
@@ -549,7 +598,7 @@ export class ProductService {
                 }
 
                 this.logger.debug(
-                  `Processing product ${kiotVietProduct.id} - ${kiotVietProduct.name} - Category: ${kiotVietProduct.categoryId} (${kiotVietProduct.categoryName})`,
+                  `Processing product ${kiotVietProduct.id} - ${kiotVietProduct.name} - Category: ${kiotVietProduct.categoryId}`,
                 );
 
                 // Map the product data to your schema structure
@@ -586,12 +635,30 @@ export class ProductService {
                       },
                     });
                     updatedProducts++;
-                    this.logger.debug(`Updated product ${kiotVietProduct.id}`);
+
+                    // CRITICAL FIX: Delete old category relationships and create new ones with ACTUAL categoryId
+                    if (kiotVietProduct.categoryId) {
+                      // Delete existing relationships for this product
+                      await transactionClient.product_categories.deleteMany({
+                        where: { product_id: BigInt(kiotVietProduct.id) },
+                      });
+
+                      // Create new relationship with ACTUAL category from KiotViet
+                      await this.createProductCategoryRelationship(
+                        transactionClient,
+                        BigInt(kiotVietProduct.id),
+                        kiotVietProduct.categoryId,
+                        kiotVietProduct.name,
+                      );
+                    }
+
+                    this.logger.debug(
+                      `Updated product ${kiotVietProduct.id} with actual category ${kiotVietProduct.categoryId}`,
+                    );
                   } catch (updateError) {
                     const errorMsg = `Failed to update product ${kiotVietProduct.id}: ${updateError.message}`;
                     this.logger.error(errorMsg);
                     errors.push(errorMsg);
-                    continue; // Skip category assignment if product update fails
                   }
                 } else {
                   // Create new product
@@ -607,60 +674,25 @@ export class ProductService {
                       },
                     });
                     newProducts++;
+
+                    // CRITICAL FIX: Create relationship with ACTUAL category from KiotViet
+                    if (kiotVietProduct.categoryId) {
+                      await this.createProductCategoryRelationship(
+                        transactionClient,
+                        BigInt(kiotVietProduct.id),
+                        kiotVietProduct.categoryId,
+                        kiotVietProduct.name,
+                      );
+                    }
+
                     this.logger.debug(
-                      `Created new product ${kiotVietProduct.id}`,
+                      `Created new product ${kiotVietProduct.id} with actual category ${kiotVietProduct.categoryId}`,
                     );
                   } catch (createError) {
                     const errorMsg = `Failed to create product ${kiotVietProduct.id}: ${createError.message}`;
                     this.logger.error(errorMsg);
                     errors.push(errorMsg);
-                    continue; // Skip category assignment if product creation fails
                   }
-                }
-
-                // CRITICAL FIX: Always attempt to create category relationship
-                if (kiotVietProduct.categoryId) {
-                  try {
-                    // Delete existing relationships for this product first
-                    await transactionClient.product_categories.deleteMany({
-                      where: { product_id: BigInt(kiotVietProduct.id) },
-                    });
-
-                    // Check if category exists in our database
-                    const categoryExists =
-                      await transactionClient.category.findUnique({
-                        where: { id: BigInt(kiotVietProduct.categoryId) },
-                      });
-
-                    if (categoryExists) {
-                      // Create new relationship
-                      await transactionClient.product_categories.create({
-                        data: {
-                          product_id: BigInt(kiotVietProduct.id),
-                          categories_id: BigInt(kiotVietProduct.categoryId),
-                        },
-                      });
-                      categoryRelationshipsCreated++;
-                      this.logger.debug(
-                        `✅ Created category relationship: Product ${kiotVietProduct.id} -> Category ${kiotVietProduct.categoryId} (${categoryExists.name})`,
-                      );
-                    } else {
-                      categoryRelationshipsFailed++;
-                      const errorMsg = `❌ Category ${kiotVietProduct.categoryId} (${kiotVietProduct.categoryName}) not found in local database for product ${kiotVietProduct.id}`;
-                      this.logger.warn(errorMsg);
-                      errors.push(errorMsg);
-                    }
-                  } catch (relationshipError) {
-                    categoryRelationshipsFailed++;
-                    const errorMsg = `❌ Failed to create category relationship for product ${kiotVietProduct.id}: ${relationshipError.message}`;
-                    this.logger.error(errorMsg);
-                    errors.push(errorMsg);
-                  }
-                } else {
-                  // Log products without category info
-                  this.logger.warn(
-                    `⚠️ Product ${kiotVietProduct.id} (${kiotVietProduct.name}) has no category information from KiotViet`,
-                  );
                 }
               } catch (productError) {
                 const errorMsg = `Failed to process product ${kiotVietProduct?.id || 'unknown'}: ${productError.message}`;
@@ -668,23 +700,24 @@ export class ProductService {
                 errors.push(errorMsg);
               }
             }
+
+            // Progress update
+            this.logger.log(
+              `Completed batch ${batchNumber}/${totalBatches}. Progress: ${Math.round(((i + batch.length) / totalProducts) * 100)}%`,
+            );
+
+            // Add small delay between batches
+            if (batchNumber < totalBatches) {
+              await new Promise((resolve) => setTimeout(resolve, 100));
+            }
           }
 
           totalSynced = newProducts + updatedProducts;
-
           this.logger.log(
             `Sync summary: ${newProducts} new, ${updatedProducts} updated, ${totalSynced} total synced`,
           );
-          this.logger.log(
-            `Category relationships: ${categoryRelationshipsCreated} created, ${categoryRelationshipsFailed} failed`,
-          );
 
-          return {
-            newProducts,
-            updatedProducts,
-            categoryRelationshipsCreated,
-            categoryRelationshipsFailed,
-          };
+          return { newProducts, updatedProducts };
         },
         {
           timeout: 900000, // 15 minute timeout
@@ -692,10 +725,8 @@ export class ProductService {
         },
       );
 
-      // Get final counts
+      // Get final count after sync
       const afterSyncCount = await this.prisma.product.count();
-      const categoryRelationshipsCount =
-        await this.prisma.product_categories.count();
 
       const result: SyncResult = {
         success: errors.length === 0,
@@ -710,26 +741,20 @@ export class ProductService {
           deletedProducts: totalDeleted,
         },
         batchInfo: fetchResult.batchInfo,
-        // Add category relationship info
-        categoryInfo: {
-          relationshipsCreated: syncResults.categoryRelationshipsCreated,
-          relationshipsFailed: syncResults.categoryRelationshipsFailed,
-          totalRelationships: categoryRelationshipsCount,
-          productsWithCategories: productsWithCategories.length,
-          productsWithoutCategories: productsWithoutCategories.length,
-        },
       };
 
       if (result.success) {
         this.logger.log('Product synchronization completed successfully', {
           totalSynced: result.totalSynced,
-          categoryRelationships: result.categoryInfo,
+          totalDeleted: result.totalDeleted,
+          filteredCategories: fetchResult.filteredCategories,
         });
       } else {
         this.logger.warn('Product synchronization completed with errors', {
           totalSynced: result.totalSynced,
+          totalDeleted: result.totalDeleted,
           errorCount: result.errors.length,
-          categoryRelationships: result.categoryInfo,
+          filteredCategories: fetchResult.filteredCategories,
         });
       }
 
