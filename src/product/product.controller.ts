@@ -560,4 +560,220 @@ export class ProductController {
       );
     }
   }
+
+  @Post('fix/category-assignments')
+  @ApiOperation({
+    summary: 'Fix product category assignments',
+    description:
+      'Move products from parent categories (Lermao, Trà Phượng Hoàng) to appropriate subcategories',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Product category assignments fixed successfully',
+  })
+  async fixProductCategoryAssignments() {
+    try {
+      this.logger.log('Starting product category assignment fix...');
+
+      const result = await this.productService.fixProductCategoryAssignments();
+
+      if (result.success) {
+        this.logger.log(
+          'Product category fix completed successfully',
+          result.summary,
+        );
+      } else {
+        this.logger.warn('Product category fix completed with errors', {
+          errorCount: result.errors.length,
+          summary: result.summary,
+        });
+      }
+
+      return {
+        message: result.success
+          ? `Successfully fixed ${result.totalFixed} product category assignments`
+          : `Fixed ${result.totalFixed} products but encountered ${result.errors.length} errors`,
+        ...result,
+      };
+    } catch (error) {
+      this.logger.error('Product category fix failed:', error.message);
+      throw new BadRequestException(`Category fix failed: ${error.message}`);
+    }
+  }
+
+  @Get('debug/parent-category-products')
+  @ApiOperation({
+    summary: 'Get products assigned to parent categories (Debug)',
+    description:
+      'Returns products that are currently assigned directly to parent categories instead of subcategories',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns products in parent categories for debugging',
+  })
+  async getProductsInParentCategories() {
+    try {
+      this.logger.log('Fetching products assigned to parent categories...');
+
+      const result = await this.productService.getProductsInParentCategories();
+
+      this.logger.log(
+        `Found ${result.totalCount} products in parent categories`,
+      );
+
+      return {
+        message: `Found ${result.totalCount} products assigned to parent categories`,
+        ...result,
+        issue:
+          result.totalCount > 0
+            ? 'Products are assigned to parent categories instead of subcategories'
+            : null,
+        solution:
+          result.totalCount > 0
+            ? 'Use POST /api/product/fix/category-assignments to fix this issue'
+            : null,
+      };
+    } catch (error) {
+      this.logger.error(
+        'Failed to get parent category products:',
+        error.message,
+      );
+      throw new BadRequestException(
+        `Failed to get debug info: ${error.message}`,
+      );
+    }
+  }
+
+  @Get('debug/category-assignments')
+  @ApiOperation({
+    summary: 'Debug category assignments',
+    description:
+      'Get detailed information about current product category assignments',
+  })
+  async debugCategoryAssignments() {
+    try {
+      // Get counts for parent categories
+      const lermaoParentCount = await this.prisma.product_categories.count({
+        where: { categories_id: BigInt(2205381) },
+      });
+
+      const traPhuongHoangParentCount =
+        await this.prisma.product_categories.count({
+          where: { categories_id: BigInt(2205374) },
+        });
+
+      // Get counts for subcategories
+      const subcategoryCounts = await Promise.all([
+        // Lermao subcategories
+        {
+          id: 2205420,
+          name: 'Bột',
+          parent: 'Lermao',
+          count: await this.prisma.product_categories.count({
+            where: { categories_id: BigInt(2205420) },
+          }),
+        },
+        {
+          id: 2205421,
+          name: 'Topping',
+          parent: 'Lermao',
+          count: await this.prisma.product_categories.count({
+            where: { categories_id: BigInt(2205421) },
+          }),
+        },
+        {
+          id: 2205422,
+          name: 'Mứt Sốt',
+          parent: 'Lermao',
+          count: await this.prisma.product_categories.count({
+            where: { categories_id: BigInt(2205422) },
+          }),
+        },
+        {
+          id: 2205423,
+          name: 'Siro',
+          parent: 'Lermao',
+          count: await this.prisma.product_categories.count({
+            where: { categories_id: BigInt(2205423) },
+          }),
+        },
+        {
+          id: 2282855,
+          name: 'hàng sản xuất',
+          parent: 'Lermao',
+          count: await this.prisma.product_categories.count({
+            where: { categories_id: BigInt(2282855) },
+          }),
+        },
+        // Trà Phượng Hoàng subcategories
+        {
+          id: 2273864,
+          name: 'OEM',
+          parent: 'Trà Phượng Hoàng',
+          count: await this.prisma.product_categories.count({
+            where: { categories_id: BigInt(2273864) },
+          }),
+        },
+        {
+          id: 2273865,
+          name: 'SHANCHA',
+          parent: 'Trà Phượng Hoàng',
+          count: await this.prisma.product_categories.count({
+            where: { categories_id: BigInt(2273865) },
+          }),
+        },
+      ]);
+
+      const totalParentAssignments =
+        lermaoParentCount + traPhuongHoangParentCount;
+      const totalSubcategoryAssignments = subcategoryCounts.reduce(
+        (sum, cat) => sum + cat.count,
+        0,
+      );
+
+      return {
+        message: 'Category assignment debug information',
+        parentCategories: {
+          lermao: {
+            id: 2205381,
+            name: 'Lermao',
+            productCount: lermaoParentCount,
+            status:
+              lermaoParentCount > 0
+                ? '❌ Has products (should be in subcategories)'
+                : '✅ No direct assignments',
+          },
+          traPhuongHoang: {
+            id: 2205374,
+            name: 'Trà Phượng Hoàng',
+            productCount: traPhuongHoangParentCount,
+            status:
+              traPhuongHoangParentCount > 0
+                ? '❌ Has products (should be in subcategories)'
+                : '✅ No direct assignments',
+          },
+        },
+        subcategories: subcategoryCounts.map((cat) => ({
+          ...cat,
+          status: cat.count > 0 ? '✅ Has products' : '⚠️ No products assigned',
+        })),
+        summary: {
+          totalParentAssignments,
+          totalSubcategoryAssignments,
+          totalProducts: totalParentAssignments + totalSubcategoryAssignments,
+          issue:
+            totalParentAssignments > 0
+              ? `${totalParentAssignments} products assigned to parent categories`
+              : null,
+          recommendation:
+            totalParentAssignments > 0
+              ? 'Run POST /api/product/fix/category-assignments to fix'
+              : 'Category assignments look correct',
+        },
+      };
+    } catch (error) {
+      this.logger.error('Debug category assignments failed:', error.message);
+      throw new BadRequestException(`Debug failed: ${error.message}`);
+    }
+  }
 }

@@ -481,33 +481,32 @@ export class ProductService {
         categoryNames,
       );
 
-      if (categoryNames) {
-        this.logger.log(
-          `Fetched ${fetchResult.products.length} products from categories: ${categoryNames.join(', ')}`,
-        );
-      } else {
-        this.logger.log(
-          `Fetched ${fetchResult.products.length} products from KiotViet`,
-        );
-      }
-
-      // Validate the fetched data structure
-      if (!Array.isArray(fetchResult.products)) {
-        throw new Error(
-          `Invalid products data structure: expected array, got ${typeof fetchResult.products}`,
-        );
-      }
-
-      // Validate data integrity
-      const validation = this.kiotVietService.validateDataIntegrity(
-        fetchResult.products,
-        fetchResult.totalFetched,
-        fetchResult.batchInfo,
+      this.logger.log(
+        `Fetched ${fetchResult.products.length} products from KiotViet`,
       );
 
-      if (!validation.isValid) {
-        this.logger.warn('Data integrity issues detected:', validation.issues);
-        errors.push(...validation.issues);
+      // CRITICAL: Log category information for debugging
+      const productsWithCategories = fetchResult.products.filter(
+        (p) => p.categoryId,
+      );
+      const productsWithoutCategories = fetchResult.products.filter(
+        (p) => !p.categoryId,
+      );
+
+      this.logger.log(
+        `Products WITH category info: ${productsWithCategories.length}`,
+      );
+      this.logger.log(
+        `Products WITHOUT category info: ${productsWithoutCategories.length}`,
+      );
+
+      if (productsWithCategories.length > 0) {
+        this.logger.log(
+          `Sample categories found: ${productsWithCategories
+            .slice(0, 5)
+            .map((p) => `${p.name} -> ${p.categoryId} (${p.categoryName})`)
+            .join(', ')}`,
+        );
       }
 
       // Process the synchronization with improved transaction handling
@@ -515,60 +514,12 @@ export class ProductService {
         async (transactionClient) => {
           let newProducts = 0;
           let updatedProducts = 0;
+          let categoryRelationshipsCreated = 0;
+          let categoryRelationshipsFailed = 0;
 
-          // Step 1: Handle deleted products
-          if (fetchResult.deletedIds && fetchResult.deletedIds.length > 0) {
-            this.logger.log(
-              `Processing ${fetchResult.deletedIds.length} deleted products`,
-            );
-
-            try {
-              const validDeletedIds = fetchResult.deletedIds
-                .filter((id) => typeof id === 'number' && !isNaN(id) && id > 0)
-                .map((id) => BigInt(id));
-
-              if (validDeletedIds.length > 0) {
-                // Delete associated records first to avoid foreign key constraints
-                await transactionClient.orders.deleteMany({
-                  where: {
-                    product: {
-                      id: { in: validDeletedIds },
-                    },
-                  },
-                });
-
-                await transactionClient.review.deleteMany({
-                  where: { product_id: { in: validDeletedIds } },
-                });
-
-                await transactionClient.product_categories.deleteMany({
-                  where: { product_id: { in: validDeletedIds } },
-                });
-
-                const deleteResult = await transactionClient.product.deleteMany(
-                  {
-                    where: { id: { in: validDeletedIds } },
-                  },
-                );
-
-                totalDeleted = deleteResult.count;
-                this.logger.log(
-                  `Successfully deleted ${totalDeleted} products from local database`,
-                );
-              }
-            } catch (error) {
-              const errorMsg = `Error deleting products: ${error.message}`;
-              this.logger.error(errorMsg);
-              errors.push(errorMsg);
-            }
-          }
-
-          // Step 2: Process products in smaller batches
+          // Process products in smaller batches
           const batchSize = 20;
           const totalProducts = fetchResult.products.length;
-          this.logger.log(
-            `Processing ${totalProducts} products in batches of ${batchSize}`,
-          );
 
           for (let i = 0; i < totalProducts; i += batchSize) {
             const batch = fetchResult.products.slice(i, i + batchSize);
@@ -598,7 +549,7 @@ export class ProductService {
                 }
 
                 this.logger.debug(
-                  `Processing product ${kiotVietProduct.id} - ${kiotVietProduct.name} - Category: ${kiotVietProduct.categoryId}`,
+                  `Processing product ${kiotVietProduct.id} - ${kiotVietProduct.name} - Category: ${kiotVietProduct.categoryId} (${kiotVietProduct.categoryName})`,
                 );
 
                 // Map the product data to your schema structure
@@ -635,30 +586,12 @@ export class ProductService {
                       },
                     });
                     updatedProducts++;
-
-                    // CRITICAL FIX: Delete old category relationships and create new ones with ACTUAL categoryId
-                    if (kiotVietProduct.categoryId) {
-                      // Delete existing relationships for this product
-                      await transactionClient.product_categories.deleteMany({
-                        where: { product_id: BigInt(kiotVietProduct.id) },
-                      });
-
-                      // Create new relationship with ACTUAL category from KiotViet
-                      await this.createProductCategoryRelationship(
-                        transactionClient,
-                        BigInt(kiotVietProduct.id),
-                        kiotVietProduct.categoryId,
-                        kiotVietProduct.name,
-                      );
-                    }
-
-                    this.logger.debug(
-                      `Updated product ${kiotVietProduct.id} with actual category ${kiotVietProduct.categoryId}`,
-                    );
+                    this.logger.debug(`Updated product ${kiotVietProduct.id}`);
                   } catch (updateError) {
                     const errorMsg = `Failed to update product ${kiotVietProduct.id}: ${updateError.message}`;
                     this.logger.error(errorMsg);
                     errors.push(errorMsg);
+                    continue; // Skip category assignment if product update fails
                   }
                 } else {
                   // Create new product
@@ -674,25 +607,60 @@ export class ProductService {
                       },
                     });
                     newProducts++;
-
-                    // CRITICAL FIX: Create relationship with ACTUAL category from KiotViet
-                    if (kiotVietProduct.categoryId) {
-                      await this.createProductCategoryRelationship(
-                        transactionClient,
-                        BigInt(kiotVietProduct.id),
-                        kiotVietProduct.categoryId,
-                        kiotVietProduct.name,
-                      );
-                    }
-
                     this.logger.debug(
-                      `Created new product ${kiotVietProduct.id} with actual category ${kiotVietProduct.categoryId}`,
+                      `Created new product ${kiotVietProduct.id}`,
                     );
                   } catch (createError) {
                     const errorMsg = `Failed to create product ${kiotVietProduct.id}: ${createError.message}`;
                     this.logger.error(errorMsg);
                     errors.push(errorMsg);
+                    continue; // Skip category assignment if product creation fails
                   }
+                }
+
+                // CRITICAL FIX: Always attempt to create category relationship
+                if (kiotVietProduct.categoryId) {
+                  try {
+                    // Delete existing relationships for this product first
+                    await transactionClient.product_categories.deleteMany({
+                      where: { product_id: BigInt(kiotVietProduct.id) },
+                    });
+
+                    // Check if category exists in our database
+                    const categoryExists =
+                      await transactionClient.category.findUnique({
+                        where: { id: BigInt(kiotVietProduct.categoryId) },
+                      });
+
+                    if (categoryExists) {
+                      // Create new relationship
+                      await transactionClient.product_categories.create({
+                        data: {
+                          product_id: BigInt(kiotVietProduct.id),
+                          categories_id: BigInt(kiotVietProduct.categoryId),
+                        },
+                      });
+                      categoryRelationshipsCreated++;
+                      this.logger.debug(
+                        `✅ Created category relationship: Product ${kiotVietProduct.id} -> Category ${kiotVietProduct.categoryId} (${categoryExists.name})`,
+                      );
+                    } else {
+                      categoryRelationshipsFailed++;
+                      const errorMsg = `❌ Category ${kiotVietProduct.categoryId} (${kiotVietProduct.categoryName}) not found in local database for product ${kiotVietProduct.id}`;
+                      this.logger.warn(errorMsg);
+                      errors.push(errorMsg);
+                    }
+                  } catch (relationshipError) {
+                    categoryRelationshipsFailed++;
+                    const errorMsg = `❌ Failed to create category relationship for product ${kiotVietProduct.id}: ${relationshipError.message}`;
+                    this.logger.error(errorMsg);
+                    errors.push(errorMsg);
+                  }
+                } else {
+                  // Log products without category info
+                  this.logger.warn(
+                    `⚠️ Product ${kiotVietProduct.id} (${kiotVietProduct.name}) has no category information from KiotViet`,
+                  );
                 }
               } catch (productError) {
                 const errorMsg = `Failed to process product ${kiotVietProduct?.id || 'unknown'}: ${productError.message}`;
@@ -700,24 +668,23 @@ export class ProductService {
                 errors.push(errorMsg);
               }
             }
-
-            // Progress update
-            this.logger.log(
-              `Completed batch ${batchNumber}/${totalBatches}. Progress: ${Math.round(((i + batch.length) / totalProducts) * 100)}%`,
-            );
-
-            // Add small delay between batches
-            if (batchNumber < totalBatches) {
-              await new Promise((resolve) => setTimeout(resolve, 100));
-            }
           }
 
           totalSynced = newProducts + updatedProducts;
+
           this.logger.log(
             `Sync summary: ${newProducts} new, ${updatedProducts} updated, ${totalSynced} total synced`,
           );
+          this.logger.log(
+            `Category relationships: ${categoryRelationshipsCreated} created, ${categoryRelationshipsFailed} failed`,
+          );
 
-          return { newProducts, updatedProducts };
+          return {
+            newProducts,
+            updatedProducts,
+            categoryRelationshipsCreated,
+            categoryRelationshipsFailed,
+          };
         },
         {
           timeout: 900000, // 15 minute timeout
@@ -725,8 +692,10 @@ export class ProductService {
         },
       );
 
-      // Get final count after sync
+      // Get final counts
       const afterSyncCount = await this.prisma.product.count();
+      const categoryRelationshipsCount =
+        await this.prisma.product_categories.count();
 
       const result: SyncResult = {
         success: errors.length === 0,
@@ -741,20 +710,26 @@ export class ProductService {
           deletedProducts: totalDeleted,
         },
         batchInfo: fetchResult.batchInfo,
+        // Add category relationship info
+        categoryInfo: {
+          relationshipsCreated: syncResults.categoryRelationshipsCreated,
+          relationshipsFailed: syncResults.categoryRelationshipsFailed,
+          totalRelationships: categoryRelationshipsCount,
+          productsWithCategories: productsWithCategories.length,
+          productsWithoutCategories: productsWithoutCategories.length,
+        },
       };
 
       if (result.success) {
         this.logger.log('Product synchronization completed successfully', {
           totalSynced: result.totalSynced,
-          totalDeleted: result.totalDeleted,
-          filteredCategories: fetchResult.filteredCategories,
+          categoryRelationships: result.categoryInfo,
         });
       } else {
         this.logger.warn('Product synchronization completed with errors', {
           totalSynced: result.totalSynced,
-          totalDeleted: result.totalDeleted,
           errorCount: result.errors.length,
-          filteredCategories: fetchResult.filteredCategories,
+          categoryRelationships: result.categoryInfo,
         });
       }
 
@@ -1215,21 +1190,47 @@ export class ProductService {
       const targetParentIds = parentCategoryIds || [2205381, 2205374];
 
       this.logger.log(
-        `Fetching products from categories: ${targetParentIds.join(', ')} including all children`,
+        `Fetching products from subcategories only (excluding parent assignments): ${targetParentIds.join(', ')}`,
       );
 
       // Use KiotViet service to find all descendant category IDs
       const allCategoryIds =
         await this.kiotVietService.findDescendantCategoryIds(targetParentIds);
 
-      this.logger.log(
-        `Found ${allCategoryIds.length} category IDs including children: ${allCategoryIds.slice(0, 10).join(', ')}${allCategoryIds.length > 10 ? '...' : ''}`,
+      // CRITICAL FIX: Remove parent category IDs to exclude direct parent assignments
+      const subcategoryIds = allCategoryIds.filter(
+        (id) => !targetParentIds.includes(id),
       );
 
-      // Convert to BigInt for database query
-      const categoryIdsBigInt = allCategoryIds.map((id) => BigInt(id));
+      this.logger.log(
+        `Found ${allCategoryIds.length} total category IDs, using ${subcategoryIds.length} subcategories (excluding ${targetParentIds.length} parent categories)`,
+      );
 
-      // Get all product IDs that belong to any of these categories
+      if (subcategoryIds.length === 0) {
+        this.logger.warn(
+          'No subcategories found - all products would be excluded',
+        );
+        return {
+          content: [],
+          totalElements: 0,
+          pageable: {
+            pageNumber,
+            pageSize,
+          },
+          categoryInfo: {
+            targetParentIds,
+            allCategoryIds,
+            subcategoryIds,
+            totalCategoriesSearched: subcategoryIds.length,
+            excludedParentCategories: targetParentIds,
+          },
+        };
+      }
+
+      // Convert to BigInt for database query (ONLY subcategories)
+      const categoryIdsBigInt = subcategoryIds.map((id) => BigInt(id));
+
+      // Get all product IDs that belong to SUBCATEGORIES ONLY
       const productCategoryRelations =
         await this.prisma.product_categories.findMany({
           where: {
@@ -1244,17 +1245,19 @@ export class ProductService {
         });
 
       this.logger.log(
-        `Found ${productCategoryRelations.length} product-category relationships`,
+        `Found ${productCategoryRelations.length} product-subcategory relationships (parent assignments excluded)`,
       );
 
       const productIds = [
         ...new Set(productCategoryRelations.map((rel) => rel.product_id)),
       ];
 
-      this.logger.log(`Unique product IDs found: ${productIds.length}`);
+      this.logger.log(`Unique products in subcategories: ${productIds.length}`);
 
       if (productIds.length === 0) {
-        this.logger.log('No products found for specified category hierarchy');
+        this.logger.log(
+          'No products found in subcategories - they may all be assigned to parent categories',
+        );
         return {
           content: [],
           totalElements: 0,
@@ -1265,7 +1268,12 @@ export class ProductService {
           categoryInfo: {
             targetParentIds,
             allCategoryIds,
-            totalCategoriesSearched: allCategoryIds.length,
+            subcategoryIds,
+            totalCategoriesSearched: subcategoryIds.length,
+            excludedParentCategories: targetParentIds,
+            productsInSubcategories: 0,
+            productsInParentCategories:
+              await this.getProductCountInParentCategories(targetParentIds),
           },
         };
       }
@@ -1283,7 +1291,9 @@ export class ProductService {
 
       const totalElements = await this.prisma.product.count({ where });
 
-      this.logger.log(`Total products matching criteria: ${totalElements}`);
+      this.logger.log(
+        `Total products in subcategories matching criteria: ${totalElements}`,
+      );
 
       const products = await this.prisma.product.findMany({
         where,
@@ -1310,40 +1320,33 @@ export class ProductService {
           );
         }
 
-        // FIXED: Show actual subcategory names with parent category context
-        const categoriesWithContext = product.product_categories.map((pc) => {
-          const categoryId = Number(pc.categories_id);
-          const categoryName = pc.category?.name || 'Unknown';
+        // FIXED: Show actual subcategory names with proper parent context
+        const categoriesWithContext = product.product_categories
+          .filter((pc) => !targetParentIds.includes(Number(pc.categories_id))) // Exclude any parent category assignments
+          .map((pc) => {
+            const categoryId = Number(pc.categories_id);
+            const categoryName = pc.category?.name || 'Unknown';
 
-          // Define parent category context
-          let parentContext = '';
-          if (
-            [2205420, 2205421, 2205422, 2205423, 2282855].includes(categoryId)
-          ) {
-            // These are Lermao subcategories
-            parentContext = 'Lermao';
-          } else if ([2273864, 2273865].includes(categoryId)) {
-            // These are Trà Phượng Hoàng subcategories
-            parentContext = 'Trà Phượng Hoàng';
-          } else if (categoryId === 2205381) {
-            // Direct Lermao parent
-            parentContext = '';
-          } else if (categoryId === 2205374) {
-            // Direct Trà Phượng Hoàng parent
-            parentContext = '';
-          }
+            // Define parent category context based on category hierarchy
+            let parentContext = '';
+            if (
+              [2205420, 2205421, 2205422, 2205423, 2282855].includes(categoryId)
+            ) {
+              // These are Lermao subcategories
+              parentContext = 'Lermao';
+            } else if ([2273864, 2273865].includes(categoryId)) {
+              // These are Trà Phượng Hoàng subcategories
+              parentContext = 'Trà Phượng Hoàng';
+            }
 
-          return {
-            id: pc.categories_id.toString(),
-            name: categoryName,
-            parentContext: parentContext,
-            // Show subcategory name primarily, with parent context if needed
-            displayName:
-              parentContext && categoryName !== parentContext
-                ? `${categoryName}`
-                : categoryName,
-          };
-        });
+            return {
+              id: pc.categories_id.toString(),
+              name: categoryName,
+              parentContext: parentContext,
+              displayName: categoryName,
+              isSubcategory: true,
+            };
+          });
 
         return {
           id: product.id.toString(),
@@ -1360,13 +1363,13 @@ export class ProductService {
           type: product.type,
           createdDate: product.created_date,
           updatedDate: product.updated_date,
-          // FIXED: Return actual subcategory information
+          // FIXED: Only return subcategory information
           ofCategories: categoriesWithContext,
         };
       });
 
       this.logger.log(
-        `Successfully found ${totalElements} products from hierarchical category search`,
+        `Successfully found ${totalElements} products from subcategories (parent assignments excluded)`,
       );
 
       return {
@@ -1379,8 +1382,12 @@ export class ProductService {
         categoryInfo: {
           targetParentIds,
           allCategoryIds,
-          totalCategoriesSearched: allCategoryIds.length,
-          productsFoundInCategories: productIds.length,
+          subcategoryIds,
+          totalCategoriesSearched: subcategoryIds.length,
+          excludedParentCategories: targetParentIds,
+          productsInSubcategories: productIds.length,
+          productsInParentCategories:
+            await this.getProductCountInParentCategories(targetParentIds),
         },
       };
     } catch (error) {
@@ -1388,6 +1395,267 @@ export class ProductService {
       throw new BadRequestException(
         `Failed to get products by categories: ${error.message}`,
       );
+    }
+  }
+
+  async fixProductCategoryAssignments(): Promise<{
+    success: boolean;
+    totalFixed: number;
+    errors: string[];
+    summary: {
+      lermaoProductsFixed: number;
+      traPhuongHoangProductsFixed: number;
+      unassignedProducts: number;
+    };
+  }> {
+    this.logger.log('Starting fix for product category assignments...');
+
+    const errors: string[] = [];
+    let lermaoProductsFixed = 0;
+    let traPhuongHoangProductsFixed = 0;
+    let unassignedProducts = 0;
+
+    try {
+      // Get all products assigned to parent categories
+      const productsInParentCategories = await this.prisma.product.findMany({
+        where: {
+          product_categories: {
+            some: {
+              categories_id: {
+                in: [BigInt(2205381), BigInt(2205374)], // Lermao and Trà Phượng Hoàng parent IDs
+              },
+            },
+          },
+        },
+        include: {
+          product_categories: {
+            include: {
+              category: true,
+            },
+          },
+        },
+      });
+
+      this.logger.log(
+        `Found ${productsInParentCategories.length} products assigned to parent categories`,
+      );
+
+      // Process each product in a transaction
+      const result = await this.prisma.$transaction(
+        async (transactionClient) => {
+          let fixedCount = 0;
+
+          for (const product of productsInParentCategories) {
+            try {
+              const productName = product.title?.toLowerCase() || '';
+
+              // Determine appropriate subcategory based on product name/content
+              let targetSubcategoryId: number | null = null;
+              let parentCategory = '';
+
+              // Check if product belongs to Lermao categories
+              const lermaoRelation = product.product_categories.find(
+                (pc) => Number(pc.categories_id) === 2205381,
+              );
+
+              // Check if product belongs to Trà Phượng Hoàng categories
+              const traPhuongHoangRelation = product.product_categories.find(
+                (pc) => Number(pc.categories_id) === 2205374,
+              );
+
+              if (lermaoRelation) {
+                parentCategory = 'Lermao';
+                // Assign to appropriate Lermao subcategory based on product name
+                if (
+                  productName.includes('mứt') ||
+                  productName.includes('jam')
+                ) {
+                  targetSubcategoryId = 2205422; // Mứt Sốt
+                } else if (
+                  productName.includes('siro') ||
+                  productName.includes('syrup')
+                ) {
+                  targetSubcategoryId = 2205423; // Siro
+                } else if (
+                  productName.includes('bột') ||
+                  productName.includes('powder')
+                ) {
+                  targetSubcategoryId = 2205420; // Bột
+                } else if (
+                  productName.includes('topping') ||
+                  productName.includes('trân châu')
+                ) {
+                  targetSubcategoryId = 2205421; // Topping
+                } else {
+                  // Default to "hàng sản xuất" for other Lermao products
+                  targetSubcategoryId = 2282855; // hàng sản xuất
+                }
+              } else if (traPhuongHoangRelation) {
+                parentCategory = 'Trà Phượng Hoàng';
+                // For Trà Phượng Hoàng products, most seem to be regular tea products
+                // Assign to OEM subcategory by default
+                targetSubcategoryId = 2273864; // OEM
+
+                // If product name contains SHANCHA, assign to SHANCHA subcategory
+                if (
+                  productName.includes('shancha') ||
+                  productName.includes('shan cha')
+                ) {
+                  targetSubcategoryId = 2273865; // SHANCHA
+                }
+              }
+
+              if (targetSubcategoryId) {
+                // Delete old parent category assignment
+                await transactionClient.product_categories.deleteMany({
+                  where: {
+                    product_id: product.id,
+                    categories_id: {
+                      in: [BigInt(2205381), BigInt(2205374)],
+                    },
+                  },
+                });
+
+                // Create new subcategory assignment
+                await transactionClient.product_categories.create({
+                  data: {
+                    product_id: product.id,
+                    categories_id: BigInt(targetSubcategoryId),
+                  },
+                });
+
+                fixedCount++;
+
+                if (parentCategory === 'Lermao') {
+                  lermaoProductsFixed++;
+                } else {
+                  traPhuongHoangProductsFixed++;
+                }
+
+                this.logger.debug(
+                  `Fixed product ${product.id} (${product.title}): ${parentCategory} parent -> subcategory ${targetSubcategoryId}`,
+                );
+              } else {
+                unassignedProducts++;
+                this.logger.warn(
+                  `Could not determine appropriate subcategory for product ${product.id} (${product.title})`,
+                );
+              }
+            } catch (productError) {
+              const errorMsg = `Failed to fix product ${product.id}: ${productError.message}`;
+              this.logger.error(errorMsg);
+              errors.push(errorMsg);
+            }
+          }
+
+          return fixedCount;
+        },
+      );
+
+      const summary = {
+        lermaoProductsFixed,
+        traPhuongHoangProductsFixed,
+        unassignedProducts,
+      };
+
+      this.logger.log('Product category fix completed', {
+        totalFixed: result,
+        summary,
+        errorCount: errors.length,
+      });
+
+      return {
+        success: errors.length === 0,
+        totalFixed: result,
+        errors,
+        summary,
+      };
+    } catch (error) {
+      this.logger.error(
+        'Failed to fix product category assignments:',
+        error.message,
+      );
+      return {
+        success: false,
+        totalFixed: 0,
+        errors: [`Critical error: ${error.message}`],
+        summary: {
+          lermaoProductsFixed: 0,
+          traPhuongHoangProductsFixed: 0,
+          unassignedProducts: 0,
+        },
+      };
+    }
+  }
+
+  async getProductsInParentCategories(): Promise<{
+    lermaoProducts: any[];
+    traPhuongHoangProducts: any[];
+    totalCount: number;
+  }> {
+    try {
+      const lermaoProducts = await this.prisma.product.findMany({
+        where: {
+          product_categories: {
+            some: {
+              categories_id: BigInt(2205381), // Lermao parent ID
+            },
+          },
+        },
+        select: {
+          id: true,
+          title: true,
+        },
+        take: 20, // Limit for debugging
+      });
+
+      const traPhuongHoangProducts = await this.prisma.product.findMany({
+        where: {
+          product_categories: {
+            some: {
+              categories_id: BigInt(2205374), // Trà Phượng Hoàng parent ID
+            },
+          },
+        },
+        select: {
+          id: true,
+          title: true,
+        },
+        take: 20, // Limit for debugging
+      });
+
+      return {
+        lermaoProducts: lermaoProducts.map((p) => ({
+          id: p.id.toString(),
+          title: p.title,
+        })),
+        traPhuongHoangProducts: traPhuongHoangProducts.map((p) => ({
+          id: p.id.toString(),
+          title: p.title,
+        })),
+        totalCount: lermaoProducts.length + traPhuongHoangProducts.length,
+      };
+    } catch (error) {
+      this.logger.error('Error getting products in parent categories:', error);
+      throw error;
+    }
+  }
+
+  private async getProductCountInParentCategories(
+    parentIds: number[],
+  ): Promise<number> {
+    try {
+      const count = await this.prisma.product_categories.count({
+        where: {
+          categories_id: {
+            in: parentIds.map((id) => BigInt(id)),
+          },
+        },
+      });
+      return count;
+    } catch (error) {
+      this.logger.error('Error counting parent category products:', error);
+      return 0;
     }
   }
 
