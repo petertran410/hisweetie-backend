@@ -376,18 +376,36 @@ export class ProductController {
     @Query('pageSize') pageSize: string = '10',
     @Query('pageNumber') pageNumber: string = '0',
     @Query('title') title?: string,
+    @Query('categoryId') categoryId?: string, // CRITICAL: This should filter by specific category
   ) {
     try {
       this.logger.log(
-        `Fetching products from Lermao and Trà Phượng Hoàng categories - pageSize: ${pageSize}, pageNumber: ${pageNumber}, title: ${title || 'none'}`,
+        `Fetching products - pageSize: ${pageSize}, pageNumber: ${pageNumber}, title: ${title || 'none'}, categoryId: ${categoryId || 'none'}`,
       );
+
+      let parentCategoryIds: number[];
+
+      // CRITICAL FIX: Filter by specific category when provided
+      if (categoryId) {
+        const categoryIdNum = parseInt(categoryId);
+        if (categoryIdNum === 2205381 || categoryIdNum === 2205374) {
+          // Only show products from the selected category
+          parentCategoryIds = [categoryIdNum];
+          this.logger.log(`Filtering by specific category: ${categoryIdNum}`);
+        } else {
+          // If it's a subcategory ID, still need to determine parent
+          parentCategoryIds = [2205381, 2205374]; // Default to both
+        }
+      } else {
+        // No category filter - show products from both categories
+        parentCategoryIds = [2205381, 2205374];
+      }
 
       const result = await this.productService.getProductsBySpecificCategories({
         pageSize: parseInt(pageSize),
         pageNumber: parseInt(pageNumber),
         title,
-        // Default to Lermao (2205381) and Trà Phượng Hoàng (2205374)
-        parentCategoryIds: [2205381, 2205374],
+        parentCategoryIds: parentCategoryIds,
       });
 
       this.logger.log(
@@ -400,10 +418,11 @@ export class ProductController {
           pageSize: parseInt(pageSize),
           pageNumber: parseInt(pageNumber),
           title,
-          targetCategories: [
-            { id: 2205381, name: 'Lermao' },
-            { id: 2205374, name: 'Trà Phượng Hoàng' },
-          ],
+          categoryFilter: categoryId,
+          targetCategories: parentCategoryIds.map((id) => ({
+            id: id,
+            name: id === 2205381 ? 'Lermao' : 'Trà Phượng Hoàng',
+          })),
         },
       };
     } catch (error) {

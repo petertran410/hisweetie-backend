@@ -1072,23 +1072,23 @@ export class ProductService {
     const { pageSize, pageNumber, title, parentCategoryIds } = params;
 
     try {
-      // Use provided parentCategoryIds or default to Lermao and Trà Phượng Hoàng
+      // Use provided parentCategoryIds (this is the key fix)
       const targetParentIds = parentCategoryIds || [2205381, 2205374];
 
       this.logger.log(
-        `Fetching products from parent categories AND their subcategories: ${targetParentIds.join(', ')}`,
+        `Fetching products from specific parent categories: ${targetParentIds.join(', ')}`,
       );
 
-      // Use KiotViet service to find all descendant category IDs
+      // CRITICAL FIX: Only get descendant IDs for the specified parent categories
       const allCategoryIds =
         await this.kiotVietService.findDescendantCategoryIds(targetParentIds);
 
       this.logger.log(
-        `Found ${allCategoryIds.length} total category IDs (including parents and children)`,
+        `Found ${allCategoryIds.length} category IDs for the specified parent categories`,
       );
 
       if (allCategoryIds.length === 0) {
-        this.logger.warn('No categories found');
+        this.logger.warn('No categories found for the specified parents');
         return {
           content: [],
           totalElements: 0,
@@ -1104,10 +1104,10 @@ export class ProductService {
         };
       }
 
-      // Convert to BigInt for database query (INCLUDING parent categories)
+      // Convert to BigInt for database query
       const categoryIdsBigInt = allCategoryIds.map((id) => BigInt(id));
 
-      // Get all product IDs that belong to ANY of these categories (parents OR children)
+      // Get all product IDs that belong to the specified categories
       const productCategoryRelations =
         await this.prisma.product_categories.findMany({
           where: {
@@ -1122,19 +1122,17 @@ export class ProductService {
         });
 
       this.logger.log(
-        `Found ${productCategoryRelations.length} product-category relationships (including parent assignments)`,
+        `Found ${productCategoryRelations.length} product-category relationships`,
       );
 
       const productIds = [
         ...new Set(productCategoryRelations.map((rel) => rel.product_id)),
       ];
 
-      this.logger.log(
-        `Unique products in all categories: ${productIds.length}`,
-      );
+      this.logger.log(`Unique products in categories: ${productIds.length}`);
 
       if (productIds.length === 0) {
-        this.logger.log('No products found in any of the target categories');
+        this.logger.log('No products found in the specified categories');
         return {
           content: [],
           totalElements: 0,
@@ -1164,9 +1162,7 @@ export class ProductService {
 
       const totalElements = await this.prisma.product.count({ where });
 
-      this.logger.log(
-        `Total products in all categories matching criteria: ${totalElements}`,
-      );
+      this.logger.log(`Total products matching criteria: ${totalElements}`);
 
       const products = await this.prisma.product.findMany({
         where,
@@ -1193,50 +1189,13 @@ export class ProductService {
           );
         }
 
-        // Show ALL category assignments (both parent and child categories)
-        const categoriesWithContext = product.product_categories
-          .filter((pc) => allCategoryIds.includes(Number(pc.categories_id))) // Only show our target categories
-          .map((pc) => {
-            const categoryId = Number(pc.categories_id);
-            const categoryName = pc.category?.name || 'Unknown';
-
-            // Determine if this is a parent or child category
-            let categoryType = 'subcategory';
-            let parentContext = '';
-
-            if (targetParentIds.includes(categoryId)) {
-              categoryType = 'parent';
-              if (categoryId === 2205381) {
-                parentContext = 'Lermao (Parent)';
-              } else if (categoryId === 2205374) {
-                parentContext = 'Trà Phượng Hoàng (Parent)';
-              }
-            } else {
-              // This is a subcategory, determine which parent it belongs to
-              if (
-                categoryId === 2205420 ||
-                categoryId === 2205421 ||
-                categoryId === 2205422 ||
-                categoryId === 2205423 ||
-                categoryId === 2282855
-              ) {
-                parentContext = 'Lermao';
-              } else if (categoryId === 2273864 || categoryId === 2273865) {
-                parentContext = 'Trà Phượng Hoàng';
-              } else {
-                parentContext = 'Unknown Parent';
-              }
-            }
-
-            return {
-              id: pc.categories_id.toString(),
-              name: categoryName,
-              parentContext: parentContext,
-              displayName: categoryName,
-              categoryType: categoryType,
-              isParentCategory: targetParentIds.includes(categoryId),
-            };
-          });
+        // Simple category mapping without too much detail
+        const ofCategories = product.product_categories
+          .filter((pc) => allCategoryIds.includes(Number(pc.categories_id)))
+          .map((pc) => ({
+            id: pc.categories_id.toString(),
+            name: pc.category?.name || 'Unknown',
+          }));
 
         return {
           id: product.id.toString(),
@@ -1253,23 +1212,11 @@ export class ProductService {
           type: product.type,
           createdDate: product.created_date,
           updatedDate: product.updated_date,
-          // Return ALL category information (both parent and child)
-          ofCategories: categoriesWithContext,
+          ofCategories: ofCategories,
         };
       });
 
-      // Count products in parent vs subcategories for info
-      const productsInParentCategories = productCategoryRelations.filter(
-        (rel) => targetParentIds.includes(Number(rel.categories_id)),
-      ).length;
-
-      const productsInSubcategories = productCategoryRelations.filter(
-        (rel) => !targetParentIds.includes(Number(rel.categories_id)),
-      ).length;
-
-      this.logger.log(
-        `Successfully found ${totalElements} products total (${productsInParentCategories} in parent categories, ${productsInSubcategories} in subcategories)`,
-      );
+      this.logger.log(`Successfully returning ${content.length} products`);
 
       return {
         content,
@@ -1282,9 +1229,6 @@ export class ProductService {
           targetParentIds,
           allCategoryIds,
           totalCategoriesSearched: allCategoryIds.length,
-          productsInAllCategories: productIds.length,
-          productsInParentCategories,
-          productsInSubcategories,
         },
       };
     } catch (error) {
