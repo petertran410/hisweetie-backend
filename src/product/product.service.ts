@@ -1004,7 +1004,7 @@ export class ProductService {
 
     const where: any = {};
     if (title) {
-      where.title = { contains: title, mode: 'insensitive' };
+      where.title = { contains: title };
     }
     // Only filter by type if it's provided and not empty
     if (type && type.trim() !== '') {
@@ -1179,7 +1179,7 @@ export class ProductService {
       };
 
       if (title) {
-        where.title = { contains: title, mode: 'insensitive' };
+        where.title = { contains: title };
       }
 
       const totalElements = await this.prisma.product.count({ where });
@@ -1467,13 +1467,11 @@ export class ProductService {
       if (receiverFullName) {
         where.receiver_full_name = {
           contains: receiverFullName,
-          mode: 'insensitive',
         };
       }
       if (email) {
         where.email = {
           contains: email,
-          mode: 'insensitive',
         };
       }
       if (phoneNumber) {
