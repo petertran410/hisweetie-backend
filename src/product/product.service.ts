@@ -1068,27 +1068,46 @@ export class ProductService {
     pageNumber: number;
     title?: string;
     parentCategoryIds?: number[];
+    specificSubCategoryId?: number; // NEW: for subcategory filtering
   }) {
-    const { pageSize, pageNumber, title, parentCategoryIds } = params;
+    const {
+      pageSize,
+      pageNumber,
+      title,
+      parentCategoryIds,
+      specificSubCategoryId,
+    } = params;
 
     try {
-      // Use provided parentCategoryIds (this is the key fix)
-      const targetParentIds = parentCategoryIds || [2205381, 2205374];
+      // CRITICAL FIX: Always default to both categories if none specified
+      const targetParentIds =
+        parentCategoryIds && parentCategoryIds.length > 0
+          ? parentCategoryIds
+          : [2205381, 2205374];
 
       this.logger.log(
-        `Fetching products from specific parent categories: ${targetParentIds.join(', ')}`,
+        `Fetching products from parent categories: ${targetParentIds.join(', ')}${specificSubCategoryId ? `, subcategory: ${specificSubCategoryId}` : ''}`,
       );
 
-      // CRITICAL FIX: Only get descendant IDs for the specified parent categories
-      const allCategoryIds =
-        await this.kiotVietService.findDescendantCategoryIds(targetParentIds);
+      let allCategoryIds: number[];
 
-      this.logger.log(
-        `Found ${allCategoryIds.length} category IDs for the specified parent categories`,
-      );
+      if (specificSubCategoryId) {
+        // If filtering by specific subcategory, only use that subcategory (works for both Lermao and Trà Phượng Hoàng)
+        allCategoryIds = [specificSubCategoryId];
+        this.logger.log(
+          `Filtering by specific subcategory only: ${specificSubCategoryId}`,
+        );
+      } else {
+        // Get all descendant category IDs for the specified parent categories
+        allCategoryIds =
+          await this.kiotVietService.findDescendantCategoryIds(targetParentIds);
+        this.logger.log(
+          `Found ${allCategoryIds.length} category IDs for the specified parent categories (including both parents and children)`,
+        );
+      }
 
       if (allCategoryIds.length === 0) {
-        this.logger.warn('No categories found for the specified parents');
+        this.logger.warn('No categories found');
         return {
           content: [],
           totalElements: 0,
@@ -1100,6 +1119,8 @@ export class ProductService {
             targetParentIds,
             allCategoryIds,
             totalCategoriesSearched: 0,
+            isSubCategoryFilter: !!specificSubCategoryId,
+            specificSubCategoryId,
           },
         };
       }
@@ -1122,7 +1143,7 @@ export class ProductService {
         });
 
       this.logger.log(
-        `Found ${productCategoryRelations.length} product-category relationships`,
+        `Found ${productCategoryRelations.length} product-category relationships${specificSubCategoryId ? ' for subcategory' : ''}`,
       );
 
       const productIds = [
@@ -1144,7 +1165,8 @@ export class ProductService {
             targetParentIds,
             allCategoryIds,
             totalCategoriesSearched: allCategoryIds.length,
-            productsInAllCategories: 0,
+            isSubCategoryFilter: !!specificSubCategoryId,
+            specificSubCategoryId,
           },
         };
       }
@@ -1162,7 +1184,9 @@ export class ProductService {
 
       const totalElements = await this.prisma.product.count({ where });
 
-      this.logger.log(`Total products matching criteria: ${totalElements}`);
+      this.logger.log(
+        `Total products matching criteria: ${totalElements}${specificSubCategoryId ? ' in subcategory' : ''}`,
+      );
 
       const products = await this.prisma.product.findMany({
         where,
@@ -1189,7 +1213,7 @@ export class ProductService {
           );
         }
 
-        // Simple category mapping without too much detail
+        // Simple category mapping
         const ofCategories = product.product_categories
           .filter((pc) => allCategoryIds.includes(Number(pc.categories_id)))
           .map((pc) => ({
@@ -1216,7 +1240,9 @@ export class ProductService {
         };
       });
 
-      this.logger.log(`Successfully returning ${content.length} products`);
+      this.logger.log(
+        `Successfully returning ${content.length} products${specificSubCategoryId ? ' for subcategory' : ''}`,
+      );
 
       return {
         content,
@@ -1229,6 +1255,8 @@ export class ProductService {
           targetParentIds,
           allCategoryIds,
           totalCategoriesSearched: allCategoryIds.length,
+          isSubCategoryFilter: !!specificSubCategoryId,
+          specificSubCategoryId,
         },
       };
     } catch (error) {

@@ -376,16 +376,29 @@ export class ProductController {
     @Query('pageSize') pageSize: string = '10',
     @Query('pageNumber') pageNumber: string = '0',
     @Query('title') title?: string,
-    @Query('categoryId') categoryId?: string, // CRITICAL: This should filter by specific category
+    @Query('categoryId') categoryId?: string, // Main category (Lermao or Trà Phượng Hoàng)
+    @Query('subCategoryId') subCategoryId?: string, // Specific subcategory
   ) {
     try {
       this.logger.log(
-        `Fetching products - pageSize: ${pageSize}, pageNumber: ${pageNumber}, title: ${title || 'none'}, categoryId: ${categoryId || 'none'}`,
+        `Fetching products - pageSize: ${pageSize}, pageNumber: ${pageNumber}, title: ${title || 'none'}, categoryId: ${categoryId || 'none'}, subCategoryId: ${subCategoryId || 'none'}`,
       );
 
       let parentCategoryIds: number[];
+      let specificSubCategoryId: number | undefined;
 
-      // CRITICAL FIX: Filter by specific category when provided
+      // Handle subcategory filtering (works for both Lermao and Trà Phượng Hoàng)
+      if (subCategoryId) {
+        const subCatId = parseInt(subCategoryId);
+        if (!isNaN(subCatId)) {
+          specificSubCategoryId = subCatId;
+          this.logger.log(
+            `Filtering by specific subcategory: ${specificSubCategoryId}`,
+          );
+        }
+      }
+
+      // Handle main category filtering
       if (categoryId) {
         const categoryIdNum = parseInt(categoryId);
         if (categoryIdNum === 2205381 || categoryIdNum === 2205374) {
@@ -393,12 +406,15 @@ export class ProductController {
           parentCategoryIds = [categoryIdNum];
           this.logger.log(`Filtering by specific category: ${categoryIdNum}`);
         } else {
-          // If it's a subcategory ID, still need to determine parent
-          parentCategoryIds = [2205381, 2205374]; // Default to both
+          // Default to both categories
+          parentCategoryIds = [2205381, 2205374];
         }
       } else {
-        // No category filter - show products from both categories
+        // CRITICAL FIX: Default behavior - show products from BOTH categories
         parentCategoryIds = [2205381, 2205374];
+        this.logger.log(
+          'No category filter specified - showing all products from both Lermao and Trà Phượng Hoàng',
+        );
       }
 
       const result = await this.productService.getProductsBySpecificCategories({
@@ -406,6 +422,7 @@ export class ProductController {
         pageNumber: parseInt(pageNumber),
         title,
         parentCategoryIds: parentCategoryIds,
+        specificSubCategoryId: specificSubCategoryId, // Pass subcategory filter for both categories
       });
 
       this.logger.log(
@@ -419,6 +436,8 @@ export class ProductController {
           pageNumber: parseInt(pageNumber),
           title,
           categoryFilter: categoryId,
+          subCategoryFilter: subCategoryId,
+          isDefaultView: !categoryId && !subCategoryId, // Flag for default view
           targetCategories: parentCategoryIds.map((id) => ({
             id: id,
             name: id === 2205381 ? 'Lermao' : 'Trà Phượng Hoàng',
