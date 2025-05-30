@@ -450,6 +450,42 @@ export class ProductController {
     }
   }
 
+  @Get('cache-list-products')
+  @ApiOperation({
+    summary: 'Get products by IDs for cart',
+    description:
+      'Retrieve multiple products by their IDs (used for cart functionality)',
+  })
+  @ApiQuery({
+    name: 'productIds',
+    description: 'Comma-separated list of product IDs',
+    example: '54313288,54313289,54313290',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns array of products matching the provided IDs',
+  })
+  async getProductsByIds(@Query('productIds') productIds: string) {
+    try {
+      if (!productIds || productIds.trim() === '') {
+        this.logger.warn('Empty productIds parameter provided');
+        return [];
+      }
+
+      this.logger.log(`Fetching products for IDs: ${productIds}`);
+
+      const products = await this.productService.getProductsByIds(productIds);
+
+      this.logger.log(
+        `Successfully retrieved ${products.length} products for cart`,
+      );
+      return products;
+    } catch (error) {
+      this.logger.error('Failed to get products by IDs:', error.message);
+      throw new BadRequestException(`Failed to get products: ${error.message}`);
+    }
+  }
+
   @Get('by-hierarchical-categories')
   @ApiOperation({
     summary: 'Get products from hierarchical categories (Advanced)',
