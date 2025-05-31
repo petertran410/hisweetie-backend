@@ -7,176 +7,247 @@ import {
   Param,
   Delete,
   Query,
-  HttpCode,
-  HttpStatus,
   Logger,
   BadRequestException,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { OrderSearchDto } from './dto/order-search.dto';
 import {
-  ApiTags,
+  KiotVietSyncDto,
+  HierarchicalProductSearchDto,
+} from './dto/kiotviet-sync.dto';
+import {
   ApiOperation,
-  ApiResponse, // <-- This import is important!
+  ApiResponse,
+  ApiTags,
   ApiQuery,
   ApiParam,
 } from '@nestjs/swagger';
+import { PrismaClient } from '@prisma/client';
+import { KiotVietUtils } from '../common/utils/kiotviet.utils';
+import { OrderSearchDto } from './dto/order-search.dto';
 
-@ApiTags('products')
+@ApiTags('product')
 @Controller('product')
 export class ProductController {
   private readonly logger = new Logger(ProductController.name);
+  prisma = new PrismaClient();
 
   constructor(private readonly productService: ProductService) {}
 
-  // KiotViet synchronization endpoints
-
-  @Post('sync/full')
-  @HttpCode(HttpStatus.OK)
+  // Order Management Endpoints
+  @Get('order/admin-search')
   @ApiOperation({
-    summary: 'Force full synchronization with KiotViet',
+    summary: 'Search orders for admin with pagination and filters',
     description:
-      'Replaces all local products with data from KiotViet. This operation may take several minutes for large product catalogs.',
+      'Returns paginated orders with various filter options for admin dashboard',
   })
   @ApiResponse({
     status: 200,
-    description: 'Synchronization completed successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        totalSynced: { type: 'number' },
-        totalDeleted: { type: 'number' },
-        errors: { type: 'array', items: { type: 'string' } },
-        summary: {
-          type: 'object',
-          properties: {
-            beforeSync: { type: 'number' },
-            afterSync: { type: 'number' },
-            newProducts: { type: 'number' },
-            updatedProducts: { type: 'number' },
-            deletedProducts: { type: 'number' },
-          },
-        },
-      },
-    },
+    description: 'Returns paginated order list with filters applied',
   })
-  @ApiResponse({
-    status: 400,
-    description:
-      'Bad request - KiotViet credentials not configured or API error',
-  })
-  @ApiResponse({
-    status: 500,
-    description: 'Internal server error during synchronization',
-  })
-  async fullSync() {
-    this.logger.log('Full product synchronization requested');
-
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async searchOrders(@Query() searchDto: OrderSearchDto) {
     try {
-      const result = await this.productService.forceFullSync();
+      this.logger.log('Searching orders with filters:', searchDto);
 
-      this.logger.log(
-        `Full sync completed: ${result.success ? 'Success' : 'Failed'}`,
-        {
-          totalSynced: result.totalSynced,
-          totalDeleted: result.totalDeleted,
-          errorCount: result.errors.length,
-        },
+      const result = await this.productService.searchOrders(searchDto);
+
+      this.logger.log(`Found ${result.totalElements} orders matching criteria`);
+      return result;
+    } catch (error) {
+      this.logger.error('Failed to search orders:', error.message);
+      throw new BadRequestException(
+        `Failed to search orders: ${error.message}`,
       );
+    }
+  }
+
+  @Patch('order/:id/status/:status')
+  @ApiOperation({
+    summary: 'Change order status',
+    description: 'Updates the status of a specific order',
+  })
+  @ApiParam({ name: 'id', description: 'Order ID' })
+  @ApiParam({ name: 'status', description: 'New status for the order' })
+  @ApiResponse({
+    status: 200,
+    description: 'Order status updated successfully',
+  })
+  async changeOrderStatus(
+    @Param('id') id: string,
+    @Param('status') status: string,
+  ) {
+    try {
+      this.logger.log(`Changing order ${id} status to: ${status}`);
+
+      const result = await this.productService.changeOrderStatus(id, status);
+
+      this.logger.log(`Successfully updated order ${id} status to ${status}`);
+      return result;
+    } catch (error) {
+      this.logger.error(`Failed to change order ${id} status:`, error.message);
+      throw new BadRequestException(
+        `Failed to change order status: ${error.message}`,
+      );
+    }
+  }
+
+  // KiotViet Sync Endpoints
+  @Post('sync/full')
+  @ApiOperation({
+    summary: 'Full product synchronization from KiotViet',
+    description:
+      'Syncs all products from KiotViet or specific categories. Use with caution on large datasets.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Product synchronization completed',
+  })
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async fullSync(@Body() syncDto: KiotVietSyncDto = {}) {
+    try {
+      const syncId = KiotVietUtils.generateSyncId('full_sync');
+      this.logger.log(`Starting full sync operation: ${syncId}`);
+
+      let categoryNames: string[] | undefined;
+      if (syncDto.categories) {
+        categoryNames = KiotVietUtils.parseCategoryNames(syncDto.categories);
+      }
+
+      if (syncDto.cleanFirst) {
+        this.logger.warn(
+          'Clean-first option enabled - this will delete all existing products',
+        );
+      }
+
+      const result = syncDto.cleanFirst
+        ? await this.productService.cleanAndSyncCategories(categoryNames || [])
+        : await this.productService.forceFullSync(categoryNames);
+
+      const formattedResult = KiotVietUtils.formatSyncResult(
+        result,
+        'full_sync',
+      );
+      formattedResult.syncId = syncId;
 
       return {
         message: result.success
           ? 'Product synchronization completed successfully'
           : 'Product synchronization completed with errors',
-        ...result,
+        ...formattedResult,
       };
     } catch (error) {
       this.logger.error('Full sync failed:', error.message);
-      throw error;
+      throw new BadRequestException(`Full sync failed: ${error.message}`);
     }
   }
 
   @Post('sync/incremental')
-  @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Incremental synchronization with KiotViet',
-    description:
-      'Syncs only products that have been modified since the last sync. More efficient for regular updates.',
+    summary: 'Incremental product synchronization',
+    description: 'Syncs only products modified since the specified date',
   })
-  @ApiQuery({
-    name: 'since',
-    required: false,
-    description:
-      'ISO date string to sync products modified since this date. If not provided, uses last sync timestamp.',
-    example: '2024-01-01T00:00:00Z',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Incremental synchronization completed successfully',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Bad request - Invalid date format or KiotViet API error',
-  })
-  async incrementalSync(@Query('since') since?: string) {
-    this.logger.log(
-      `Incremental product synchronization requested${since ? ` since ${since}` : ''}`,
-    );
-
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async incrementalSync(@Body() syncDto: KiotVietSyncDto = {}) {
     try {
-      const result = await this.productService.incrementalSync(since);
+      const syncId = KiotVietUtils.generateSyncId('incremental_sync');
+      this.logger.log(`Starting incremental sync operation: ${syncId}`);
 
-      this.logger.log(
-        `Incremental sync completed: ${result.success ? 'Success' : 'Failed'}`,
-        {
-          totalSynced: result.totalSynced,
-          totalDeleted: result.totalDeleted,
-          errorCount: result.errors.length,
-        },
+      // Validate sync date if provided
+      if (syncDto.since) {
+        const dateValidation = KiotVietUtils.validateSyncDate(syncDto.since);
+        if (!dateValidation.isValid) {
+          throw new BadRequestException(
+            `Invalid sync date: ${dateValidation.error}`,
+          );
+        }
+      }
+
+      let categoryNames: string[] | undefined;
+      if (syncDto.categories) {
+        categoryNames = KiotVietUtils.parseCategoryNames(syncDto.categories);
+      }
+
+      const result = await this.productService.incrementalSync(
+        syncDto.since,
+        categoryNames,
       );
+      const formattedResult = KiotVietUtils.formatSyncResult(
+        result,
+        'incremental_sync',
+      );
+      formattedResult.syncId = syncId;
 
       return {
         message: result.success
           ? 'Incremental synchronization completed successfully'
           : 'Incremental synchronization completed with errors',
-        ...result,
+        ...formattedResult,
       };
     } catch (error) {
       this.logger.error('Incremental sync failed:', error.message);
-      throw error;
+      throw new BadRequestException(
+        `Incremental sync failed: ${error.message}`,
+      );
+    }
+  }
+
+  @Post('sync/target-categories')
+  @ApiOperation({
+    summary: 'Sync products from Lermao and Trà Phượng Hoàng categories',
+    description:
+      'Syncs products from Lermao (2205381) and Trà Phượng Hoàng (2205374) and all their children using hierarchical filtering',
+  })
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async syncTargetCategories(@Body() syncDto: KiotVietSyncDto = {}) {
+    try {
+      const syncId = KiotVietUtils.generateSyncId('target_categories_sync');
+      this.logger.log(`Starting target categories sync operation: ${syncId}`);
+
+      // Validate sync date if provided
+      if (syncDto.since) {
+        const dateValidation = KiotVietUtils.validateSyncDate(syncDto.since);
+        if (!dateValidation.isValid) {
+          throw new BadRequestException(
+            `Invalid sync date: ${dateValidation.error}`,
+          );
+        }
+      }
+
+      const result = await this.productService.syncProductsFromTargetCategories(
+        syncDto.since,
+      );
+      const formattedResult = KiotVietUtils.formatSyncResult(
+        result,
+        'target_categories_sync',
+      );
+      formattedResult.syncId = syncId;
+
+      return {
+        message: result.success
+          ? `Successfully synced ${result.totalSynced} products from Lermao and Trà Phượng Hoàng categories`
+          : `Target category sync completed with ${result.errors.length} errors`,
+        targetCategories: ['Lermao (2205381)', 'Trà Phượng Hoàng (2205374)'],
+        ...formattedResult,
+      };
+    } catch (error) {
+      this.logger.error('Target category sync failed:', error.message);
+      throw new BadRequestException(
+        `Target category sync failed: ${error.message}`,
+      );
     }
   }
 
   @Get('sync/test-connection')
   @ApiOperation({
     summary: 'Test KiotViet connection',
-    description:
-      'Tests the connection to KiotViet API and verifies authentication credentials.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Connection test completed',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        message: { type: 'string' },
-        tokenInfo: {
-          type: 'object',
-          properties: {
-            expiresAt: { type: 'string', format: 'date-time' },
-            tokenType: { type: 'string' },
-          },
-        },
-      },
-    },
+    description: 'Test the connection to KiotViet API',
   })
   async testConnection() {
-    this.logger.log('KiotViet connection test requested');
-
     try {
       const result =
         await this.productService['kiotVietService'].testConnection();
@@ -190,32 +261,17 @@ export class ProductController {
       return result;
     } catch (error) {
       this.logger.error('Connection test error:', error.message);
-      throw error;
+      throw new BadRequestException(`Connection test failed: ${error.message}`);
     }
   }
 
   @Get('sync/status')
   @ApiOperation({
-    summary: 'Get synchronization status',
-    description:
-      'Returns information about the current state of product synchronization and statistics.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Synchronization status retrieved successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        totalProducts: { type: 'number' },
-        lastSyncAttempt: { type: 'string', format: 'date-time' },
-        syncEnabled: { type: 'boolean' },
-        kiotVietConfigured: { type: 'boolean' },
-      },
-    },
+    summary: 'Get sync status',
+    description: 'Get current synchronization status and statistics',
   })
   async getSyncStatus() {
     try {
-      // Get basic statistics about current product state
       const totalProducts = await this.productService
         .search({
           pageSize: 1,
@@ -223,7 +279,6 @@ export class ProductController {
         })
         .then((result) => result.totalElements);
 
-      // Check if KiotViet is properly configured by testing connection
       let kiotVietConfigured = false;
       let configMessage = '';
 
@@ -239,408 +294,39 @@ export class ProductController {
 
       return {
         totalProducts,
-        lastSyncAttempt: null, // You might want to store this in a config table
+        lastSyncAttempt: null,
         syncEnabled: true,
         kiotVietConfigured,
         message: configMessage,
+        targetCategories: {
+          lermao: 2205381,
+          traPhuongHoang: 2205374,
+        },
       };
     } catch (error) {
       this.logger.error('Failed to get sync status:', error.message);
-      throw error;
+      throw new BadRequestException(
+        `Failed to get sync status: ${error.message}`,
+      );
     }
   }
 
-  // Add these new endpoints to src/product/product.controller.ts
-
-  /**
-   * Force sync products from specific categories only
-   * This allows you to sync only "Lermao" and "Trà Phượng Hoàng" categories
-   */
-  @Post('sync/full/categories')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Force full synchronization for specific categories',
-    description:
-      'Syncs only products from specified categories (e.g., "Lermao", "Trà Phượng Hoàng"). ' +
-      'This is more efficient than syncing all products when you only need specific product lines.',
-  })
-  @ApiQuery({
-    name: 'categories',
-    required: true,
-    description: 'Comma-separated list of category names to sync',
-    example: 'Lermao,Trà Phượng Hoàng',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Category-filtered synchronization completed successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        totalSynced: { type: 'number' },
-        totalDeleted: { type: 'number' },
-        errors: { type: 'array', items: { type: 'string' } },
-        filteredCategories: { type: 'array', items: { type: 'string' } },
-        summary: {
-          type: 'object',
-          properties: {
-            beforeSync: { type: 'number' },
-            afterSync: { type: 'number' },
-            newProducts: { type: 'number' },
-            updatedProducts: { type: 'number' },
-            deletedProducts: { type: 'number' },
-          },
-        },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Bad request - Invalid category names or KiotViet API error',
-  })
-  async fullSyncByCategories(@Query('categories') categories: string) {
-    this.logger.log(`Category-filtered full sync requested for: ${categories}`);
-
-    if (!categories || categories.trim() === '') {
-      throw new BadRequestException(
-        'Categories parameter is required. Example: ?categories=Lermao,Trà Phượng Hoàng',
-      );
-    }
-
-    // Parse the comma-separated category names
-    const categoryNames = categories
-      .split(',')
-      .map((cat) => cat.trim())
-      .filter((cat) => cat.length > 0);
-
-    if (categoryNames.length === 0) {
-      throw new BadRequestException(
-        'At least one valid category name is required',
-      );
-    }
-
-    this.logger.log(
-      `Parsed ${categoryNames.length} categories: ${categoryNames.join(', ')}`,
-    );
-
-    try {
-      const result = await this.productService.forceFullSync(categoryNames);
-
-      this.logger.log(
-        `Category sync completed: ${result.success ? 'Success' : 'Failed'}`,
-        {
-          categories: categoryNames,
-          totalSynced: result.totalSynced,
-          totalDeleted: result.totalDeleted,
-          errorCount: result.errors.length,
-        },
-      );
-
-      return {
-        message: result.success
-          ? `Category synchronization completed successfully for: ${categoryNames.join(', ')}`
-          : `Category synchronization completed with errors for: ${categoryNames.join(', ')}`,
-        categories: categoryNames,
-        ...result,
-      };
-    } catch (error) {
-      this.logger.error('Category sync failed:', error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * Incremental sync for specific categories
-   */
-  @Post('sync/incremental/categories')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Incremental synchronization for specific categories',
-    description:
-      'Syncs only products from specified categories that have been modified since the last sync. ' +
-      'More efficient for regular updates of specific product lines.',
-  })
-  @ApiQuery({
-    name: 'categories',
-    required: true,
-    description: 'Comma-separated list of category names to sync',
-    example: 'Lermao,Trà Phượng Hoàng',
-  })
-  @ApiQuery({
-    name: 'since',
-    required: false,
-    description: 'ISO date string to sync products modified since this date',
-    example: '2024-01-01T00:00:00Z',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Incremental category synchronization completed successfully',
-  })
-  async incrementalSyncByCategories(
-    @Query('categories') categories: string,
-    @Query('since') since?: string,
-  ) {
-    this.logger.log(
-      `Category-filtered incremental sync requested for: ${categories}`,
-    );
-
-    if (!categories || categories.trim() === '') {
-      throw new BadRequestException('Categories parameter is required');
-    }
-
-    const categoryNames = categories
-      .split(',')
-      .map((cat) => cat.trim())
-      .filter((cat) => cat.length > 0);
-
-    if (categoryNames.length === 0) {
-      throw new BadRequestException(
-        'At least one valid category name is required',
-      );
-    }
-
-    try {
-      const result = await this.productService.incrementalSync(
-        since,
-        categoryNames,
-      );
-
-      this.logger.log(
-        `Category incremental sync completed: ${result.success ? 'Success' : 'Failed'}`,
-        {
-          categories: categoryNames,
-          totalSynced: result.totalSynced,
-          errorCount: result.errors.length,
-        },
-      );
-
-      return {
-        message: result.success
-          ? `Incremental synchronization completed successfully for: ${categoryNames.join(', ')}`
-          : `Incremental synchronization completed with errors for: ${categoryNames.join(', ')}`,
-        categories: categoryNames,
-        since: since || 'auto-detected',
-        ...result,
-      };
-    } catch (error) {
-      this.logger.error('Category incremental sync failed:', error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * Get available categories from KiotViet
-   * This endpoint helps you discover what categories are available for filtering
-   */
-  @Get('sync/categories')
-  @ApiOperation({
-    summary: 'Get available categories from KiotViet',
-    description:
-      'Retrieves the list of all available categories from KiotViet. ' +
-      'Use this to discover category names for filtering sync operations.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Categories retrieved successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        categories: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              name: { type: 'string' },
-              id: { type: 'number' },
-            },
-          },
-        },
-        totalCount: { type: 'number' },
-      },
-    },
-  })
-  async getAvailableCategories() {
-    this.logger.log('Fetching available categories from KiotViet');
-
-    try {
-      const categoryMap =
-        await this.productService['kiotVietService'].fetchCategories();
-
-      const categories = Array.from(categoryMap.entries()).map(
-        ([name, id]) => ({
-          name,
-          id,
-        }),
-      );
-
-      // Sort categories alphabetically for easier browsing
-      categories.sort((a, b) => a.name.localeCompare(b.name));
-
-      this.logger.log(
-        `Retrieved ${categories.length} categories from KiotViet`,
-      );
-
-      return {
-        categories,
-        totalCount: categories.length,
-        message: `Found ${categories.length} categories in KiotViet`,
-      };
-    } catch (error) {
-      this.logger.error('Failed to fetch categories:', error.message);
-      throw error;
-    }
-  }
-
-  // Add this new endpoint to src/product/product.controller.ts
-
-  /**
-   * Clean database and sync only specific categories
-   * This is the safest way to transition from a full catalog to category-filtered products
-   */
-  @Post('sync/clean-and-sync-categories') // <-- The route decorator
-  @HttpCode(HttpStatus.OK) // <-- HTTP status decorator
-  @ApiOperation({
-    // <-- Description of what this endpoint does
-    summary: 'Clean database and sync only specific categories',
-    description:
-      'Safely removes ALL existing products from the database and then syncs only products from the specified categories. ' +
-      'This is useful when transitioning from a full product catalog to a category-filtered approach. ' +
-      'Use this when you want your database to contain ONLY products from specific categories.',
-  })
-  @ApiQuery({
-    // <-- Describes the query parameters
-    name: 'categories',
-    required: true,
-    description: 'Comma-separated list of category names to sync',
-    example: 'Lermao,Trà Phượng Hoàng',
-  })
-  @ApiResponse({
-    // <-- HERE IS WHERE IT GOES!
-    status: 200, // <-- This describes the success response
-    description:
-      'Database cleaned and category synchronization completed successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        totalSynced: { type: 'number' },
-        totalDeleted: { type: 'number' },
-        cleanupInfo: {
-          type: 'object',
-          properties: {
-            deletedProducts: { type: 'number' },
-            deletedOrders: { type: 'number' },
-            deletedReviews: { type: 'number' },
-            deletedRelations: { type: 'number' },
-          },
-        },
-        categories: { type: 'array', items: { type: 'string' } },
-        summary: {
-          type: 'object',
-          properties: {
-            beforeSync: { type: 'number' },
-            afterSync: { type: 'number' },
-            newProducts: { type: 'number' },
-            updatedProducts: { type: 'number' },
-            deletedProducts: { type: 'number' },
-          },
-        },
-      },
-    },
-  })
-  @ApiResponse({
-    // <-- You can have multiple @ApiResponse decorators
-    status: 400, // <-- This describes error responses
-    description: 'Bad request - Invalid category names or operation failed',
-  })
-  async cleanAndSyncCategories(@Query('categories') categories: string) {
-    // <-- THE ACTUAL METHOD IMPLEMENTATION GOES HERE
-    this.logger.log(`Clean and sync requested for categories: ${categories}`);
-
-    if (!categories || categories.trim() === '') {
-      throw new BadRequestException(
-        'Categories parameter is required. Example: ?categories=Lermao,Trà Phượng Hoàng',
-      );
-    }
-
-    // Parse and validate category names
-    const categoryNames = categories
-      .split(',')
-      .map((cat) => cat.trim())
-      .filter((cat) => cat.length > 0);
-
-    if (categoryNames.length === 0) {
-      throw new BadRequestException(
-        'At least one valid category name is required',
-      );
-    }
-
-    this.logger.log(
-      `Parsed ${categoryNames.length} categories: ${categoryNames.join(', ')}`,
-    );
-
-    try {
-      const result =
-        await this.productService.cleanAndSyncCategories(categoryNames);
-
-      this.logger.log(
-        `Clean and sync completed: ${result.success ? 'Success' : 'Failed'}`,
-        {
-          categories: categoryNames,
-          deletedOldProducts: result.cleanupInfo.deletedProducts,
-          newProductsSynced: result.totalSynced,
-          errorCount: result.errors.length,
-        },
-      );
-
-      return {
-        message: result.success
-          ? `Database cleaned and successfully synced ${result.totalSynced} products from categories: ${categoryNames.join(', ')}`
-          : `Database cleaned but sync completed with ${result.errors.length} errors for categories: ${categoryNames.join(', ')}`,
-        categories: categoryNames,
-        operation: 'clean-and-sync',
-        ...result,
-      };
-    } catch (error) {
-      this.logger.error('Clean and sync operation failed:', error.message);
-      throw error;
-    }
-  }
-
+  // Product CRUD Endpoints
   @Get('get-by-id/:id')
-  @ApiOperation({ summary: 'Get product by ID' })
+  @ApiOperation({
+    summary: 'Get product by ID',
+    description: 'Retrieve a specific product by its ID',
+  })
   @ApiParam({ name: 'id', description: 'Product ID' })
-  @ApiResponse({ status: 200, description: 'Product found successfully' })
-  @ApiResponse({ status: 404, description: 'Product not found' })
   findById(@Param('id') id: string) {
     return this.productService.findById(+id);
   }
 
   @Get('search')
-  @ApiOperation({ summary: 'Search products with pagination' })
-  @ApiQuery({
-    name: 'pageSize',
-    required: false,
-    description: 'Number of items per page',
-    example: 10,
+  @ApiOperation({
+    summary: 'Search products',
+    description: 'Search products with pagination and filters',
   })
-  @ApiQuery({
-    name: 'pageNumber',
-    required: false,
-    description: 'Page number (0-based)',
-    example: 0,
-  })
-  @ApiQuery({
-    name: 'title',
-    required: false,
-    description: 'Search by product title',
-  })
-  @ApiQuery({
-    name: 'type',
-    required: false,
-    description: 'Search by product type',
-  })
-  @ApiResponse({ status: 200, description: 'Products retrieved successfully' })
   search(
     @Query('pageSize') pageSize: string = '10',
     @Query('pageNumber') pageNumber: string = '0',
@@ -655,73 +341,288 @@ export class ProductController {
     });
   }
 
-  @Get('order/admin-search')
-  @ApiOperation({ summary: 'Search orders for admin panel' })
-  @ApiResponse({ status: 200, description: 'Orders retrieved successfully' })
-  searchOrders(@Query() searchParams: OrderSearchDto) {
-    return this.productService.searchOrders(searchParams);
-  }
-
-  @Patch('order/:id/status/:status')
-  @ApiOperation({ summary: 'Change order status' })
-  @ApiParam({ name: 'id', description: 'Order ID' })
-  @ApiParam({ name: 'status', description: 'New status' })
-  @ApiResponse({
-    status: 200,
-    description: 'Order status updated successfully',
-  })
-  @ApiResponse({ status: 404, description: 'Order not found' })
-  changeOrderStatus(@Param('id') id: string, @Param('status') status: string) {
-    return this.productService.changeOrderStatus(id, status);
-  }
-
   @Post()
   @ApiOperation({
-    summary: 'Create a new product',
-    description:
-      'Creates a new product in the local database. Note: This will not sync to KiotViet automatically.',
+    summary: 'Create product',
+    description: 'Create a new product',
   })
-  @ApiResponse({ status: 201, description: 'Product created successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid product data' })
   create(@Body() createProductDto: CreateProductDto) {
     return this.productService.create(createProductDto);
   }
 
   @Patch(':id')
   @ApiOperation({
-    summary: 'Update an existing product',
-    description:
-      'Updates a product in the local database. Note: This will not sync to KiotViet automatically.',
+    summary: 'Update product',
+    description: 'Update an existing product',
   })
   @ApiParam({ name: 'id', description: 'Product ID' })
-  @ApiResponse({ status: 200, description: 'Product updated successfully' })
-  @ApiResponse({ status: 404, description: 'Product not found' })
   update(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto) {
     return this.productService.update(+id, updateProductDto);
   }
 
   @Delete(':id')
   @ApiOperation({
-    summary: 'Delete a product',
-    description:
-      'Deletes a product from the local database. Note: This will not sync to KiotViet automatically.',
+    summary: 'Delete product',
+    description: 'Delete a product by ID',
   })
   @ApiParam({ name: 'id', description: 'Product ID' })
-  @ApiResponse({ status: 200, description: 'Product deleted successfully' })
-  @ApiResponse({ status: 404, description: 'Product not found' })
   remove(@Param('id') id: string) {
     return this.productService.remove(+id);
   }
 
+  // Main Product Listing Endpoint (Used by Frontend)
+  @Get('by-categories')
+  async getProductsByCategories(
+    @Query('pageSize') pageSize: string = '10',
+    @Query('pageNumber') pageNumber: string = '0',
+    @Query('title') title?: string,
+    @Query('categoryId') categoryId?: string, // Main category (Lermao or Trà Phượng Hoàng)
+    @Query('subCategoryId') subCategoryId?: string, // Specific subcategory
+  ) {
+    try {
+      this.logger.log(
+        `Fetching products - pageSize: ${pageSize}, pageNumber: ${pageNumber}, title: ${title || 'none'}, categoryId: ${categoryId || 'none'}, subCategoryId: ${subCategoryId || 'none'}`,
+      );
+
+      let parentCategoryIds: number[];
+      let specificSubCategoryId: number | undefined;
+
+      // Handle subcategory filtering (works for both Lermao and Trà Phượng Hoàng)
+      if (subCategoryId) {
+        const subCatId = parseInt(subCategoryId);
+        if (!isNaN(subCatId)) {
+          specificSubCategoryId = subCatId;
+          this.logger.log(
+            `Filtering by specific subcategory: ${specificSubCategoryId}`,
+          );
+        }
+      }
+
+      // Handle main category filtering
+      if (categoryId) {
+        const categoryIdNum = parseInt(categoryId);
+        if (categoryIdNum === 2205381 || categoryIdNum === 2205374) {
+          // Only show products from the selected category
+          parentCategoryIds = [categoryIdNum];
+          this.logger.log(`Filtering by specific category: ${categoryIdNum}`);
+        } else {
+          // Default to both categories
+          parentCategoryIds = [2205381, 2205374];
+        }
+      } else {
+        // CRITICAL FIX: Default behavior - show products from BOTH categories
+        parentCategoryIds = [2205381, 2205374];
+        this.logger.log(
+          'No category filter specified - showing all products from both Lermao and Trà Phượng Hoàng',
+        );
+      }
+
+      const result = await this.productService.getProductsBySpecificCategories({
+        pageSize: parseInt(pageSize),
+        pageNumber: parseInt(pageNumber),
+        title,
+        parentCategoryIds: parentCategoryIds,
+        specificSubCategoryId: specificSubCategoryId, // Pass subcategory filter for both categories
+      });
+
+      this.logger.log(
+        `Successfully found ${result.totalElements} products from target categories`,
+      );
+
+      return {
+        ...result,
+        searchCriteria: {
+          pageSize: parseInt(pageSize),
+          pageNumber: parseInt(pageNumber),
+          title,
+          categoryFilter: categoryId,
+          subCategoryFilter: subCategoryId,
+          isDefaultView: !categoryId && !subCategoryId, // Flag for default view
+          targetCategories: parentCategoryIds.map((id) => ({
+            id: id,
+            name: id === 2205381 ? 'Lermao' : 'Trà Phượng Hoàng',
+          })),
+        },
+      };
+    } catch (error) {
+      this.logger.error('Failed to get products by categories:', error.message);
+      throw new BadRequestException(`Failed to get products: ${error.message}`);
+    }
+  }
+
   @Get('cache-list-products')
-  @ApiOperation({ summary: 'Get products by IDs for caching' })
+  @ApiOperation({
+    summary: 'Get products by IDs for cart',
+    description:
+      'Retrieve multiple products by their IDs (used for cart functionality)',
+  })
   @ApiQuery({
     name: 'productIds',
     description: 'Comma-separated list of product IDs',
-    example: '1,2,3,4,5',
+    example: '54313288,54313289,54313290',
   })
-  @ApiResponse({ status: 200, description: 'Products retrieved successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns array of products matching the provided IDs',
+  })
   async getProductsByIds(@Query('productIds') productIds: string) {
-    return this.productService.getProductsByIds(productIds);
+    try {
+      if (!productIds || productIds.trim() === '') {
+        this.logger.warn('Empty productIds parameter provided');
+        return [];
+      }
+
+      this.logger.log(`Fetching products for IDs: ${productIds}`);
+
+      const products = await this.productService.getProductsByIds(productIds);
+
+      this.logger.log(
+        `Successfully retrieved ${products.length} products for cart`,
+      );
+      return products;
+    } catch (error) {
+      this.logger.error('Failed to get products by IDs:', error.message);
+      throw new BadRequestException(`Failed to get products: ${error.message}`);
+    }
+  }
+
+  @Get('by-hierarchical-categories')
+  @ApiOperation({
+    summary: 'Get products from hierarchical categories (Advanced)',
+    description:
+      'Advanced endpoint for getting products from hierarchical categories with custom parent category IDs',
+  })
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async getProductsByHierarchicalCategories(
+    @Query() searchDto: HierarchicalProductSearchDto,
+  ) {
+    try {
+      let parentCategoryIds: number[] = [2205381, 2205374]; // Default: Lermao and Trà Phượng Hoàng
+
+      if (searchDto.parentCategoryIds) {
+        parentCategoryIds = KiotVietUtils.parseCategoryIds(
+          searchDto.parentCategoryIds,
+        );
+        if (parentCategoryIds.length === 0) {
+          throw new BadRequestException('Invalid parent category IDs provided');
+        }
+      }
+
+      this.logger.log(
+        `Fetching products for parent categories: ${parentCategoryIds.join(', ')}`,
+      );
+
+      const result = await this.productService.getProductsBySpecificCategories({
+        pageSize: searchDto.pageSize || 10,
+        pageNumber: searchDto.pageNumber || 0,
+        title: searchDto.title,
+        parentCategoryIds: parentCategoryIds,
+      });
+
+      return {
+        ...result,
+        searchCriteria: {
+          pageSize: searchDto.pageSize || 10,
+          pageNumber: searchDto.pageNumber || 0,
+          title: searchDto.title,
+          includeChildren: searchDto.includeChildren !== false,
+          targetParentIds: parentCategoryIds,
+        },
+      };
+    } catch (error) {
+      this.logger.error(
+        'Failed to get products by hierarchical categories:',
+        error.message,
+      );
+      throw new BadRequestException(`Failed to get products: ${error.message}`);
+    }
+  }
+
+  @Get('categories/hierarchy-info')
+  @ApiOperation({
+    summary: 'Get category hierarchy information',
+    description:
+      'Returns detailed information about Lermao and Trà Phượng Hoàng category hierarchies',
+  })
+  async getCategoryHierarchyInfo(@Query('categoryIds') categoryIds?: string) {
+    try {
+      let targetParentIds = [2205381, 2205374]; // Default: Lermao and Trà Phượng Hoàng
+
+      if (categoryIds) {
+        const parsedIds = KiotVietUtils.parseCategoryIds(categoryIds);
+        if (parsedIds.length > 0) {
+          targetParentIds = parsedIds;
+        }
+      }
+
+      // Get all descendant category IDs
+      const allDescendantIds =
+        await this.productService['kiotVietService'].findDescendantCategoryIds(
+          targetParentIds,
+        );
+
+      // Get hierarchical structure
+      const hierarchyPreview =
+        await this.productService[
+          'kiotVietService'
+        ].fetchHierarchicalCategories();
+
+      // Find the target categories in the hierarchy
+      const targetCategories = hierarchyPreview.filter((cat) =>
+        targetParentIds.includes(cat.categoryId),
+      );
+
+      // Count products in each category
+      const productCounts = await Promise.all(
+        allDescendantIds.map(async (categoryId) => {
+          const count = await this.prisma.product_categories.count({
+            where: { categories_id: BigInt(categoryId) },
+          });
+          return { categoryId, productCount: count };
+        }),
+      );
+
+      return {
+        targetParentIds,
+        targetCategories: targetCategories.map((cat) => ({
+          id: cat.categoryId,
+          name: cat.categoryName,
+          hasChildren: cat.hasChild,
+          childrenCount: cat.children ? cat.children.length : 0,
+          children:
+            cat.children?.map((child) => ({
+              id: child.categoryId,
+              name: child.categoryName,
+              hasChildren: child.hasChild,
+              productCount:
+                productCounts.find((pc) => pc.categoryId === child.categoryId)
+                  ?.productCount || 0,
+            })) || [],
+          productCount:
+            productCounts.find((pc) => pc.categoryId === cat.categoryId)
+              ?.productCount || 0,
+        })),
+        allDescendantIds,
+        productCounts,
+        summary: {
+          totalParentCategories: targetParentIds.length,
+          totalDescendantCategories: allDescendantIds.length,
+          additionalChildCategories:
+            allDescendantIds.length - targetParentIds.length,
+          totalProductsInHierarchy: productCounts.reduce(
+            (sum, pc) => sum + pc.productCount,
+            0,
+          ),
+        },
+      };
+    } catch (error) {
+      this.logger.error(
+        'Failed to get category hierarchy info:',
+        error.message,
+      );
+      throw new BadRequestException(
+        `Failed to get hierarchy info: ${error.message}`,
+      );
+    }
   }
 }
