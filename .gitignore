@@ -5,6 +5,11 @@
 
 /text.md
 
+docker-compose.yml
+Dockerfile
+deploy.sh
+dieptra.sql
+
 # Logs
 logs
 *.log
