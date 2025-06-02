@@ -1,4 +1,4 @@
-// src/payment/sepay.service.ts
+// src/payment/sepay.service.ts - FIXED VERSION
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
@@ -47,25 +47,36 @@ export class SepayService {
   private readonly config: SepayConfig;
 
   constructor(private readonly configService: ConfigService) {
-    this.config = {
-      apiKey: this.configService.get<string>('SEPAY_API_KEY'),
-      secretKey: this.configService.get<string>('SEPAY_SECRET_KEY'),
-      partnerCode: this.configService.get<string>('SEPAY_PARTNER_CODE'),
-      baseUrl:
-        this.configService.get<string>('SEPAY_BASE_URL') ||
-        'https://my.sepay.vn/userapi',
-      webhookUrl: this.configService.get<string>('SEPAY_WEBHOOK_URL'),
-    };
+    // Get configuration values with proper null checking
+    const apiKey = this.configService.get<string>('SEPAY_API_KEY');
+    const secretKey = this.configService.get<string>('SEPAY_SECRET_KEY');
+    const partnerCode = this.configService.get<string>('SEPAY_PARTNER_CODE');
+    const baseUrl =
+      this.configService.get<string>('SEPAY_BASE_URL') ||
+      'https://my.sepay.vn/userapi';
+    const webhookUrl =
+      this.configService.get<string>('SEPAY_WEBHOOK_URL') || '';
 
-    if (
-      !this.config.apiKey ||
-      !this.config.secretKey ||
-      !this.config.partnerCode
-    ) {
+    // Validate required configuration
+    if (!apiKey || !secretKey || !partnerCode) {
+      const missingVars = [];
+      if (!apiKey) missingVars.push('SEPAY_API_KEY');
+      if (!secretKey) missingVars.push('SEPAY_SECRET_KEY');
+      if (!partnerCode) missingVars.push('SEPAY_PARTNER_CODE');
+
       throw new Error(
-        'SePay configuration is missing. Please set SEPAY_API_KEY, SEPAY_SECRET_KEY, and SEPAY_PARTNER_CODE',
+        `SePay configuration is missing required environment variables: ${missingVars.join(', ')}. ` +
+          'Please set these variables in your .env file.',
       );
     }
+
+    this.config = {
+      apiKey,
+      secretKey,
+      partnerCode,
+      baseUrl,
+      webhookUrl,
+    };
 
     this.axiosInstance = axios.create({
       baseURL: this.config.baseUrl,
@@ -76,13 +87,43 @@ export class SepayService {
       },
     });
 
+    // Add request/response interceptors for better debugging
+    this.axiosInstance.interceptors.request.use(
+      (config) => {
+        this.logger.debug(
+          `SePay API Request: ${config.method?.toUpperCase()} ${config.url}`,
+        );
+        return config;
+      },
+      (error) => {
+        this.logger.error('SePay API Request Error:', error.message);
+        return Promise.reject(error);
+      },
+    );
+
+    this.axiosInstance.interceptors.response.use(
+      (response) => {
+        this.logger.debug(
+          `SePay API Response: ${response.status} ${response.statusText}`,
+        );
+        return response;
+      },
+      (error) => {
+        this.logger.error(
+          'SePay API Response Error:',
+          error.response?.data || error.message,
+        );
+        return Promise.reject(error);
+      },
+    );
+
     this.logger.log('SePay service initialized successfully');
   }
 
   /**
    * Generate signature for SePay API requests
    */
-  private generateSignature(data: any): string {
+  private generateSignature(data: Record<string, any>): string {
     try {
       // Sort parameters and create signature string
       const sortedKeys = Object.keys(data).sort();
@@ -106,7 +147,10 @@ export class SepayService {
   /**
    * Verify webhook signature
    */
-  verifyWebhookSignature(data: any, receivedSignature: string): boolean {
+  verifyWebhookSignature(
+    data: Record<string, any>,
+    receivedSignature: string,
+  ): boolean {
     try {
       const expectedSignature = this.generateSignature(data);
       return expectedSignature === receivedSignature;
@@ -136,26 +180,26 @@ export class SepayService {
         payment_method: request.paymentMethod,
         return_url:
           request.returnUrl ||
-          `${this.configService.get('FRONTEND_URL')}/thanh-toan/success`,
+          `${this.configService.get('FRONTEND_URL') || 'http://localhost:3000'}/thanh-toan/success`,
         notify_url: request.notifyUrl || this.config.webhookUrl,
         timestamp: Date.now(),
       };
 
       // Generate signature
       const signature = this.generateSignature(paymentData);
-      paymentData['signature'] = signature;
+      const requestPayload = { ...paymentData, signature };
 
-      this.logger.debug('SePay payment request data:', {
+      this.logger.debug('SePay payment request data (signature hidden):', {
         ...paymentData,
         signature: '***HIDDEN***',
       });
 
       const response = await this.axiosInstance.post(
         '/create-payment',
-        paymentData,
+        requestPayload,
       );
 
-      if (response.data.success) {
+      if (response.data?.success) {
         this.logger.log(
           `SePay payment created successfully: ${request.orderCode}`,
         );
@@ -164,15 +208,15 @@ export class SepayService {
           message: 'Payment created successfully',
           data: {
             orderCode: request.orderCode,
-            paymentUrl: response.data.data.payment_url,
-            qrCodeUrl: response.data.data.qr_code_url,
-            transactionId: response.data.data.transaction_id,
+            paymentUrl: response.data.data?.payment_url || '',
+            qrCodeUrl: response.data.data?.qr_code_url || '',
+            transactionId: response.data.data?.transaction_id || '',
             amount: request.amount,
             status: 'PENDING',
           },
         };
       } else {
-        throw new Error(response.data.message || 'Failed to create payment');
+        throw new Error(response.data?.message || 'Failed to create payment');
       }
     } catch (error) {
       this.logger.error(
@@ -212,26 +256,26 @@ export class SepayService {
       };
 
       const signature = this.generateSignature(requestData);
-      requestData['signature'] = signature;
+      const requestPayload = { ...requestData, signature };
 
       const response = await this.axiosInstance.post(
         '/check-payment',
-        requestData,
+        requestPayload,
       );
 
-      if (response.data.success) {
+      if (response.data?.success) {
         return {
           success: true,
-          status: response.data.data.status,
-          transactionId: response.data.data.transaction_id,
-          amount: response.data.data.amount,
+          status: response.data.data?.status || 'UNKNOWN',
+          transactionId: response.data.data?.transaction_id,
+          amount: response.data.data?.amount,
           message: response.data.message,
         };
       } else {
         return {
           success: false,
           status: 'UNKNOWN',
-          message: response.data.message || 'Failed to check payment status',
+          message: response.data?.message || 'Failed to check payment status',
         };
       }
     } catch (error) {
@@ -264,16 +308,16 @@ export class SepayService {
       };
 
       const signature = this.generateSignature(requestData);
-      requestData['signature'] = signature;
+      const requestPayload = { ...requestData, signature };
 
       const response = await this.axiosInstance.post(
         '/cancel-payment',
-        requestData,
+        requestPayload,
       );
 
       return {
-        success: response.data.success,
-        message: response.data.message || 'Payment cancellation processed',
+        success: response.data?.success || false,
+        message: response.data?.message || 'Payment cancellation processed',
       };
     } catch (error) {
       this.logger.error(
@@ -312,24 +356,24 @@ export class SepayService {
       };
 
       const signature = this.generateSignature(requestData);
-      requestData['signature'] = signature;
+      const requestPayload = { ...requestData, signature };
 
       const response = await this.axiosInstance.post(
         '/generate-qr',
-        requestData,
+        requestPayload,
       );
 
-      if (response.data.success) {
+      if (response.data?.success) {
         return {
           success: true,
-          qrCodeUrl: response.data.data.qr_code_url,
-          qrCodeData: response.data.data.qr_code_data,
+          qrCodeUrl: response.data.data?.qr_code_url,
+          qrCodeData: response.data.data?.qr_code_data,
           message: 'QR code generated successfully',
         };
       } else {
         return {
           success: false,
-          message: response.data.message || 'Failed to generate QR code',
+          message: response.data?.message || 'Failed to generate QR code',
         };
       }
     } catch (error) {
@@ -364,23 +408,23 @@ export class SepayService {
       };
 
       const signature = this.generateSignature(requestData);
-      requestData['signature'] = signature;
+      const requestPayload = { ...requestData, signature };
 
       const response = await this.axiosInstance.post(
         '/payment-methods',
-        requestData,
+        requestPayload,
       );
 
-      if (response.data.success) {
+      if (response.data?.success) {
         return {
           success: true,
-          methods: response.data.data.methods,
+          methods: response.data.data?.methods || [],
           message: 'Payment methods retrieved successfully',
         };
       } else {
         return {
           success: false,
-          message: response.data.message || 'Failed to get payment methods',
+          message: response.data?.message || 'Failed to get payment methods',
         };
       }
     } catch (error) {
@@ -408,23 +452,57 @@ export class SepayService {
       };
 
       const signature = this.generateSignature(testData);
-      testData['signature'] = signature;
+      const requestPayload = { ...testData, signature };
 
       const response = await this.axiosInstance.post(
         '/test-connection',
-        testData,
+        requestPayload,
       );
 
+      const success = response.data?.success || response.status === 200;
       return {
-        success: response.data.success,
-        message: response.data.message || 'Connection test completed',
+        success,
+        message: success
+          ? `Successfully connected to SePay for partner: ${this.config.partnerCode}`
+          : response.data?.message ||
+            'Connection test completed but response was unclear',
       };
     } catch (error) {
       this.logger.error('SePay connection test failed:', error.message);
+
+      // Provide more helpful error messages
+      let message = `Connection failed: ${error.message}`;
+
+      if (error.code === 'ECONNREFUSED') {
+        message = 'Connection refused - SePay servers may be unavailable';
+      } else if (error.response?.status === 401) {
+        message =
+          'Authentication failed - please check your SePay API credentials';
+      } else if (error.response?.status === 403) {
+        message =
+          'Access forbidden - please check your SePay partner code and permissions';
+      } else if (error.response?.status >= 500) {
+        message = 'SePay server error - please try again later';
+      }
+
       return {
         success: false,
-        message: `Connection failed: ${error.message}`,
+        message,
       };
     }
+  }
+
+  /**
+   * Get current configuration (for debugging - sensitive data hidden)
+   */
+  getConfig(): Partial<SepayConfig> {
+    return {
+      baseUrl: this.config.baseUrl,
+      webhookUrl: this.config.webhookUrl,
+      partnerCode: this.config.partnerCode,
+      // Hide sensitive data
+      apiKey: this.config.apiKey ? '***CONFIGURED***' : 'NOT SET',
+      secretKey: this.config.secretKey ? '***CONFIGURED***' : 'NOT SET',
+    };
   }
 }

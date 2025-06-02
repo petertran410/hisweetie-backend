@@ -12,7 +12,7 @@ import {
   PaymentMethod,
   PaymentStatus,
   SepayWebhookDto,
-} from './dto';
+} from './dto/create-payment.dto';
 import { getInlineHTML } from '../utils/helper';
 
 interface PaymentOrder {
