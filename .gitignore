@@ -7,7 +7,7 @@
 
 docker-compose.yml
 Dockerfile
-deploy.sh
+deploy-synology.sh
 dieptra.sql
 
 # Logs
