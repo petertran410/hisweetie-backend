@@ -37,6 +37,7 @@ model authority {
   id      BigInt  @id
   role    String? @db.VarChar(255)
   user_id String? @db.VarChar(255)
+  user    user?   @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKr1wgeo077ok1nr1shx0t70tg8")
 
   @@index([user_id], map: "FKr1wgeo077ok1nr1shx0t70tg8")
 }
@@ -52,6 +53,7 @@ model category {
   name         String?   @db.VarChar(255)
   parent_id    BigInt?
   priority     Int?
+  product_categories product_categories[]
 }
 
 model code_forgot_pass {
@@ -59,6 +61,7 @@ model code_forgot_pass {
   code        String?   @db.VarChar(255)
   expire_date DateTime? @db.DateTime(6)
   user_id     String?   @db.VarChar(255)
+  user        user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKapo65ffi8pncggievbnk4qxha")
 
   @@index([user_id], map: "FKapo65ffi8pncggievbnk4qxha")
 }
@@ -105,6 +108,7 @@ model news {
   view         Int?
   user_id      String?   @db.VarChar(255)
   type         String?   @db.VarChar(255)
+  user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FK4538gbwfa03nwr9edl3fdloo9")
 
   @@index([user_id], map: "FK4538gbwfa03nwr9edl3fdloo9")
 }
@@ -118,6 +122,8 @@ model orders {
   quantity         Int?
   product_id       BigInt?
   product_order_id BigInt?
+  product          product?       @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FK787ibr3guwp6xobrpbofnv7le")
+  product_order    product_order? @relation(fields: [product_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKt9pocabfq29dvm6ybbygxly7q")
 
   @@index([product_id], map: "FK787ibr3guwp6xobrpbofnv7le")
   @@index([product_order_id], map: "FKt9pocabfq29dvm6ybbygxly7q")
@@ -141,6 +147,9 @@ model product {
   type                String?   @db.VarChar(255)
   featured_thumbnail  String?   @db.VarChar(255)
   recipe_thumbnail    String?   @db.VarChar(255)
+  orders              orders[]
+  product_categories  product_categories[]
+  review              review[]
 
   @@index([updated_date], map: "idx_product_updated_date")
 }
@@ -148,6 +157,8 @@ model product {
 model product_categories {
   product_id    BigInt
   categories_id BigInt
+  category      category @relation(fields: [categories_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FK86pfomapgvxb87x9nnxuc0pdj")
+  product       product  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKppc5s0f38pgb35a32dlgyhorc")
 
   @@id([product_id, categories_id])
   @@index([categories_id], map: "FK86pfomapgvxb87x9nnxuc0pdj")
@@ -170,6 +181,7 @@ model product_order {
   status                   String?        @db.VarChar(255)
   type                     String?        @db.VarChar(255)
   user_id                  String?        @db.VarChar(255)
+  user                     user?          @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKa9own0mc8gwle8cckiij9ubsl")
   payment_method           String?        @default("COD") @db.VarChar(50)
   payment_status           String?        @default("PENDING") @db.VarChar(50)
   transaction_id           String?        @db.VarChar(255)
@@ -181,6 +193,7 @@ model product_order {
   shipping_cost            BigInt?        @default(0)
   subtotal                 BigInt?        @default(0)
   total_amount             BigInt?        @default(0)
+  orders             orders[]
   payment_logs             payment_logs[]
 
   @@index([user_id], map: "FKa9own0mc8gwle8cckiij9ubsl")
@@ -200,24 +213,31 @@ model review {
   rate         Int?
   product_id   BigInt?
   user_id      String?   @db.VarChar(255)
+  user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKiyf57dy48lyiftdrf7y87rnxi")
+  product      product?  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKiyof1sindb9qiqr9o8npj8klt")
 
   @@index([user_id], map: "FKiyf57dy48lyiftdrf7y87rnxi")
   @@index([product_id], map: "FKiyof1sindb9qiqr9o8npj8klt")
 }
 
 model user {
-  id           String    @id @db.VarChar(255)
-  created_by   String?   @db.VarChar(255)
-  created_date DateTime? @db.DateTime(6)
-  updated_by   String?   @db.VarChar(255)
-  updated_date DateTime? @db.DateTime(6)
-  address      String?   @db.VarChar(255)
-  ava_url      String?   @db.VarChar(255)
-  email        String?   @unique(map: "UK_ob8kqyqqgmefl0aco34akdtpe") @db.VarChar(255)
-  full_name    String?   @db.VarChar(255)
-  is_active    Boolean   @db.Bit(1)
-  password     String?   @db.VarChar(255)
-  phone        String?   @unique(map: "UK_589idila9li6a4arw1t8ht1gx") @db.VarChar(255)
+  id               String             @id @db.VarChar(255)
+  created_by       String?            @db.VarChar(255)
+  created_date     DateTime?          @db.DateTime(6)
+  updated_by       String?            @db.VarChar(255)
+  updated_date     DateTime?          @db.DateTime(6)
+  address          String?            @db.VarChar(255)
+  ava_url          String?            @db.VarChar(255)
+  email            String?            @unique(map: "UK_ob8kqyqqgmefl0aco34akdtpe") @db.VarChar(255)
+  full_name        String?            @db.VarChar(255)
+  is_active        Boolean            @db.Bit(1)
+  password         String?            @db.VarChar(255)
+  phone            String?            @unique(map: "UK_589idila9li6a4arw1t8ht1gx") @db.VarChar(255)
+  authority        authority[]
+  code_forgot_pass code_forgot_pass[]
+  news             news[]
+  product_order    product_order[]
+  review           review[]
 
   @@index([phone, email], map: "phone")
   @@index([email], map: "userEmailIndex")
