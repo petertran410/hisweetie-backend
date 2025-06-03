@@ -1,4 +1,4 @@
-// src/payment/payment.controller.ts - ENHANCED with debugging for SePay
+// src/payment/payment.controller.ts - ENHANCED with better debugging
 import {
   Controller,
   Get,
@@ -14,6 +14,7 @@ import {
   HttpStatus,
   Req,
   Ip,
+  Query,
 } from '@nestjs/common';
 import { PaymentService } from './payment.service';
 import { SepayService, SepayWebhookPayload } from './sepay.service';
@@ -170,9 +171,8 @@ export class PaymentController {
       this.logger.log('=================================================');
 
       // Always return success to prevent SePay from retrying
-      // Log the actual result for debugging
       return {
-        success: true, // Always true for SePay
+        success: true,
         message: result.success ? 'OK' : 'Processed with errors',
         webhookId,
         processingTimeMs: processingTime,
@@ -455,17 +455,51 @@ export class PaymentController {
       orderId: string;
       amount: number;
       transactionId?: number;
+      useSepayCode?: boolean; // NEW: Option to use SePay order code format
     },
     @Headers() headers: Record<string, string>,
   ) {
     try {
-      const { orderId, amount, transactionId = 999999 } = simulationData;
+      const {
+        orderId,
+        amount,
+        transactionId = 999999,
+        useSepayCode = true,
+      } = simulationData;
 
       this.logger.log('🧪 SIMULATING SEPAY WEBHOOK:', {
         orderId,
         amount,
         transactionId,
+        useSepayCode,
       });
+
+      // FIXED: Use proper order code format
+      let orderCodeToUse = orderId;
+
+      if (useSepayCode) {
+        // Try to find the order first to get the proper SePay order code
+        try {
+          const orderStatus =
+            await this.paymentService.getPaymentStatus(orderId);
+          if (orderStatus.sepayOrderCode) {
+            orderCodeToUse = orderStatus.sepayOrderCode;
+            this.logger.log(
+              `Using SePay order code from database: ${orderCodeToUse}`,
+            );
+          } else {
+            // Generate a mock SePay order code
+            orderCodeToUse = `DT${Date.now().toString().slice(-8)}${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+            this.logger.log(
+              `Generated mock SePay order code: ${orderCodeToUse}`,
+            );
+          }
+        } catch (error) {
+          this.logger.warn(
+            `Could not find order ${orderId}, using provided orderId`,
+          );
+        }
+      }
 
       // Create mock webhook payload
       const mockWebhookData: SepayWebhookPayload = {
@@ -476,14 +510,14 @@ export class PaymentController {
           .replace('T', ' ')
           .slice(0, 19),
         accountNumber: process.env.SEPAY_BANK_ACCOUNT || '1234567890',
-        code: orderId,
-        content: `${orderId} Test payment simulation`,
+        code: orderCodeToUse, // Use the proper order code
+        content: `${orderCodeToUse} Test payment simulation`,
         transferType: 'in',
         transferAmount: amount,
         accumulated: 1000000,
         subAccount: null,
         referenceCode: `TEST${transactionId}`,
-        description: `Test webhook simulation for ${orderId}`,
+        description: `Test webhook simulation for ${orderCodeToUse}`,
       };
 
       // Add proper authorization header
@@ -507,12 +541,103 @@ export class PaymentController {
         message: 'Webhook simulation completed',
         simulationData: mockWebhookData,
         processingResult: result,
+        orderCodeUsed: orderCodeToUse,
       };
     } catch (error) {
       this.logger.error('❌ Webhook simulation failed:', error.message);
       return {
         success: false,
         message: 'Webhook simulation failed',
+        error: error.message,
+      };
+    }
+  }
+
+  // NEW: Debug endpoint to list pending orders
+  @Get('debug/pending-orders')
+  @ApiOperation({
+    summary: 'List pending orders for debugging',
+    description: 'Returns a list of pending payment orders for troubleshooting',
+  })
+  async listPendingOrders() {
+    try {
+      this.logger.log('🔍 Listing pending orders for debugging');
+
+      const orders = await this.paymentService.listPendingOrders();
+
+      this.logger.log(`Found ${orders.length} pending orders`);
+
+      return {
+        success: true,
+        pendingOrders: orders,
+        count: orders.length,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      this.logger.error('❌ Failed to list pending orders:', error.message);
+      return {
+        success: false,
+        error: error.message,
+        pendingOrders: [],
+      };
+    }
+  }
+
+  // NEW: Manual webhook trigger by order ID
+  @Post('debug/trigger-webhook/:orderId')
+  @ApiOperation({
+    summary: 'Manually trigger webhook for specific order',
+    description:
+      'Manually triggers a webhook for a specific order (for testing)',
+  })
+  async triggerWebhookForOrder(
+    @Param('orderId') orderId: string,
+    @Query('amount') amount?: number,
+  ) {
+    try {
+      this.logger.log(`🎯 Manually triggering webhook for order: ${orderId}`);
+
+      // Get order details
+      const orderStatus = await this.paymentService.getPaymentStatus(orderId);
+
+      const mockAmount = amount || orderStatus.amount;
+      const orderCode =
+        orderStatus.sepayOrderCode ||
+        `DT${Date.now().toString().slice(-8)}MOCK`;
+
+      const simulationData = {
+        orderId: orderId,
+        amount: mockAmount,
+        transactionId: Date.now(),
+        useSepayCode: true,
+      };
+
+      // Reuse the simulation logic
+      const result = await this.simulateWebhook(simulationData, {
+        authorization: `Apikey ${process.env.SEPAY_API_TOKEN}`,
+      });
+
+      this.logger.log(
+        `🎯 Manual webhook trigger result for ${orderId}:`,
+        result,
+      );
+
+      return {
+        success: true,
+        message: `Manual webhook triggered for order ${orderId}`,
+        orderId,
+        orderCode,
+        amount: mockAmount,
+        result,
+      };
+    } catch (error) {
+      this.logger.error(
+        `❌ Failed to trigger webhook for ${orderId}:`,
+        error.message,
+      );
+      return {
+        success: false,
+        message: `Failed to trigger webhook for order ${orderId}`,
         error: error.message,
       };
     }
