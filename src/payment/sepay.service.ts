@@ -1,4 +1,4 @@
-// src/payment/sepay.service.ts - CORRECT Implementation for SePay
+// src/payment/sepay.service.ts - FIXED VERSION for SePay Integration
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
@@ -29,8 +29,8 @@ interface SepayPaymentResponse {
   message: string;
   data?: {
     orderCode: string;
-    qrCodeUrl: string; // VietQR URL
-    qrCodeData: string; // QR code content
+    qrCodeUrl: string;
+    qrCodeData: string;
     bankInfo: {
       accountNumber: string;
       accountHolder: string;
@@ -44,7 +44,7 @@ interface SepayPaymentResponse {
   error?: string;
 }
 
-// SePay webhook payload structure
+// SePay webhook payload structure (from documentation)
 export interface SepayWebhookPayload {
   id: number; // Transaction ID on SePay
   gateway: string; // Bank name (e.g., "Vietcombank")
@@ -87,6 +87,12 @@ export class SepayService {
       );
     }
 
+    if (!webhookUrl) {
+      this.logger.warn(
+        'SEPAY_WEBHOOK_URL is not configured. Please set this to your webhook endpoint.',
+      );
+    }
+
     this.config = {
       apiToken: apiToken || '',
       bankAccount: bankAccount || '',
@@ -96,7 +102,7 @@ export class SepayService {
     };
 
     this.logger.log(
-      `SePay service initialized. API Token: ${!!this.config.apiToken}, Bank configured: ${!!this.config.bankAccount}`,
+      `SePay service initialized. API Token: ${!!this.config.apiToken}, Bank: ${this.config.bankName} (${this.config.bankAccount}), Webhook: ${this.config.webhookUrl}`,
     );
   }
 
@@ -107,13 +113,13 @@ export class SepayService {
     return !!(
       this.config.apiToken &&
       this.config.bankAccount &&
-      this.config.bankName
+      this.config.bankName &&
+      this.config.accountHolder
     );
   }
 
   /**
-   * Generate VietQR payment QR code
-   * This replaces the traditional "create payment" - we generate QR codes for bank transfer
+   * Generate VietQR payment QR code with proper SePay format
    */
   async createPayment(
     request: CreatePaymentRequest,
@@ -123,7 +129,7 @@ export class SepayService {
         return {
           success: false,
           message:
-            'SePay is not configured. Please set bank account information.',
+            'SePay is not configured. Please check environment variables.',
           error: 'SEPAY_NOT_CONFIGURED',
         };
       }
@@ -132,11 +138,22 @@ export class SepayService {
         `Creating VietQR payment for order: ${request.orderCode}`,
       );
 
-      // Create transfer content with order code for SePay to detect
+      // CRITICAL: Create transfer content that SePay can detect
+      // Format: {ORDER_CODE} {OPTIONAL_DESCRIPTION}
       const transferContent =
         `${request.orderCode} ${request.orderInfo}`.trim();
 
-      // Generate VietQR URL - this is the standard for Vietnamese QR payments
+      this.logger.log(`Transfer content: "${transferContent}"`);
+
+      // Generate VietQR URL with proper format
+      // Using official VietQR format that works with SePay
+      const bankCode = this.getBankCode(this.config.bankName);
+      const qrCodeUrl = `https://img.vietqr.io/image/${bankCode}-${this.config.bankAccount}-${encodeURIComponent('compact')}.png?amount=${request.amount}&addInfo=${encodeURIComponent(transferContent)}&accountName=${encodeURIComponent(this.config.accountHolder)}`;
+
+      // Alternative QR URL (SePay's own service)
+      const sepayQrUrl = `https://qr.sepay.vn/img?acc=${this.config.bankAccount}&bank=${bankCode}&amount=${request.amount}&des=${encodeURIComponent(transferContent)}&template=compact`;
+
+      // Generate QR data for manual processing
       const qrData = this.generateVietQRData({
         bankAccount: this.config.bankAccount,
         accountHolder: this.config.accountHolder,
@@ -144,19 +161,17 @@ export class SepayService {
         transferContent: transferContent,
       });
 
-      // VietQR API URL - you can use qr.sepay.vn or api.vietqr.io
-      const qrCodeUrl = `https://qr.sepay.vn/img?acc=${this.config.bankAccount}&bank=${this.getBankCode(this.config.bankName)}&amount=${request.amount}&des=${encodeURIComponent(transferContent)}&template=compact`;
-
       this.logger.log(
         `VietQR generated successfully for order: ${request.orderCode}`,
       );
+      this.logger.log(`QR URLs: VietQR=${qrCodeUrl}, SePay=${sepayQrUrl}`);
 
       return {
         success: true,
         message: 'VietQR payment created successfully',
         data: {
           orderCode: request.orderCode,
-          qrCodeUrl: qrCodeUrl,
+          qrCodeUrl: qrCodeUrl, // Use VietQR by default
           qrCodeData: qrData,
           bankInfo: {
             accountNumber: this.config.bankAccount,
@@ -192,147 +207,72 @@ export class SepayService {
     amount: number;
     transferContent: string;
   }): string {
-    // VietQR format: https://vietqr.net/
-    // This is a simplified version - you might want to use a proper VietQR library
     const { bankAccount, accountHolder, amount, transferContent } = params;
-
-    return `${bankAccount}|${accountHolder}|${amount}|${transferContent}`;
+    return `Bank: ${this.config.bankName}\nAccount: ${bankAccount}\nHolder: ${accountHolder}\nAmount: ${amount}\nContent: ${transferContent}`;
   }
 
   /**
-   * Get bank code from bank name
+   * Get bank code from bank name (updated with more banks)
    */
   private getBankCode(bankName: string): string {
     const bankCodes: Record<string, string> = {
       Vietcombank: 'VCB',
       Techcombank: 'TCB',
       BIDV: 'BIDV',
-      VietinBank: 'VietinBank',
+      VietinBank: 'CTG',
       Agribank: 'AGR',
       'MB Bank': 'MB',
+      MBBank: 'MB',
       ACB: 'ACB',
       VPBank: 'VPB',
       TPBank: 'TPB',
       Sacombank: 'STB',
-      // Add more banks as needed
+      VIB: 'VIB',
+      SHB: 'SHB',
+      Eximbank: 'EIB',
+      OCB: 'OCB',
+      MSB: 'MSB',
+      HDBank: 'HDB',
+      VietCapitalBank: 'BVB',
+      SCB: 'SCB',
+      VietABank: 'VAB',
+      NamABank: 'NAB',
+      PGBank: 'PGB',
+      VietBank: 'VBB',
+      NCB: 'NCB',
+      SGB: 'SGB',
+      BacABank: 'BAB',
+      GPBank: 'GPB',
+      OceanBank: 'OCN',
+      CBBank: 'CBB',
+      SeABank: 'SSB',
+      CAKE: 'CAKE',
+      Ubank: 'UBB',
+      Timo: 'TIMO',
+      VRB: 'VRB',
+      WooriBankVN: 'WVN',
+      KookminBankVN: 'KBHN',
+      KEBHanaVN: 'KEBHANA',
+      MAFC: 'MAFC',
+      CitiBank: 'CITI',
+      KienLongBank: 'KLB',
+      StandardCharteredVN: 'SC',
+      PublicBank: 'PBVN',
+      HSBC: 'HSBC',
+      DBSBank: 'DBS',
+      HongLeongVN: 'HLBVN',
+      UOB: 'UOB',
+      Shinhan: 'SVB',
+      ABBANK: 'ABB',
+      SaigonBank: 'SGB',
+      BaoVietBank: 'BVB',
+      LienVietPostBank: 'LPB',
     };
 
-    return bankCodes[bankName] || 'VCB'; // Default to Vietcombank
-  }
-
-  /**
-   * SePay doesn't have a "check payment status" API - status comes through webhooks
-   * This method checks our database for payment status
-   */
-  async checkPaymentStatus(orderCode: string): Promise<{
-    success: boolean;
-    status: string;
-    transactionId?: string;
-    amount?: number;
-    message?: string;
-  }> {
-    // Since SePay works via webhooks, we don't check their API
-    // Instead, we should check our local database for the payment status
-    // This would be implemented in your PaymentService, not here
-
-    this.logger.log(
-      `Payment status check for ${orderCode} - this should be handled by PaymentService`,
-    );
-
-    return {
-      success: true,
-      status: 'PENDING', // Default status - real status comes from webhooks
-      message:
-        'Payment status should be checked from local database, not SePay API',
-    };
-  }
-
-  /**
-   * SePay doesn't support payment cancellation - it's just bank transfers
-   */
-  async cancelPayment(orderCode: string): Promise<{
-    success: boolean;
-    message: string;
-  }> {
-    this.logger.log(
-      `Payment cancellation requested for ${orderCode} - not supported by SePay`,
-    );
-
-    return {
-      success: true,
-      message:
-        'SePay payments cannot be cancelled - they are bank transfers. Update order status locally.',
-    };
-  }
-
-  /**
-   * Generate QR code using external service
-   */
-  async generateQRCode(
-    orderCode: string,
-    amount: number,
-    bankCode?: string,
-  ): Promise<{
-    success: boolean;
-    qrCodeUrl?: string;
-    qrCodeData?: string;
-    message?: string;
-  }> {
-    try {
-      if (!this.isConfigured()) {
-        return { success: false, message: 'SePay not configured' };
-      }
-
-      const transferContent = `${orderCode}`;
-      const qrCodeUrl = `https://qr.sepay.vn/img?acc=${this.config.bankAccount}&bank=${bankCode || this.getBankCode(this.config.bankName)}&amount=${amount}&des=${encodeURIComponent(transferContent)}&template=compact`;
-
-      return {
-        success: true,
-        qrCodeUrl: qrCodeUrl,
-        qrCodeData: this.generateVietQRData({
-          bankAccount: this.config.bankAccount,
-          accountHolder: this.config.accountHolder,
-          amount: amount,
-          transferContent: transferContent,
-        }),
-        message: 'QR code generated successfully',
-      };
-    } catch (error) {
-      this.logger.error(
-        `Failed to generate QR code for ${orderCode}:`,
-        error.message,
-      );
-      return {
-        success: false,
-        message: error.message || 'Failed to generate QR code',
-      };
-    }
-  }
-
-  /**
-   * Test SePay connection - since there's no API, we just check configuration
-   */
-  async testConnection(): Promise<{ success: boolean; message: string }> {
-    if (!this.config.apiToken) {
-      return {
-        success: false,
-        message:
-          'SePay API token not configured - webhook authentication will fail',
-      };
-    }
-
-    if (!this.config.bankAccount || !this.config.bankName) {
-      return {
-        success: false,
-        message:
-          'SePay bank information not configured - cannot generate QR codes',
-      };
-    }
-
-    return {
-      success: true,
-      message: `SePay configured successfully. Bank: ${this.config.bankName}, Account: ${this.config.bankAccount}, Webhook authentication: ${!!this.config.apiToken}`,
-    };
+    const code =
+      bankCodes[bankName] || bankCodes[bankName.replace(/\s+/g, '')] || 'VCB';
+    this.logger.debug(`Bank name "${bankName}" mapped to code: ${code}`);
+    return code;
   }
 
   /**
@@ -355,6 +295,10 @@ export class SepayService {
 
       const expectedAuth = `Apikey ${this.config.apiToken}`;
       const isValid = authHeader === expectedAuth;
+
+      this.logger.log(
+        `Webhook signature verification: ${isValid ? 'VALID' : 'INVALID'}`,
+      );
 
       if (!isValid) {
         this.logger.warn('Invalid webhook signature', {
@@ -384,6 +328,15 @@ export class SepayService {
       this.logger.log(
         `Processing SePay webhook for transaction ID: ${payload.id}`,
       );
+      this.logger.log(`Transaction details:`, {
+        id: payload.id,
+        gateway: payload.gateway,
+        transferType: payload.transferType,
+        amount: payload.transferAmount,
+        content: payload.content,
+        code: payload.code,
+        accountNumber: payload.accountNumber,
+      });
 
       // Validate webhook payload
       if (
@@ -391,24 +344,46 @@ export class SepayService {
         !payload.transferAmount ||
         payload.transferType !== 'in'
       ) {
+        const message =
+          'Invalid webhook payload - missing required fields or not an incoming transaction';
+        this.logger.warn(message, payload);
         return {
           success: false,
-          message:
-            'Invalid webhook payload - missing required fields or not an incoming transaction',
+          message,
+        };
+      }
+
+      // Verify this is our bank account
+      if (payload.accountNumber !== this.config.bankAccount) {
+        const message = `Transaction is for different account: ${payload.accountNumber} (expected: ${this.config.bankAccount})`;
+        this.logger.warn(message);
+        return {
+          success: false,
+          message,
         };
       }
 
       // Extract order code from payment content
-      // SePay auto-detects the code based on your configuration
-      const orderCode =
-        payload.code || this.extractOrderCodeFromContent(payload.content);
+      // SePay may auto-detect the code and put it in the 'code' field
+      // OR we need to extract it from the 'content' field
+      let orderCode = payload.code;
 
       if (!orderCode) {
+        orderCode = this.extractOrderCodeFromContent(payload.content);
+      }
+
+      if (!orderCode) {
+        const message = `No order code found in transaction. Content: "${payload.content}", Code: "${payload.code}"`;
+        this.logger.warn(message);
         return {
           success: false,
-          message: 'No order code found in transaction content',
+          message,
         };
       }
+
+      this.logger.log(
+        `Successfully extracted order code: ${orderCode} from transaction ${payload.id}`,
+      );
 
       return {
         success: true,
@@ -428,13 +403,41 @@ export class SepayService {
 
   /**
    * Extract order code from transfer content
+   * Improved extraction with multiple patterns
    */
   private extractOrderCodeFromContent(content: string): string | null {
     try {
-      // Try to extract order code from content
-      // Assuming order codes start with "DT" followed by numbers and letters
-      const match = content.match(/DT\w+/i);
-      return match ? match[0] : null;
+      this.logger.log(`Extracting order code from content: "${content}"`);
+
+      // Try multiple patterns to extract order code
+      const patterns = [
+        /DT\d{8}[A-Z0-9]{6}/i, // Pattern: DT12345678ABC123 (your current format)
+        /DT\w+/i, // Pattern: DT followed by word characters
+        /\bDT\d+\b/i, // Pattern: DT followed by digits
+        /\b[A-Z]{2}\d{8}[A-Z0-9]+\b/i, // Pattern: 2 letters + 8 digits + alphanumeric
+      ];
+
+      for (const pattern of patterns) {
+        const match = content.match(pattern);
+        if (match) {
+          this.logger.log(
+            `Order code extracted using pattern ${pattern}: ${match[0]}`,
+          );
+          return match[0];
+        }
+      }
+
+      // If no pattern matches, try to find any word that starts with DT
+      const words = content.split(/\s+/);
+      for (const word of words) {
+        if (word.toUpperCase().startsWith('DT') && word.length > 3) {
+          this.logger.log(`Order code extracted from words: ${word}`);
+          return word;
+        }
+      }
+
+      this.logger.warn(`No order code pattern found in content: "${content}"`);
+      return null;
     } catch (error) {
       this.logger.error('Error extracting order code:', error.message);
       return null;
@@ -442,7 +445,97 @@ export class SepayService {
   }
 
   /**
-   * Get configuration status
+   * Generate QR code using external service
+   */
+  async generateQRCode(
+    orderCode: string,
+    amount: number,
+    bankCode?: string,
+  ): Promise<{
+    success: boolean;
+    qrCodeUrl?: string;
+    qrCodeData?: string;
+    message?: string;
+  }> {
+    try {
+      if (!this.isConfigured()) {
+        return { success: false, message: 'SePay not configured' };
+      }
+
+      const transferContent = `${orderCode}`;
+      const finalBankCode = bankCode || this.getBankCode(this.config.bankName);
+
+      // Use VietQR service for better compatibility
+      const qrCodeUrl = `https://img.vietqr.io/image/${finalBankCode}-${this.config.bankAccount}-${encodeURIComponent('compact')}.png?amount=${amount}&addInfo=${encodeURIComponent(transferContent)}&accountName=${encodeURIComponent(this.config.accountHolder)}`;
+
+      const qrCodeData = this.generateVietQRData({
+        bankAccount: this.config.bankAccount,
+        accountHolder: this.config.accountHolder,
+        amount: amount,
+        transferContent: transferContent,
+      });
+
+      this.logger.log(`Generated QR code for order ${orderCode}: ${qrCodeUrl}`);
+
+      return {
+        success: true,
+        qrCodeUrl: qrCodeUrl,
+        qrCodeData: qrCodeData,
+        message: 'QR code generated successfully',
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to generate QR code for ${orderCode}:`,
+        error.message,
+      );
+      return {
+        success: false,
+        message: error.message || 'Failed to generate QR code',
+      };
+    }
+  }
+
+  /**
+   * Test SePay connection and configuration
+   */
+  async testConnection(): Promise<{ success: boolean; message: string }> {
+    const issues: string[] = [];
+
+    if (!this.config.apiToken) {
+      issues.push('API token not configured');
+    }
+
+    if (!this.config.bankAccount) {
+      issues.push('Bank account not configured');
+    }
+
+    if (!this.config.bankName) {
+      issues.push('Bank name not configured');
+    }
+
+    if (!this.config.accountHolder) {
+      issues.push('Account holder not configured');
+    }
+
+    if (!this.config.webhookUrl) {
+      issues.push('Webhook URL not configured');
+    }
+
+    if (issues.length > 0) {
+      return {
+        success: false,
+        message: `SePay configuration issues: ${issues.join(', ')}. Please check your environment variables.`,
+      };
+    }
+
+    return {
+      success: true,
+      message: `SePay configured successfully. Bank: ${this.config.bankName} (${this.config.bankAccount}), Webhook: ${this.config.webhookUrl}`,
+    };
+  }
+
+  /**
+   * Get configuration status for debugging
    */
   getConfigStatus(): {
     configured: boolean;
@@ -450,6 +543,7 @@ export class SepayService {
     bankName: string;
     webhookUrl: string;
     apiTokenSet: boolean;
+    bankCode: string;
   } {
     return {
       configured: this.isConfigured(),
@@ -457,11 +551,12 @@ export class SepayService {
       bankName: this.config.bankName || 'NOT SET',
       webhookUrl: this.config.webhookUrl || 'NOT SET',
       apiTokenSet: !!this.config.apiToken,
+      bankCode: this.getBankCode(this.config.bankName),
     };
   }
 
   /**
-   * Get payment methods - for SePay it's just bank transfer
+   * Get payment methods with proper configuration check
    */
   async getPaymentMethods(): Promise<{
     success: boolean;
@@ -473,19 +568,25 @@ export class SepayService {
     }>;
     message?: string;
   }> {
+    const isConfigured = this.isConfigured();
+
     const methods = [
       {
         code: 'sepay_bank',
-        name: `Chuyển khoản ${this.config.bankName}`,
+        name: isConfigured
+          ? `Chuyển khoản ${this.config.bankName}`
+          : 'Chuyển khoản ngân hàng (Chưa cấu hình)',
         type: 'bank_transfer',
-        enabled: this.isConfigured(),
+        enabled: isConfigured,
       },
     ];
 
     return {
       success: true,
       methods,
-      message: 'SePay payment methods retrieved successfully',
+      message: isConfigured
+        ? 'SePay payment methods retrieved successfully'
+        : 'SePay not configured - please check environment variables',
     };
   }
 }

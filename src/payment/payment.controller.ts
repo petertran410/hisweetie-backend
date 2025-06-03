@@ -1,4 +1,4 @@
-// src/payment/payment.controller.ts - UPDATED with proper webhook handling
+// src/payment/payment.controller.ts - ENHANCED with debugging for SePay
 import {
   Controller,
   Get,
@@ -13,6 +13,7 @@ import {
   HttpCode,
   HttpStatus,
   Req,
+  Ip,
 } from '@nestjs/common';
 import { PaymentService } from './payment.service';
 import { SepayService, SepayWebhookPayload } from './sepay.service';
@@ -42,40 +43,11 @@ export class PaymentController {
     summary: 'Create payment order',
     description: 'Creates a new payment order with SePay QR code generation',
   })
-  @ApiBody({ type: CreatePaymentDto })
-  @ApiResponse({
-    status: 201,
-    description: 'Payment order created successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        orderId: { type: 'string' },
-        qrCodeUrl: { type: 'string', nullable: true },
-        qrCodeData: { type: 'string', nullable: true },
-        bankInfo: {
-          type: 'object',
-          properties: {
-            accountNumber: { type: 'string' },
-            accountHolder: { type: 'string' },
-            bankName: { type: 'string' },
-            amount: { type: 'number' },
-            transferContent: { type: 'string' },
-          },
-        },
-        message: { type: 'string' },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Bad request - validation failed or payment creation failed',
-  })
   @UsePipes(new ValidationPipe({ transform: true }))
   async createPayment(@Body() createPaymentDto: CreatePaymentDto) {
     try {
-      this.logger.log('Creating new payment order');
-      this.logger.debug('Payment request data:', {
+      this.logger.log('=== PAYMENT CREATION START ===');
+      this.logger.log('Payment request data:', {
         customerName: createPaymentDto.customerInfo.fullName,
         itemCount: createPaymentDto.cartItems.length,
         total: createPaymentDto.amounts.total,
@@ -85,44 +57,15 @@ export class PaymentController {
       const result = await this.paymentService.createPayment(createPaymentDto);
 
       this.logger.log(`Payment order created: ${result.orderId}`);
+      this.logger.log('=== PAYMENT CREATION END ===');
+
       return result;
     } catch (error) {
-      this.logger.error('Failed to create payment order:', error.message);
+      this.logger.error('=== PAYMENT CREATION FAILED ===');
+      this.logger.error('Error details:', error.message);
+      this.logger.error('Error stack:', error.stack);
       throw new BadRequestException(
         `Payment creation failed: ${error.message}`,
-      );
-    }
-  }
-
-  @Get('status/:orderId')
-  @ApiOperation({
-    summary: 'Get payment status',
-    description: 'Retrieves the current status of a payment order',
-  })
-  @ApiParam({
-    name: 'orderId',
-    description: 'Order ID',
-    example: '123456789',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Payment status retrieved successfully',
-  })
-  async getPaymentStatus(@Param('orderId') orderId: string) {
-    try {
-      this.logger.log(`Getting payment status for order: ${orderId}`);
-
-      const result = await this.paymentService.getPaymentStatus(orderId);
-
-      this.logger.log(`Payment status for ${orderId}: ${result.status}`);
-      return result;
-    } catch (error) {
-      this.logger.error(
-        `Failed to get payment status for ${orderId}:`,
-        error.message,
-      );
-      throw new BadRequestException(
-        `Failed to get payment status: ${error.message}`,
       );
     }
   }
@@ -131,181 +74,280 @@ export class PaymentController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'SePay webhook endpoint',
-    description:
-      'Handles payment notifications from SePay when customers complete bank transfers',
-  })
-  @ApiHeader({
-    name: 'Authorization',
-    description: 'SePay API key in format: "Apikey YOUR_API_TOKEN"',
-    required: true,
-  })
-  @ApiBody({
-    description: 'SePay webhook payload',
-    schema: {
-      type: 'object',
-      properties: {
-        id: { type: 'number', description: 'Transaction ID on SePay' },
-        gateway: {
-          type: 'string',
-          description: 'Bank name (e.g., "Vietcombank")',
-        },
-        transactionDate: {
-          type: 'string',
-          description: 'Transaction time "2023-03-25 14:02:37"',
-        },
-        accountNumber: { type: 'string', description: 'Bank account number' },
-        code: {
-          type: 'string',
-          nullable: true,
-          description: 'Payment code (auto-detected by SePay)',
-        },
-        content: { type: 'string', description: 'Transfer content' },
-        transferType: {
-          type: 'string',
-          enum: ['in', 'out'],
-          description: 'Transaction type',
-        },
-        transferAmount: { type: 'number', description: 'Transaction amount' },
-        accumulated: { type: 'number', description: 'Account balance' },
-        subAccount: {
-          type: 'string',
-          nullable: true,
-          description: 'Sub account',
-        },
-        referenceCode: { type: 'string', description: 'SMS reference code' },
-        description: { type: 'string', description: 'Full SMS content' },
-      },
-      required: [
-        'id',
-        'gateway',
-        'transactionDate',
-        'accountNumber',
-        'content',
-        'transferType',
-        'transferAmount',
-      ],
-    },
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Webhook processed successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        message: { type: 'string' },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Invalid webhook data or signature',
+    description: 'Handles payment notifications from SePay',
   })
   async handleSepayWebhook(
     @Body() webhookData: SepayWebhookPayload,
     @Headers() headers: Record<string, string>,
     @Req() request: Request,
+    @Ip() clientIp: string,
   ) {
+    const startTime = Date.now();
+    const webhookId = `webhook-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
     try {
-      this.logger.log(
-        `Received SePay webhook for transaction ID: ${webhookData.id}`,
-      );
-      this.logger.debug('Webhook data:', {
+      this.logger.log('=================================================');
+      this.logger.log(`=== SEPAY WEBHOOK RECEIVED [${webhookId}] ===`);
+      this.logger.log('=================================================');
+
+      // Log request details
+      this.logger.log('📥 WEBHOOK REQUEST DETAILS:', {
+        webhookId,
+        timestamp: new Date().toISOString(),
+        clientIp,
+        userAgent: headers['user-agent'],
+        contentType: headers['content-type'],
+        contentLength: headers['content-length'],
+      });
+
+      // Log SePay specific details
+      this.logger.log('🏦 SEPAY TRANSACTION DATA:', {
         transactionId: webhookData.id,
         gateway: webhookData.gateway,
-        amount: webhookData.transferAmount,
+        transactionDate: webhookData.transactionDate,
+        accountNumber: webhookData.accountNumber,
         transferType: webhookData.transferType,
-        content: webhookData.content,
+        transferAmount: webhookData.transferAmount,
         code: webhookData.code,
+        content: webhookData.content,
+        referenceCode: webhookData.referenceCode,
       });
 
-      // Log webhook headers for debugging (hide sensitive data)
-      this.logger.debug('Webhook headers:', {
-        authorization: headers.authorization
-          ? headers.authorization.substring(0, 20) + '...'
-          : 'missing',
-        contentType: headers['content-type'],
-        userAgent: headers['user-agent'],
+      // Log authorization header (safely)
+      const authHeader = headers.authorization || headers.Authorization;
+      this.logger.log('🔐 AUTHORIZATION CHECK:', {
+        hasAuthHeader: !!authHeader,
+        authHeaderPreview: authHeader
+          ? authHeader.substring(0, 15) + '...'
+          : 'MISSING',
+        expectedFormat: 'Apikey YOUR_TOKEN',
       });
 
+      // Verify this is from SePay IP
+      const sepayIp = '103.255.238.9';
+      const isFromSepayIp =
+        clientIp === sepayIp ||
+        request.headers['x-forwarded-for']?.includes(sepayIp) ||
+        request.headers['x-real-ip'] === sepayIp;
+
+      this.logger.log('🌐 IP VERIFICATION:', {
+        clientIp,
+        sepayIp,
+        isFromSepayIp,
+        forwardedFor: request.headers['x-forwarded-for'],
+        realIp: request.headers['x-real-ip'],
+      });
+
+      if (!isFromSepayIp) {
+        this.logger.warn('⚠️  WARNING: Request not from SePay IP');
+      }
+
+      // Process the webhook
+      this.logger.log('⚙️  PROCESSING WEBHOOK...');
       const result = await this.paymentService.handleSepayWebhook(
         webhookData,
         headers,
       );
 
+      const processingTime = Date.now() - startTime;
+
       if (result.success) {
-        this.logger.log(
-          `SePay webhook processed successfully for transaction: ${webhookData.id}`,
-        );
+        this.logger.log('✅ WEBHOOK PROCESSED SUCCESSFULLY:', {
+          webhookId,
+          processingTimeMs: processingTime,
+          message: result.message,
+        });
       } else {
-        this.logger.warn(
-          `SePay webhook processing failed for transaction: ${webhookData.id} - ${result.message}`,
-        );
+        this.logger.error('❌ WEBHOOK PROCESSING FAILED:', {
+          webhookId,
+          processingTimeMs: processingTime,
+          error: result.message,
+        });
       }
 
-      // Return the required format for SePay webhook acknowledgment
+      this.logger.log('=================================================');
+      this.logger.log(`=== SEPAY WEBHOOK END [${webhookId}] ===`);
+      this.logger.log('=================================================');
+
+      // Always return success to prevent SePay from retrying
+      // Log the actual result for debugging
       return {
-        success: result.success,
-        message: result.message,
+        success: true, // Always true for SePay
+        message: result.success ? 'OK' : 'Processed with errors',
+        webhookId,
+        processingTimeMs: processingTime,
       };
     } catch (error) {
-      this.logger.error('Failed to process SePay webhook:', error.message);
+      const processingTime = Date.now() - startTime;
 
-      // For webhooks, we should return success even if processing fails
-      // to prevent the payment gateway from retrying indefinitely
-      // But we'll return the actual error for debugging
+      this.logger.error('💥 CRITICAL WEBHOOK ERROR:', {
+        webhookId,
+        error: error.message,
+        stack: error.stack,
+        processingTimeMs: processingTime,
+      });
+
+      // Still return success to prevent infinite retries
       return {
-        success: false,
-        message: 'Webhook processing failed',
+        success: true,
+        message: 'Error logged',
+        webhookId,
         error: error.message,
       };
     }
   }
 
+  @Get('webhook/test')
+  @ApiOperation({
+    summary: 'Test webhook endpoint accessibility',
+    description: 'Simple endpoint to verify webhook URL is accessible',
+  })
+  async testWebhook(@Req() request: Request, @Ip() clientIp: string) {
+    this.logger.log('🧪 WEBHOOK TEST ENDPOINT ACCESSED:', {
+      timestamp: new Date().toISOString(),
+      clientIp,
+      userAgent: request.headers['user-agent'],
+      method: request.method,
+      url: request.url,
+    });
+
+    return {
+      success: true,
+      message: 'Webhook endpoint is accessible',
+      timestamp: new Date().toISOString(),
+      clientIp,
+      sepayIpExpected: '103.255.238.9',
+    };
+  }
+
+  @Get('test-connection')
+  @ApiOperation({
+    summary: 'Test SePay configuration',
+    description: 'Tests SePay configuration and connectivity',
+  })
+  async testConnection() {
+    try {
+      this.logger.log('🔧 TESTING SEPAY CONNECTION...');
+
+      const sepayTest = await this.sepayService.testConnection();
+      const configStatus = this.sepayService.getConfigStatus();
+
+      this.logger.log('📊 SEPAY CONFIGURATION STATUS:', configStatus);
+
+      const testResult = {
+        sepayService: sepayTest,
+        configuration: configStatus,
+        environment: {
+          nodeEnv: process.env.NODE_ENV,
+          hasApiToken: !!process.env.SEPAY_API_TOKEN,
+          hasBankAccount: !!process.env.SEPAY_BANK_ACCOUNT,
+          hasBankName: !!process.env.SEPAY_BANK_NAME,
+          hasWebhookUrl: !!process.env.SEPAY_WEBHOOK_URL,
+        },
+        recommendations: [],
+      };
+
+      this.logger.log('✅ CONNECTION TEST COMPLETED:', {
+        success: sepayTest.success,
+        configured: configStatus.configured,
+      });
+
+      return testResult;
+    } catch (error) {
+      this.logger.error('❌ CONNECTION TEST FAILED:', error.message);
+      return {
+        success: false,
+        message: `Connection test failed: ${error.message}`,
+        error: error.stack,
+      };
+    }
+  }
+
+  @Get('status/:orderId')
+  @ApiOperation({
+    summary: 'Get payment status',
+    description: 'Retrieves the current status of a payment order',
+  })
+  async getPaymentStatus(@Param('orderId') orderId: string) {
+    try {
+      this.logger.log(`📋 Getting payment status for order: ${orderId}`);
+
+      const result = await this.paymentService.getPaymentStatus(orderId);
+
+      this.logger.log(`💳 Payment status for ${orderId}: ${result.status}`);
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `❌ Failed to get payment status for ${orderId}:`,
+        error.message,
+      );
+      throw new BadRequestException(
+        `Failed to get payment status: ${error.message}`,
+      );
+    }
+  }
+
   @Get('methods')
   @ApiOperation({
-    summary: 'Get payment methods',
-    description:
-      'Retrieves available payment methods including COD and SePay bank transfer',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Payment methods retrieved successfully',
+    summary: 'Get available payment methods',
+    description: 'Retrieves available payment methods including SePay status',
   })
   async getPaymentMethods() {
     try {
-      this.logger.log('Getting available payment methods');
+      this.logger.log('💰 Getting available payment methods');
 
       const result = await this.paymentService.getPaymentMethods();
 
-      this.logger.log(`Retrieved ${result.methods.length} payment methods`);
+      this.logger.log(`📋 Retrieved ${result.methods.length} payment methods`);
       return result;
     } catch (error) {
-      this.logger.error('Failed to get payment methods:', error.message);
+      this.logger.error('❌ Failed to get payment methods:', error.message);
       throw new BadRequestException(
         `Failed to get payment methods: ${error.message}`,
       );
     }
   }
 
+  @Post('generate-qr')
+  @ApiOperation({
+    summary: 'Generate QR code for testing',
+    description: 'Generates VietQR code for testing purposes',
+  })
+  async generateQRCode(
+    @Body() body: { orderId: string; amount: number; bankCode?: string },
+  ) {
+    try {
+      const { orderId, amount, bankCode } = body;
+
+      this.logger.log(
+        `🏷️  Generating QR code for order: ${orderId}, amount: ${amount}`,
+      );
+
+      const result = await this.sepayService.generateQRCode(
+        orderId,
+        amount,
+        bankCode,
+      );
+
+      this.logger.log(`📱 QR code generation result:`, {
+        orderId,
+        success: result.success,
+        hasQrUrl: !!result.qrCodeUrl,
+      });
+
+      return result;
+    } catch (error) {
+      this.logger.error('❌ Failed to generate QR code:', error.message);
+      throw new BadRequestException(
+        `QR code generation failed: ${error.message}`,
+      );
+    }
+  }
+
   @Post('verify')
   @ApiOperation({
-    summary: 'Verify payment',
-    description: 'Manually verifies payment status with transaction ID',
-  })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        orderId: { type: 'string' },
-        transactionId: { type: 'string' },
-      },
-      required: ['orderId', 'transactionId'],
-    },
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Payment verification completed',
+    summary: 'Manually verify payment',
+    description: 'Manually verifies payment status',
   })
   async verifyPayment(
     @Body() body: { orderId: string; transactionId: string },
@@ -313,19 +355,24 @@ export class PaymentController {
     try {
       const { orderId, transactionId } = body;
 
-      this.logger.log(`Verifying payment for order: ${orderId}`);
+      this.logger.log(`🔍 Manually verifying payment:`, {
+        orderId,
+        transactionId,
+      });
 
       const result = await this.paymentService.verifyPayment(
         orderId,
         transactionId,
       );
 
-      this.logger.log(
-        `Payment verification for ${orderId}: ${result.verified ? 'SUCCESS' : 'FAILED'}`,
-      );
+      this.logger.log(`✅ Manual verification result:`, {
+        orderId,
+        verified: result.verified,
+      });
+
       return result;
     } catch (error) {
-      this.logger.error('Failed to verify payment:', error.message);
+      this.logger.error('❌ Manual verification failed:', error.message);
       throw new BadRequestException(
         `Payment verification failed: ${error.message}`,
       );
@@ -334,29 +381,20 @@ export class PaymentController {
 
   @Post('cancel/:orderId')
   @ApiOperation({
-    summary: 'Cancel payment',
+    summary: 'Cancel payment order',
     description: 'Cancels a pending payment order',
-  })
-  @ApiParam({
-    name: 'orderId',
-    description: 'Order ID to cancel',
-    example: '123456789',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Payment cancelled successfully',
   })
   async cancelPayment(@Param('orderId') orderId: string) {
     try {
-      this.logger.log(`Cancelling payment for order: ${orderId}`);
+      this.logger.log(`🚫 Cancelling payment for order: ${orderId}`);
 
       const result = await this.paymentService.cancelPayment(orderId);
 
-      this.logger.log(`Payment cancelled for order: ${orderId}`);
+      this.logger.log(`✅ Payment cancelled for order: ${orderId}`);
       return result;
     } catch (error) {
       this.logger.error(
-        `Failed to cancel payment for ${orderId}:`,
+        `❌ Failed to cancel payment for ${orderId}:`,
         error.message,
       );
       throw new BadRequestException(
@@ -365,129 +403,118 @@ export class PaymentController {
     }
   }
 
-  @Get('test-connection')
+  @Get('debug/config')
   @ApiOperation({
-    summary: 'Test SePay connection',
-    description: 'Tests the SePay configuration and bank account setup',
+    summary: 'Get configuration debug info',
+    description: 'Returns configuration details for debugging',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'Connection test result',
-  })
-  async testConnection() {
+  async getDebugConfig() {
     try {
-      this.logger.log('Testing SePay connection');
-
-      const result = await this.sepayService.testConnection();
       const configStatus = this.sepayService.getConfigStatus();
 
-      if (result.success) {
-        this.logger.log('SePay connection test successful');
-      } else {
-        this.logger.warn('SePay connection test failed:', result.message);
-      }
-
-      return {
-        ...result,
-        configuration: configStatus,
-      };
-    } catch (error) {
-      this.logger.error('SePay connection test error:', error.message);
-      return {
-        success: false,
-        message: `Connection test failed: ${error.message}`,
-      };
-    }
-  }
-
-  @Post('generate-qr')
-  @ApiOperation({
-    summary: 'Generate QR code for payment',
-    description: 'Generates VietQR code for bank transfer payment',
-  })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        orderId: { type: 'string' },
-        amount: { type: 'number' },
-        bankCode: { type: 'string', nullable: true },
-      },
-      required: ['orderId', 'amount'],
-    },
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'QR code generated successfully',
-  })
-  async generateQRCode(
-    @Body() body: { orderId: string; amount: number; bankCode?: string },
-  ) {
-    try {
-      const { orderId, amount, bankCode } = body;
-
-      this.logger.log(`Generating QR code for order: ${orderId}`);
-
-      const result = await this.sepayService.generateQRCode(
-        orderId,
-        amount,
-        bankCode,
-      );
-
-      this.logger.log(
-        `QR code generation for ${orderId}: ${result.success ? 'SUCCESS' : 'FAILED'}`,
-      );
-      return result;
-    } catch (error) {
-      this.logger.error('Failed to generate QR code:', error.message);
-      throw new BadRequestException(
-        `QR code generation failed: ${error.message}`,
-      );
-    }
-  }
-
-  @Get('dashboard/stats')
-  @ApiOperation({
-    summary: 'Get payment statistics',
-    description: 'Retrieves payment statistics for admin dashboard',
-  })
-  async getPaymentStats(
-    @Param('startDate') startDate?: string,
-    @Param('endDate') endDate?: string,
-  ) {
-    try {
-      this.logger.log('Getting payment statistics');
-
-      // Basic implementation - you can expand this based on your needs
       return {
         success: true,
-        stats: {
-          totalOrders: 0,
-          totalRevenue: 0,
-          pendingPayments: 0,
-          successfulPayments: 0,
-          failedPayments: 0,
+        configuration: configStatus,
+        environment: {
+          NODE_ENV: process.env.NODE_ENV,
+          SEPAY_API_TOKEN: process.env.SEPAY_API_TOKEN
+            ? '***SET***'
+            : 'NOT SET',
+          SEPAY_BANK_ACCOUNT: process.env.SEPAY_BANK_ACCOUNT
+            ? '***SET***'
+            : 'NOT SET',
+          SEPAY_BANK_NAME: process.env.SEPAY_BANK_NAME || 'NOT SET',
+          SEPAY_ACCOUNT_HOLDER: process.env.SEPAY_ACCOUNT_HOLDER
+            ? '***SET***'
+            : 'NOT SET',
+          SEPAY_WEBHOOK_URL: process.env.SEPAY_WEBHOOK_URL || 'NOT SET',
         },
-        message: 'Payment statistics retrieved successfully',
+        webhookTest: {
+          endpoint: '/api/payment/webhook/sepay',
+          testEndpoint: '/api/payment/webhook/test',
+          expectedIp: '103.255.238.9',
+        },
+        timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      this.logger.error('Failed to get payment statistics:', error.message);
-      throw new BadRequestException(
-        `Failed to get payment statistics: ${error.message}`,
-      );
+      return {
+        success: false,
+        error: error.message,
+      };
     }
   }
 
-  @Get('webhook/test')
+  @Post('debug/simulate-webhook')
   @ApiOperation({
-    summary: 'Test webhook endpoint',
-    description: 'Test endpoint to verify webhook URL is accessible',
+    summary: 'Simulate SePay webhook for testing',
+    description: 'Simulates a SePay webhook call for testing purposes',
   })
-  async testWebhook() {
-    return {
-      success: true,
-      message: 'Webhook endpoint is accessible',
-      timestamp: new Date().toISOString(),
-    };
+  async simulateWebhook(
+    @Body()
+    simulationData: {
+      orderId: string;
+      amount: number;
+      transactionId?: number;
+    },
+    @Headers() headers: Record<string, string>,
+  ) {
+    try {
+      const { orderId, amount, transactionId = 999999 } = simulationData;
+
+      this.logger.log('🧪 SIMULATING SEPAY WEBHOOK:', {
+        orderId,
+        amount,
+        transactionId,
+      });
+
+      // Create mock webhook payload
+      const mockWebhookData: SepayWebhookPayload = {
+        id: transactionId,
+        gateway: 'TestBank',
+        transactionDate: new Date()
+          .toISOString()
+          .replace('T', ' ')
+          .slice(0, 19),
+        accountNumber: process.env.SEPAY_BANK_ACCOUNT || '1234567890',
+        code: orderId,
+        content: `${orderId} Test payment simulation`,
+        transferType: 'in',
+        transferAmount: amount,
+        accumulated: 1000000,
+        subAccount: null,
+        referenceCode: `TEST${transactionId}`,
+        description: `Test webhook simulation for ${orderId}`,
+      };
+
+      // Add proper authorization header
+      const mockHeaders = {
+        ...headers,
+        authorization: `Apikey ${process.env.SEPAY_API_TOKEN}`,
+        'content-type': 'application/json',
+        'user-agent': 'SePay-Webhook-Simulator',
+      };
+
+      // Process the simulated webhook
+      const result = await this.paymentService.handleSepayWebhook(
+        mockWebhookData,
+        mockHeaders,
+      );
+
+      this.logger.log('🧪 WEBHOOK SIMULATION RESULT:', result);
+
+      return {
+        success: true,
+        message: 'Webhook simulation completed',
+        simulationData: mockWebhookData,
+        processingResult: result,
+      };
+    } catch (error) {
+      this.logger.error('❌ Webhook simulation failed:', error.message);
+      return {
+        success: false,
+        message: 'Webhook simulation failed',
+        error: error.message,
+      };
+    }
   }
 }
