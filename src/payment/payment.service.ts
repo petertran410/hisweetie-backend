@@ -1,4 +1,4 @@
-// src/payment/payment.service.ts
+// src/payment/payment.service.ts - UPDATED for SePay webhooks
 import {
   Injectable,
   Logger,
@@ -6,7 +6,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
-import { SepayService } from './sepay.service';
+import { SepayService, SepayWebhookPayload } from './sepay.service';
 import {
   CreatePaymentDto,
   PaymentMethod,
@@ -14,21 +14,6 @@ import {
   SepayWebhookDto,
 } from './dto/create-payment.dto';
 import { getInlineHTML } from '../utils/helper';
-
-interface PaymentOrder {
-  id: string;
-  orderId: string;
-  status: PaymentStatus;
-  amount: number;
-  paymentMethod: PaymentMethod;
-  transactionId?: string;
-  sepayOrderCode?: string;
-  customerInfo: any;
-  cartItems: any[];
-  createdDate: Date;
-  updatedDate: Date;
-  gatewayResponse?: any;
-}
 
 @Injectable()
 export class PaymentService {
@@ -54,6 +39,8 @@ export class PaymentService {
     orderId?: string;
     paymentUrl?: string;
     qrCodeUrl?: string;
+    qrCodeData?: string;
+    bankInfo?: any;
     message: string;
   }> {
     try {
@@ -77,7 +64,11 @@ export class PaymentService {
           throw new BadRequestException(`Product ${item.productId} not found`);
         }
 
-        if (Number(product.price) !== item.price) {
+        // Only check price for non-COD payments
+        if (
+          paymentMethod !== PaymentMethod.COD &&
+          Number(product.price) !== item.price
+        ) {
           throw new BadRequestException(
             `Price mismatch for product ${item.productId}`,
           );
@@ -99,7 +90,13 @@ export class PaymentService {
           quantity: cartItems.reduce((sum, item) => sum + item.quantity, 0),
           status: 'PENDING',
           type: 'BUY',
-          html_content: getInlineHTML(cartItems),
+          html_content: getInlineHTML(
+            cartItems.map((item) => ({
+              ...item,
+              quantity: item.quantity,
+              imagesUrl: [], // Will be populated if needed
+            })),
+          ),
           created_date: new Date(),
           updated_date: new Date(),
         },
@@ -132,8 +129,8 @@ export class PaymentService {
         };
       }
 
-      // Create SePay payment for online methods
-      const orderInfo = `Thanh toán đơn hàng ${orderCode} - ${cartItems.length} sản phẩm`;
+      // For SePay payments, generate VietQR
+      const orderInfo = `Thanh toan don hang ${orderCode}`;
 
       const sepayResponse = await this.sepayService.createPayment({
         orderCode,
@@ -160,23 +157,24 @@ export class PaymentService {
         );
       }
 
-      // Update order with SePay information
+      // Store SePay order code mapping for webhook processing
       await this.prisma.product_order.update({
         where: { id: productOrder.id },
         data: {
-          status: 'PENDING',
+          note: `${productOrder.note || ''}\nSePay Order Code: ${orderCode}`.trim(),
           updated_date: new Date(),
         },
       });
 
-      this.logger.log(`Payment order created successfully: ${orderCode}`);
+      this.logger.log(`SePay payment order created successfully: ${orderCode}`);
 
       return {
         success: true,
         orderId: productOrder.id.toString(),
-        paymentUrl: sepayResponse.data?.paymentUrl,
         qrCodeUrl: sepayResponse.data?.qrCodeUrl,
-        message: 'Payment order created successfully',
+        qrCodeData: sepayResponse.data?.qrCodeData,
+        bankInfo: sepayResponse.data?.bankInfo,
+        message: 'Payment order created successfully - scan QR code to pay',
       };
     } catch (error) {
       this.logger.error('Failed to create payment order:', error.message);
@@ -207,46 +205,22 @@ export class PaymentService {
         throw new NotFoundException(`Order ${orderId} not found`);
       }
 
-      let status = order.status as PaymentStatus;
-      let transactionId: string | undefined;
-
-      // For online payments, check with SePay
-      if (order.type === 'BUY' && status === 'PENDING') {
-        // Note: You'd need to store the SePay order code in your database
-        // For now, we'll use the order ID as the order code
-        const sepayStatus = await this.sepayService.checkPaymentStatus(orderId);
-
-        if (sepayStatus.success) {
-          if (
-            sepayStatus.status === 'SUCCESS' ||
-            sepayStatus.status === 'PAID'
-          ) {
-            status = PaymentStatus.SUCCESS;
-            transactionId = sepayStatus.transactionId;
-
-            // Update order status
-            await this.prisma.product_order.update({
-              where: { id: BigInt(orderId) },
-              data: {
-                status: 'PAID',
-                updated_date: new Date(),
-              },
-            });
-          } else if (
-            sepayStatus.status === 'FAILED' ||
-            sepayStatus.status === 'CANCELLED'
-          ) {
-            status = PaymentStatus.FAILED;
-
-            await this.prisma.product_order.update({
-              where: { id: BigInt(orderId) },
-              data: {
-                status: 'CANCELLED',
-                updated_date: new Date(),
-              },
-            });
-          }
-        }
+      // Map database status to PaymentStatus enum
+      let status: PaymentStatus;
+      switch (order.status) {
+        case 'PAID':
+        case 'COMPLETED':
+          status = PaymentStatus.SUCCESS;
+          break;
+        case 'CANCELLED':
+        case 'FAILED':
+          status = PaymentStatus.FAILED;
+          break;
+        case 'PROCESSING':
+          status = PaymentStatus.PROCESSING;
+          break;
+        default:
+          status = PaymentStatus.PENDING;
       }
 
       return {
@@ -255,7 +229,6 @@ export class PaymentService {
         orderId,
         amount: Number(order.price),
         paymentMethod: order.type || 'UNKNOWN',
-        transactionId,
         message: 'Payment status retrieved successfully',
       };
     } catch (error) {
@@ -270,76 +243,125 @@ export class PaymentService {
   /**
    * Handle SePay webhook
    */
-  async handleSepayWebhook(webhookData: SepayWebhookDto): Promise<{
+  async handleSepayWebhook(
+    webhookData: SepayWebhookPayload,
+    headers: Record<string, string>,
+  ): Promise<{
     success: boolean;
     message: string;
   }> {
     try {
       this.logger.log(
-        `Processing SePay webhook for order: ${webhookData.orderCode}`,
+        `Processing SePay webhook for transaction ID: ${webhookData.id}`,
       );
 
       // Verify webhook signature
-      const isValidSignature = this.sepayService.verifyWebhookSignature(
-        webhookData,
-        webhookData.signature,
-      );
+      const isValidSignature =
+        this.sepayService.verifyWebhookSignature(headers);
 
       if (!isValidSignature) {
         this.logger.error('Invalid webhook signature');
-        throw new BadRequestException('Invalid webhook signature');
+        return {
+          success: false,
+          message: 'Invalid webhook signature',
+        };
       }
 
-      // Find order by order code (you'll need to implement this mapping)
+      // Process webhook payload
+      const webhookResult =
+        this.sepayService.processWebhookPayload(webhookData);
+
+      if (!webhookResult.success) {
+        this.logger.error(
+          `Webhook payload processing failed: ${webhookResult.message}`,
+        );
+        return {
+          success: false,
+          message: webhookResult.message,
+        };
+      }
+
+      const { orderCode, amount, transactionId } = webhookResult;
+
+      // Find order by order code (stored in note field)
       const order = await this.prisma.product_order.findFirst({
         where: {
-          // You'd need to store the SePay order code in your database
-          // For now, we'll search by the order code in a note or custom field
+          note: {
+            contains: `SePay Order Code: ${orderCode}`,
+          },
+          status: {
+            in: ['PENDING', 'PROCESSING'],
+          },
         },
       });
 
       if (!order) {
-        this.logger.error(
-          `Order not found for webhook: ${webhookData.orderCode}`,
-        );
+        this.logger.error(`Order not found for SePay order code: ${orderCode}`);
         return {
           success: false,
           message: 'Order not found',
         };
       }
 
-      // Update order status based on webhook
-      let newStatus = 'PENDING';
-      if (webhookData.status === 'SUCCESS' || webhookData.status === 'PAID') {
-        newStatus = 'PAID';
-      } else if (
-        webhookData.status === 'FAILED' ||
-        webhookData.status === 'CANCELLED'
-      ) {
-        newStatus = 'CANCELLED';
+      // Verify amount matches
+      if (Number(order.price) !== amount) {
+        this.logger.error(
+          `Amount mismatch for order ${orderCode}: expected ${order.price}, received ${amount}`,
+        );
+        return {
+          success: false,
+          message: 'Amount mismatch',
+        };
       }
 
+      // Check for duplicate transaction
+      const existingTransaction = await this.prisma.product_order.findFirst({
+        where: {
+          note: {
+            contains: `Transaction ID: ${transactionId}`,
+          },
+        },
+      });
+
+      if (existingTransaction) {
+        this.logger.warn(
+          `Duplicate webhook for transaction ${transactionId}, order ${orderCode}`,
+        );
+        return {
+          success: true,
+          message: 'Duplicate webhook - already processed',
+        };
+      }
+
+      // Update order status to paid
       await this.prisma.product_order.update({
         where: { id: order.id },
         data: {
-          status: newStatus,
+          status: 'PAID',
+          note: `${order.note || ''}\nTransaction ID: ${transactionId}\nPaid at: ${webhookData.transactionDate}`.trim(),
           updated_date: new Date(),
         },
       });
 
       this.logger.log(
-        `Order ${webhookData.orderCode} status updated to ${newStatus}`,
+        `Order ${orderCode} marked as paid. Transaction ID: ${transactionId}`,
       );
 
-      // Send confirmation email or notification here if needed
+      // Here you could add additional logic like:
+      // - Send confirmation email
+      // - Update inventory
+      // - Trigger fulfillment process
 
       return {
         success: true,
-        message: 'Webhook processed successfully',
+        message: 'Payment processed successfully',
       };
     } catch (error) {
       this.logger.error('Failed to process SePay webhook:', error.message);
-      throw error;
+      return {
+        success: false,
+        message: `Webhook processing failed: ${error.message}`,
+      };
     }
   }
 
@@ -363,11 +385,6 @@ export class PaymentService {
 
       if (order.status === 'PAID') {
         throw new BadRequestException('Cannot cancel paid order');
-      }
-
-      // Cancel with SePay if it's an online payment
-      if (order.type === 'BUY' && order.status === 'PENDING') {
-        await this.sepayService.cancelPayment(orderId);
       }
 
       // Update order status
@@ -410,18 +427,6 @@ export class PaymentService {
 
       const methods = [
         {
-          code: 'sepay_bank',
-          name: 'Chuyển khoản ngân hàng',
-          type: 'online',
-          enabled: true,
-        },
-        {
-          code: 'sepay_momo',
-          name: 'Ví MoMo',
-          type: 'online',
-          enabled: true,
-        },
-        {
           code: 'cod',
           name: 'Thanh toán khi nhận hàng',
           type: 'offline',
@@ -431,16 +436,7 @@ export class PaymentService {
 
       // Add SePay methods if available
       if (sepayMethods.success && sepayMethods.methods) {
-        sepayMethods.methods.forEach((method) => {
-          if (!methods.find((m) => m.code === method.code)) {
-            methods.push({
-              code: method.code,
-              name: method.name,
-              type: method.type,
-              enabled: method.enabled,
-            });
-          }
-        });
+        methods.push(...sepayMethods.methods);
       }
 
       return {
@@ -464,7 +460,7 @@ export class PaymentService {
   }
 
   /**
-   * Verify payment
+   * Verify payment (for manual verification if needed)
    */
   async verifyPayment(
     orderId: string,
@@ -485,13 +481,9 @@ export class PaymentService {
         throw new NotFoundException(`Order ${orderId} not found`);
       }
 
-      // Check with SePay
-      const sepayStatus = await this.sepayService.checkPaymentStatus(orderId);
-
+      // Check if the transaction ID is in the order notes
       const isVerified =
-        sepayStatus.success &&
-        (sepayStatus.status === 'SUCCESS' || sepayStatus.status === 'PAID') &&
-        sepayStatus.transactionId === transactionId;
+        order.note?.includes(`Transaction ID: ${transactionId}`) || false;
 
       if (isVerified && order.status !== 'PAID') {
         await this.prisma.product_order.update({
@@ -508,7 +500,7 @@ export class PaymentService {
         verified: isVerified,
         message: isVerified
           ? 'Payment verified successfully'
-          : 'Payment verification failed',
+          : 'Payment verification failed - transaction ID not found',
       };
     } catch (error) {
       this.logger.error(

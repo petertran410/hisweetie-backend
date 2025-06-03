@@ -1,28 +1,31 @@
-// src/payment/payment.controller.ts
+// src/payment/payment.controller.ts - UPDATED with proper webhook handling
 import {
   Controller,
   Get,
   Post,
   Body,
   Param,
-  Query,
+  Headers,
   Logger,
   BadRequestException,
   UsePipes,
   ValidationPipe,
   HttpCode,
   HttpStatus,
+  Req,
 } from '@nestjs/common';
 import { PaymentService } from './payment.service';
-import { SepayService } from './sepay.service';
-import { CreatePaymentDto, SepayWebhookDto } from './dto/create-payment.dto';
+import { SepayService, SepayWebhookPayload } from './sepay.service';
+import { CreatePaymentDto } from './dto/create-payment.dto';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiParam,
   ApiBody,
+  ApiHeader,
 } from '@nestjs/swagger';
+import { Request } from 'express';
 
 @ApiTags('payment')
 @Controller('payment')
@@ -37,7 +40,7 @@ export class PaymentController {
   @Post('create')
   @ApiOperation({
     summary: 'Create payment order',
-    description: 'Creates a new payment order with SePay integration',
+    description: 'Creates a new payment order with SePay QR code generation',
   })
   @ApiBody({ type: CreatePaymentDto })
   @ApiResponse({
@@ -48,8 +51,18 @@ export class PaymentController {
       properties: {
         success: { type: 'boolean' },
         orderId: { type: 'string' },
-        paymentUrl: { type: 'string', nullable: true },
         qrCodeUrl: { type: 'string', nullable: true },
+        qrCodeData: { type: 'string', nullable: true },
+        bankInfo: {
+          type: 'object',
+          properties: {
+            accountNumber: { type: 'string' },
+            accountHolder: { type: 'string' },
+            bankName: { type: 'string' },
+            amount: { type: 'number' },
+            transferContent: { type: 'string' },
+          },
+        },
         message: { type: 'string' },
       },
     },
@@ -94,21 +107,6 @@ export class PaymentController {
   @ApiResponse({
     status: 200,
     description: 'Payment status retrieved successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        status: {
-          type: 'string',
-          enum: ['PENDING', 'SUCCESS', 'FAILED', 'CANCELLED'],
-        },
-        orderId: { type: 'string' },
-        amount: { type: 'number' },
-        paymentMethod: { type: 'string' },
-        transactionId: { type: 'string', nullable: true },
-        message: { type: 'string' },
-      },
-    },
   })
   async getPaymentStatus(@Param('orderId') orderId: string) {
     try {
@@ -129,32 +127,150 @@ export class PaymentController {
     }
   }
 
-  @Get('methods')
+  @Post('webhook/sepay')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Get payment methods',
-    description: 'Retrieves available payment methods',
+    summary: 'SePay webhook endpoint',
+    description:
+      'Handles payment notifications from SePay when customers complete bank transfers',
+  })
+  @ApiHeader({
+    name: 'Authorization',
+    description: 'SePay API key in format: "Apikey YOUR_API_TOKEN"',
+    required: true,
+  })
+  @ApiBody({
+    description: 'SePay webhook payload',
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'Transaction ID on SePay' },
+        gateway: {
+          type: 'string',
+          description: 'Bank name (e.g., "Vietcombank")',
+        },
+        transactionDate: {
+          type: 'string',
+          description: 'Transaction time "2023-03-25 14:02:37"',
+        },
+        accountNumber: { type: 'string', description: 'Bank account number' },
+        code: {
+          type: 'string',
+          nullable: true,
+          description: 'Payment code (auto-detected by SePay)',
+        },
+        content: { type: 'string', description: 'Transfer content' },
+        transferType: {
+          type: 'string',
+          enum: ['in', 'out'],
+          description: 'Transaction type',
+        },
+        transferAmount: { type: 'number', description: 'Transaction amount' },
+        accumulated: { type: 'number', description: 'Account balance' },
+        subAccount: {
+          type: 'string',
+          nullable: true,
+          description: 'Sub account',
+        },
+        referenceCode: { type: 'string', description: 'SMS reference code' },
+        description: { type: 'string', description: 'Full SMS content' },
+      },
+      required: [
+        'id',
+        'gateway',
+        'transactionDate',
+        'accountNumber',
+        'content',
+        'transferType',
+        'transferAmount',
+      ],
+    },
   })
   @ApiResponse({
     status: 200,
-    description: 'Payment methods retrieved successfully',
+    description: 'Webhook processed successfully',
     schema: {
       type: 'object',
       properties: {
         success: { type: 'boolean' },
-        methods: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              code: { type: 'string' },
-              name: { type: 'string' },
-              type: { type: 'string' },
-              enabled: { type: 'boolean' },
-            },
-          },
-        },
+        message: { type: 'string' },
       },
     },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid webhook data or signature',
+  })
+  async handleSepayWebhook(
+    @Body() webhookData: SepayWebhookPayload,
+    @Headers() headers: Record<string, string>,
+    @Req() request: Request,
+  ) {
+    try {
+      this.logger.log(
+        `Received SePay webhook for transaction ID: ${webhookData.id}`,
+      );
+      this.logger.debug('Webhook data:', {
+        transactionId: webhookData.id,
+        gateway: webhookData.gateway,
+        amount: webhookData.transferAmount,
+        transferType: webhookData.transferType,
+        content: webhookData.content,
+        code: webhookData.code,
+      });
+
+      // Log webhook headers for debugging (hide sensitive data)
+      this.logger.debug('Webhook headers:', {
+        authorization: headers.authorization
+          ? headers.authorization.substring(0, 20) + '...'
+          : 'missing',
+        contentType: headers['content-type'],
+        userAgent: headers['user-agent'],
+      });
+
+      const result = await this.paymentService.handleSepayWebhook(
+        webhookData,
+        headers,
+      );
+
+      if (result.success) {
+        this.logger.log(
+          `SePay webhook processed successfully for transaction: ${webhookData.id}`,
+        );
+      } else {
+        this.logger.warn(
+          `SePay webhook processing failed for transaction: ${webhookData.id} - ${result.message}`,
+        );
+      }
+
+      // Return the required format for SePay webhook acknowledgment
+      return {
+        success: result.success,
+        message: result.message,
+      };
+    } catch (error) {
+      this.logger.error('Failed to process SePay webhook:', error.message);
+
+      // For webhooks, we should return success even if processing fails
+      // to prevent the payment gateway from retrying indefinitely
+      // But we'll return the actual error for debugging
+      return {
+        success: false,
+        message: 'Webhook processing failed',
+        error: error.message,
+      };
+    }
+  }
+
+  @Get('methods')
+  @ApiOperation({
+    summary: 'Get payment methods',
+    description:
+      'Retrieves available payment methods including COD and SePay bank transfer',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment methods retrieved successfully',
   })
   async getPaymentMethods() {
     try {
@@ -175,7 +291,7 @@ export class PaymentController {
   @Post('verify')
   @ApiOperation({
     summary: 'Verify payment',
-    description: 'Verifies payment status with payment gateway',
+    description: 'Manually verifies payment status with transaction ID',
   })
   @ApiBody({
     schema: {
@@ -190,14 +306,6 @@ export class PaymentController {
   @ApiResponse({
     status: 200,
     description: 'Payment verification completed',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        verified: { type: 'boolean' },
-        message: { type: 'string' },
-      },
-    },
   })
   async verifyPayment(
     @Body() body: { orderId: string; transactionId: string },
@@ -237,13 +345,6 @@ export class PaymentController {
   @ApiResponse({
     status: 200,
     description: 'Payment cancelled successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        message: { type: 'string' },
-      },
-    },
   })
   async cancelPayment(@Param('orderId') orderId: string) {
     try {
@@ -264,78 +365,21 @@ export class PaymentController {
     }
   }
 
-  @Post('webhook/sepay')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'SePay webhook endpoint',
-    description: 'Handles payment status updates from SePay',
-  })
-  @ApiBody({ type: SepayWebhookDto })
-  @ApiResponse({
-    status: 200,
-    description: 'Webhook processed successfully',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Invalid webhook data or signature',
-  })
-  async handleSepayWebhook(@Body() webhookData: SepayWebhookDto) {
-    try {
-      this.logger.log(
-        `Received SePay webhook for order: ${webhookData.orderCode}`,
-      );
-      this.logger.debug('Webhook data:', {
-        orderCode: webhookData.orderCode,
-        status: webhookData.status,
-        amount: webhookData.amount,
-        transactionId: webhookData.transactionId,
-      });
-
-      const result = await this.paymentService.handleSepayWebhook(webhookData);
-
-      this.logger.log(
-        `SePay webhook processed successfully for order: ${webhookData.orderCode}`,
-      );
-
-      // Return simple response for webhook
-      return {
-        success: result.success,
-        message: result.message,
-      };
-    } catch (error) {
-      this.logger.error('Failed to process SePay webhook:', error.message);
-
-      // For webhooks, we should return success even if processing fails
-      // to prevent the payment gateway from retrying indefinitely
-      return {
-        success: false,
-        message: 'Webhook processing failed',
-        error: error.message,
-      };
-    }
-  }
-
   @Get('test-connection')
   @ApiOperation({
     summary: 'Test SePay connection',
-    description: 'Tests the connection to SePay payment gateway',
+    description: 'Tests the SePay configuration and bank account setup',
   })
   @ApiResponse({
     status: 200,
     description: 'Connection test result',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        message: { type: 'string' },
-      },
-    },
   })
   async testConnection() {
     try {
       this.logger.log('Testing SePay connection');
 
       const result = await this.sepayService.testConnection();
+      const configStatus = this.sepayService.getConfigStatus();
 
       if (result.success) {
         this.logger.log('SePay connection test successful');
@@ -343,7 +387,10 @@ export class PaymentController {
         this.logger.warn('SePay connection test failed:', result.message);
       }
 
-      return result;
+      return {
+        ...result,
+        configuration: configStatus,
+      };
     } catch (error) {
       this.logger.error('SePay connection test error:', error.message);
       return {
@@ -356,7 +403,7 @@ export class PaymentController {
   @Post('generate-qr')
   @ApiOperation({
     summary: 'Generate QR code for payment',
-    description: 'Generates QR code for bank transfer payment',
+    description: 'Generates VietQR code for bank transfer payment',
   })
   @ApiBody({
     schema: {
@@ -372,15 +419,6 @@ export class PaymentController {
   @ApiResponse({
     status: 200,
     description: 'QR code generated successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        qrCodeUrl: { type: 'string', nullable: true },
-        qrCodeData: { type: 'string', nullable: true },
-        message: { type: 'string' },
-      },
-    },
   })
   async generateQRCode(
     @Body() body: { orderId: string; amount: number; bankCode?: string },
@@ -413,19 +451,14 @@ export class PaymentController {
     summary: 'Get payment statistics',
     description: 'Retrieves payment statistics for admin dashboard',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'Payment statistics retrieved successfully',
-  })
   async getPaymentStats(
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
+    @Param('startDate') startDate?: string,
+    @Param('endDate') endDate?: string,
   ) {
     try {
       this.logger.log('Getting payment statistics');
 
-      // This would be implemented based on your needs
-      // For now, return basic stats
+      // Basic implementation - you can expand this based on your needs
       return {
         success: true,
         stats: {
@@ -443,5 +476,18 @@ export class PaymentController {
         `Failed to get payment statistics: ${error.message}`,
       );
     }
+  }
+
+  @Get('webhook/test')
+  @ApiOperation({
+    summary: 'Test webhook endpoint',
+    description: 'Test endpoint to verify webhook URL is accessible',
+  })
+  async testWebhook() {
+    return {
+      success: true,
+      message: 'Webhook endpoint is accessible',
+      timestamp: new Date().toISOString(),
+    };
   }
 }
