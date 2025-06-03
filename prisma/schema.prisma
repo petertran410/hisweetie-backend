@@ -37,23 +37,21 @@ model authority {
   id      BigInt  @id
   role    String? @db.VarChar(255)
   user_id String? @db.VarChar(255)
-  user    user?   @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKr1wgeo077ok1nr1shx0t70tg8")
 
   @@index([user_id], map: "FKr1wgeo077ok1nr1shx0t70tg8")
 }
 
 model category {
-  id                 BigInt               @id @default(autoincrement())
-  created_by         String?              @db.VarChar(255)
-  created_date       DateTime?            @db.DateTime(6)
-  updated_by         String?              @db.VarChar(255)
-  updated_date       DateTime?            @db.DateTime(6)
-  description        String?              @db.LongText
-  images_url         String?              @db.LongText
-  name               String?              @db.VarChar(255)
-  parent_id          BigInt?
-  priority           Int?
-  product_categories product_categories[]
+  id           BigInt    @id @default(autoincrement())
+  created_by   String?   @db.VarChar(255)
+  created_date DateTime? @db.DateTime(6)
+  updated_by   String?   @db.VarChar(255)
+  updated_date DateTime? @db.DateTime(6)
+  description  String?   @db.LongText
+  images_url   String?   @db.LongText
+  name         String?   @db.VarChar(255)
+  parent_id    BigInt?
+  priority     Int?
 }
 
 model code_forgot_pass {
@@ -61,11 +59,11 @@ model code_forgot_pass {
   code        String?   @db.VarChar(255)
   expire_date DateTime? @db.DateTime(6)
   user_id     String?   @db.VarChar(255)
-  user        user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKapo65ffi8pncggievbnk4qxha")
 
   @@index([user_id], map: "FKapo65ffi8pncggievbnk4qxha")
 }
 
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
@@ -107,48 +105,42 @@ model news {
   view         Int?
   user_id      String?   @db.VarChar(255)
   type         String?   @db.VarChar(255)
-  user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FK4538gbwfa03nwr9edl3fdloo9")
 
   @@index([user_id], map: "FK4538gbwfa03nwr9edl3fdloo9")
 }
 
 model orders {
-  id               BigInt         @id @default(autoincrement())
-  created_by       String?        @db.VarChar(255)
-  created_date     DateTime?      @db.DateTime(6)
-  updated_by       String?        @db.VarChar(255)
-  updated_date     DateTime?      @db.DateTime(6)
+  id               BigInt    @id @default(autoincrement())
+  created_by       String?   @db.VarChar(255)
+  created_date     DateTime? @db.DateTime(6)
+  updated_by       String?   @db.VarChar(255)
+  updated_date     DateTime? @db.DateTime(6)
   quantity         Int?
   product_id       BigInt?
   product_order_id BigInt?
-  product          product?       @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FK787ibr3guwp6xobrpbofnv7le")
-  product_order    product_order? @relation(fields: [product_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKt9pocabfq29dvm6ybbygxly7q")
 
   @@index([product_id], map: "FK787ibr3guwp6xobrpbofnv7le")
   @@index([product_order_id], map: "FKt9pocabfq29dvm6ybbygxly7q")
 }
 
 model product {
-  id                  BigInt               @id @default(autoincrement())
-  created_by          String?              @db.VarChar(255)
-  created_date        DateTime?            @db.DateTime(6)
-  updated_by          String?              @db.VarChar(255)
-  updated_date        DateTime?            @db.DateTime(6)
-  description         String?              @db.LongText
-  general_description String?              @db.LongText
-  images_url          String?              @db.LongText
-  instruction         String?              @db.LongText
-  is_featured         Boolean?             @db.Bit(1)
+  id                  BigInt    @id @default(autoincrement())
+  created_by          String?   @db.VarChar(255)
+  created_date        DateTime? @db.DateTime(6)
+  updated_by          String?   @db.VarChar(255)
+  updated_date        DateTime? @db.DateTime(6)
+  description         String?   @db.LongText
+  general_description String?   @db.LongText
+  images_url          String?   @db.LongText
+  instruction         String?   @db.LongText
+  is_featured         Boolean?  @db.Bit(1)
   price               BigInt?
   quantity            BigInt?
   rate                Float?
-  title               String?              @db.VarChar(255)
-  type                String?              @db.VarChar(255)
-  featured_thumbnail  String?              @db.VarChar(255)
-  recipe_thumbnail    String?              @db.VarChar(255)
-  orders              orders[]
-  product_categories  product_categories[]
-  review              review[]
+  title               String?   @db.VarChar(255)
+  type                String?   @db.VarChar(255)
+  featured_thumbnail  String?   @db.VarChar(255)
+  recipe_thumbnail    String?   @db.VarChar(255)
 
   @@index([updated_date], map: "idx_product_updated_date")
 }
@@ -156,34 +148,46 @@ model product {
 model product_categories {
   product_id    BigInt
   categories_id BigInt
-  category      category @relation(fields: [categories_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FK86pfomapgvxb87x9nnxuc0pdj")
-  product       product  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKppc5s0f38pgb35a32dlgyhorc")
 
   @@id([product_id, categories_id])
   @@index([categories_id], map: "FK86pfomapgvxb87x9nnxuc0pdj")
 }
 
 model product_order {
-  id                 BigInt    @id @default(autoincrement())
-  created_by         String?   @db.VarChar(255)
-  created_date       DateTime? @db.DateTime(6)
-  updated_by         String?   @db.VarChar(255)
-  updated_date       DateTime? @db.DateTime(6)
-  address_detail     String?   @db.VarChar(255)
-  email              String?   @db.VarChar(255)
-  html_content       String?   @db.LongText
-  note               String?   @db.VarChar(255)
-  phone_number       String?   @db.VarChar(255)
-  price              BigInt?
-  quantity           Int?
-  receiver_full_name String?   @db.VarChar(255)
-  status             String?   @db.VarChar(255)
-  type               String?   @db.VarChar(255)
-  user_id            String?   @db.VarChar(255)
-  orders             orders[]
-  user               user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKa9own0mc8gwle8cckiij9ubsl")
+  id                       BigInt         @id @default(autoincrement())
+  created_by               String?        @db.VarChar(255)
+  created_date             DateTime?      @db.DateTime(6)
+  updated_by               String?        @db.VarChar(255)
+  updated_date             DateTime?      @db.DateTime(6)
+  address_detail           String?        @db.VarChar(255)
+  email                    String?        @db.VarChar(255)
+  html_content             String?        @db.LongText
+  note                     String?        @db.VarChar(255)
+  phone_number             String?        @db.VarChar(255)
+  price                    BigInt?
+  quantity                 Int?
+  receiver_full_name       String?        @db.VarChar(255)
+  status                   String?        @db.VarChar(255)
+  type                     String?        @db.VarChar(255)
+  user_id                  String?        @db.VarChar(255)
+  payment_method           String?        @default("COD") @db.VarChar(50)
+  payment_status           String?        @default("PENDING") @db.VarChar(50)
+  transaction_id           String?        @db.VarChar(255)
+  sepay_order_code         String?        @db.VarChar(255)
+  payment_url              String?        @db.Text
+  qr_code_url              String?        @db.Text
+  payment_gateway_response Json?
+  payment_completed_at     DateTime?      @db.DateTime(6)
+  shipping_cost            BigInt?        @default(0)
+  subtotal                 BigInt?        @default(0)
+  total_amount             BigInt?        @default(0)
+  payment_logs             payment_logs[]
 
   @@index([user_id], map: "FKa9own0mc8gwle8cckiij9ubsl")
+  @@index([payment_method], map: "idx_product_order_payment_method")
+  @@index([payment_status], map: "idx_product_order_payment_status")
+  @@index([sepay_order_code], map: "idx_product_order_sepay_code")
+  @@index([transaction_id], map: "idx_product_order_transaction_id")
 }
 
 model review {
@@ -196,31 +200,24 @@ model review {
   rate         Int?
   product_id   BigInt?
   user_id      String?   @db.VarChar(255)
-  user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKiyf57dy48lyiftdrf7y87rnxi")
-  product      product?  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKiyof1sindb9qiqr9o8npj8klt")
 
   @@index([user_id], map: "FKiyf57dy48lyiftdrf7y87rnxi")
   @@index([product_id], map: "FKiyof1sindb9qiqr9o8npj8klt")
 }
 
 model user {
-  id               String             @id @db.VarChar(255)
-  created_by       String?            @db.VarChar(255)
-  created_date     DateTime?          @db.DateTime(6)
-  updated_by       String?            @db.VarChar(255)
-  updated_date     DateTime?          @db.DateTime(6)
-  address          String?            @db.VarChar(255)
-  ava_url          String?            @db.VarChar(255)
-  email            String?            @unique(map: "UK_ob8kqyqqgmefl0aco34akdtpe") @db.VarChar(255)
-  full_name        String?            @db.VarChar(255)
-  is_active        Boolean            @db.Bit(1)
-  password         String?            @db.VarChar(255)
-  phone            String?            @unique(map: "UK_589idila9li6a4arw1t8ht1gx") @db.VarChar(255)
-  authority        authority[]
-  code_forgot_pass code_forgot_pass[]
-  news             news[]
-  product_order    product_order[]
-  review           review[]
+  id           String    @id @db.VarChar(255)
+  created_by   String?   @db.VarChar(255)
+  created_date DateTime? @db.DateTime(6)
+  updated_by   String?   @db.VarChar(255)
+  updated_date DateTime? @db.DateTime(6)
+  address      String?   @db.VarChar(255)
+  ava_url      String?   @db.VarChar(255)
+  email        String?   @unique(map: "UK_ob8kqyqqgmefl0aco34akdtpe") @db.VarChar(255)
+  full_name    String?   @db.VarChar(255)
+  is_active    Boolean   @db.Bit(1)
+  password     String?   @db.VarChar(255)
+  phone        String?   @unique(map: "UK_589idila9li6a4arw1t8ht1gx") @db.VarChar(255)
 
   @@index([phone, email], map: "phone")
   @@index([email], map: "userEmailIndex")
@@ -240,4 +237,62 @@ model sync_log {
 
   @@index([status], map: "idx_sync_log_status")
   @@index([sync_type, started_at], map: "idx_sync_log_type_date")
+}
+
+model payment_logs {
+  id             BigInt        @id @default(autoincrement())
+  order_id       BigInt
+  event_type     String        @db.VarChar(50)
+  event_data     Json?
+  sepay_response Json?
+  created_date   DateTime?     @default(now()) @db.DateTime(6)
+  ip_address     String?       @db.VarChar(45)
+  user_agent     String?       @db.Text
+  product_order  product_order @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "payment_logs_ibfk_1")
+
+  @@index([created_date], map: "idx_payment_logs_created_date")
+  @@index([event_type], map: "idx_payment_logs_event_type")
+  @@index([order_id], map: "idx_payment_logs_order_id")
+}
+
+model payment_methods {
+  id            Int       @id @default(autoincrement())
+  code          String    @unique(map: "code") @db.VarChar(50)
+  name          String    @db.VarChar(255)
+  type          String    @db.VarChar(50)
+  enabled       Boolean?  @default(true)
+  display_order Int?      @default(0)
+  icon_url      String?   @db.VarChar(500)
+  description   String?   @db.Text
+  min_amount    BigInt?   @default(0)
+  max_amount    BigInt?   @default(999999999)
+  created_date  DateTime? @default(now()) @db.DateTime(6)
+  updated_date  DateTime? @default(now()) @db.DateTime(6)
+
+  @@index([display_order], map: "idx_payment_methods_display_order")
+  @@index([enabled], map: "idx_payment_methods_enabled")
+  @@index([type], map: "idx_payment_methods_type")
+}
+
+model payment_webhooks {
+  id             BigInt    @id @default(autoincrement())
+  webhook_id     String    @unique(map: "idx_payment_webhooks_webhook_id") @db.VarChar(255)
+  provider       String    @default("sepay") @db.VarChar(50)
+  order_code     String    @db.VarChar(255)
+  transaction_id String?   @db.VarChar(255)
+  status         String    @db.VarChar(50)
+  amount         BigInt
+  gateway_code   String?   @db.VarChar(50)
+  signature      String    @db.VarChar(500)
+  raw_data       Json
+  processed      Boolean?  @default(false)
+  processed_at   DateTime? @db.DateTime(6)
+  error_message  String?   @db.Text
+  created_date   DateTime? @default(now()) @db.DateTime(6)
+  updated_date   DateTime? @default(now()) @db.DateTime(6)
+
+  @@index([order_code], map: "idx_payment_webhooks_order_code")
+  @@index([processed], map: "idx_payment_webhooks_processed")
+  @@index([status], map: "idx_payment_webhooks_status")
+  @@index([transaction_id], map: "idx_payment_webhooks_transaction_id")
 }
