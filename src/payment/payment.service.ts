@@ -1,4 +1,3 @@
-// src/payment/payment.service.ts - FIXED VERSION
 import {
   Injectable,
   Logger,
@@ -203,7 +202,7 @@ export class PaymentService {
   }
 
   /**
-   * Handle SePay webhook - FIXED VERSION
+   * Handle SePay webhook - FIXED VERSION with proper null checks
    */
   async handleSepayWebhook(
     webhookData: SepayWebhookPayload,
@@ -246,13 +245,30 @@ export class PaymentService {
         };
       }
 
+      // FIXED: Proper null checks for extracted data
       const { orderCode, amount, transactionId } = webhookResult;
+
+      if (!orderCode) {
+        this.logger.error('No order code extracted from webhook');
+        return {
+          success: false,
+          message: 'No order code found in webhook',
+        };
+      }
+
+      if (!amount || !transactionId) {
+        this.logger.error('Missing amount or transaction ID in webhook');
+        return {
+          success: false,
+          message: 'Missing required webhook data',
+        };
+      }
 
       this.logger.log(`Extracted order code: ${orderCode}`);
       this.logger.log(`Transaction amount: ${amount}`);
 
-      // FIXED: Find order by sepay_order_code field instead of note field
-      const order = await this.prisma.product_order.findFirst({
+      // FIXED: Find order by sepay_order_code field with proper null handling
+      let order = await this.prisma.product_order.findFirst({
         where: {
           sepay_order_code: orderCode,
           payment_status: {
@@ -292,10 +308,11 @@ export class PaymentService {
           },
         });
 
-        // Continue processing with the found order
-        const order = orderById;
+        // Use the found order
+        order = orderById;
       }
 
+      // FIXED: order is now guaranteed to be non-null due to the checks above
       this.logger.log(
         `Found order: ID ${order.id}, Amount ${order.total_amount || order.price}`,
       );
@@ -361,11 +378,6 @@ export class PaymentService {
         `✅ Order ${orderCode} marked as paid. Transaction ID: ${transactionId}`,
       );
 
-      // Here you could add additional logic like:
-      // - Send confirmation email
-      // - Update inventory
-      // - Trigger fulfillment process
-
       return {
         success: true,
         message: 'Payment processed successfully',
@@ -380,7 +392,7 @@ export class PaymentService {
   }
 
   /**
-   * Get payment status - ENHANCED
+   * Get payment status - ENHANCED with proper null handling
    */
   async getPaymentStatus(orderId: string): Promise<{
     success: boolean;
@@ -422,14 +434,15 @@ export class PaymentService {
           status = PaymentStatus.PENDING;
       }
 
+      // FIXED: Convert null to undefined for return type compatibility
       return {
         success: true,
         status,
         orderId,
         amount: Number(order.total_amount || order.price),
         paymentMethod: order.payment_method || order.type || 'UNKNOWN',
-        transactionId: order.transaction_id,
-        sepayOrderCode: order.sepay_order_code,
+        transactionId: order.transaction_id || undefined, // Convert null to undefined
+        sepayOrderCode: order.sepay_order_code || undefined, // Convert null to undefined
         message: 'Payment status retrieved successfully',
       };
     } catch (error) {
@@ -469,7 +482,7 @@ export class PaymentService {
 
       return orders.map((order) => ({
         id: order.id.toString(),
-        sepayOrderCode: order.sepay_order_code,
+        sepayOrderCode: order.sepay_order_code || undefined, // Convert null to undefined
         paymentStatus: order.payment_status,
         status: order.status,
         amount: Number(order.total_amount || order.price),
@@ -481,7 +494,6 @@ export class PaymentService {
     }
   }
 
-  // ... rest of the existing methods remain the same ...
   async cancelPayment(
     orderId: string,
   ): Promise<{ success: boolean; message: string }> {
