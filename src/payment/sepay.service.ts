@@ -219,7 +219,7 @@ export class SepayService {
       Vietcombank: 'VCB',
       Techcombank: 'TCB',
       BIDV: 'BIDV',
-      VietinBank: 'CTG',
+      VietinBank: 'VietinBank',
       Agribank: 'AGR',
       'MB Bank': 'MB',
       MBBank: 'MB',

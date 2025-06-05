@@ -26,20 +26,20 @@ model application {
   status       String?    @db.VarChar(255)
   applicant_id BigInt?
   job_post_id  BigInt?
-  job_post     job_post?  @relation(fields: [job_post_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKqhppc6ebpi0j94530ftuuyldn")
-  applicant    applicant? @relation(fields: [applicant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKrc3gxkxtsq5jqx764drr3wug5")
+  job_post     job_post?  @relation(fields: [job_post_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  applicant    applicant? @relation(fields: [applicant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@index([job_post_id], map: "FKqhppc6ebpi0j94530ftuuyldn")
-  @@index([applicant_id], map: "FKrc3gxkxtsq5jqx764drr3wug5")
+  @@index([job_post_id])
+  @@index([applicant_id])
 }
 
 model authority {
-  id      BigInt  @id
+  id      BigInt  @id @default(autoincrement())
   role    String? @db.VarChar(255)
   user_id String? @db.VarChar(255)
-  user    user?   @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKr1wgeo077ok1nr1shx0t70tg8")
+  user    user?   @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@index([user_id], map: "FKr1wgeo077ok1nr1shx0t70tg8")
+  @@index([user_id])
 }
 
 model category {
@@ -61,20 +61,9 @@ model code_forgot_pass {
   code        String?   @db.VarChar(255)
   expire_date DateTime? @db.DateTime(6)
   user_id     String?   @db.VarChar(255)
-  user        user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKapo65ffi8pncggievbnk4qxha")
+  user        user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@index([user_id], map: "FKapo65ffi8pncggievbnk4qxha")
-}
-
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by the Prisma Client.
-model hibernate_sequence {
-  next_val BigInt?
-
-  @@ignore
+  @@index([user_id])
 }
 
 model job_post {
@@ -108,9 +97,9 @@ model news {
   view         Int?
   user_id      String?   @db.VarChar(255)
   type         String?   @db.VarChar(255)
-  user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FK4538gbwfa03nwr9edl3fdloo9")
+  user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@index([user_id], map: "FK4538gbwfa03nwr9edl3fdloo9")
+  @@index([user_id])
 }
 
 model orders {
@@ -122,11 +111,11 @@ model orders {
   quantity         Int?
   product_id       BigInt?
   product_order_id BigInt?
-  product          product?       @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FK787ibr3guwp6xobrpbofnv7le")
-  product_order    product_order? @relation(fields: [product_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKt9pocabfq29dvm6ybbygxly7q")
+  product          product?       @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  product_order    product_order? @relation(fields: [product_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@index([product_id], map: "FK787ibr3guwp6xobrpbofnv7le")
-  @@index([product_order_id], map: "FKt9pocabfq29dvm6ybbygxly7q")
+  @@index([product_id])
+  @@index([product_order_id])
 }
 
 model product {
@@ -151,17 +140,17 @@ model product {
   product_categories  product_categories[]
   review              review[]
 
-  @@index([updated_date], map: "idx_product_updated_date")
+  @@index([updated_date])
 }
 
 model product_categories {
   product_id    BigInt
   categories_id BigInt
-  category      category @relation(fields: [categories_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FK86pfomapgvxb87x9nnxuc0pdj")
-  product       product  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKppc5s0f38pgb35a32dlgyhorc")
+  category      category @relation(fields: [categories_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  product       product  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@id([product_id, categories_id])
-  @@index([categories_id], map: "FK86pfomapgvxb87x9nnxuc0pdj")
+  @@index([categories_id])
 }
 
 model product_order {
@@ -181,7 +170,9 @@ model product_order {
   status                   String?        @db.VarChar(255)
   type                     String?        @db.VarChar(255)
   user_id                  String?        @db.VarChar(255)
-  user                     user?          @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKa9own0mc8gwle8cckiij9ubsl")
+  user                     user?          @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  
+  // Payment-related fields - KEEP THESE
   payment_method           String?        @default("COD") @db.VarChar(50)
   payment_status           String?        @default("PENDING") @db.VarChar(50)
   transaction_id           String?        @db.VarChar(255)
@@ -193,14 +184,15 @@ model product_order {
   shipping_cost            BigInt?        @default(0)
   subtotal                 BigInt?        @default(0)
   total_amount             BigInt?        @default(0)
+  
   orders             orders[]
-  payment_logs             payment_logs[]
+  payment_logs       payment_logs[]
 
-  @@index([user_id], map: "FKa9own0mc8gwle8cckiij9ubsl")
-  @@index([payment_method], map: "idx_product_order_payment_method")
-  @@index([payment_status], map: "idx_product_order_payment_status")
-  @@index([sepay_order_code], map: "idx_product_order_sepay_code")
-  @@index([transaction_id], map: "idx_product_order_transaction_id")
+  @@index([user_id])
+  @@index([payment_method])
+  @@index([payment_status])
+  @@index([sepay_order_code])
+  @@index([transaction_id])
 }
 
 model review {
@@ -213,11 +205,11 @@ model review {
   rate         Int?
   product_id   BigInt?
   user_id      String?   @db.VarChar(255)
-  user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKiyf57dy48lyiftdrf7y87rnxi")
-  product      product?  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "FKiyof1sindb9qiqr9o8npj8klt")
+  user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  product      product?  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@index([user_id], map: "FKiyf57dy48lyiftdrf7y87rnxi")
-  @@index([product_id], map: "FKiyof1sindb9qiqr9o8npj8klt")
+  @@index([user_id])
+  @@index([product_id])
 }
 
 model user {
@@ -228,20 +220,20 @@ model user {
   updated_date     DateTime?          @db.DateTime(6)
   address          String?            @db.VarChar(255)
   ava_url          String?            @db.VarChar(255)
-  email            String?            @unique(map: "UK_ob8kqyqqgmefl0aco34akdtpe") @db.VarChar(255)
+  email            String?            @unique @db.VarChar(255)
   full_name        String?            @db.VarChar(255)
   is_active        Boolean            @db.Bit(1)
   password         String?            @db.VarChar(255)
-  phone            String?            @unique(map: "UK_589idila9li6a4arw1t8ht1gx") @db.VarChar(255)
+  phone            String?            @unique @db.VarChar(255)
   authority        authority[]
   code_forgot_pass code_forgot_pass[]
   news             news[]
   product_order    product_order[]
   review           review[]
 
-  @@index([phone, email], map: "phone")
-  @@index([email], map: "userEmailIndex")
-  @@index([phone], map: "userPhoneIndex")
+  @@index([phone, email])
+  @@index([email])
+  @@index([phone])
 }
 
 model sync_log {
@@ -255,8 +247,8 @@ model sync_log {
   error_message String?   @db.Text
   details       Json?
 
-  @@index([status], map: "idx_sync_log_status")
-  @@index([sync_type, started_at], map: "idx_sync_log_type_date")
+  @@index([status])
+  @@index([sync_type, started_at])
 }
 
 model payment_logs {
@@ -268,35 +260,16 @@ model payment_logs {
   created_date   DateTime?     @default(now()) @db.DateTime(6)
   ip_address     String?       @db.VarChar(45)
   user_agent     String?       @db.Text
-  product_order  product_order @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "payment_logs_ibfk_1")
+  product_order  product_order @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([created_date], map: "idx_payment_logs_created_date")
-  @@index([event_type], map: "idx_payment_logs_event_type")
-  @@index([order_id], map: "idx_payment_logs_order_id")
-}
-
-model payment_methods {
-  id            Int       @id @default(autoincrement())
-  code          String    @unique(map: "code") @db.VarChar(50)
-  name          String    @db.VarChar(255)
-  type          String    @db.VarChar(50)
-  enabled       Boolean?  @default(true)
-  display_order Int?      @default(0)
-  icon_url      String?   @db.VarChar(500)
-  description   String?   @db.Text
-  min_amount    BigInt?   @default(0)
-  max_amount    BigInt?   @default(999999999)
-  created_date  DateTime? @default(now()) @db.DateTime(6)
-  updated_date  DateTime? @default(now()) @db.DateTime(6)
-
-  @@index([display_order], map: "idx_payment_methods_display_order")
-  @@index([enabled], map: "idx_payment_methods_enabled")
-  @@index([type], map: "idx_payment_methods_type")
+  @@index([created_date])
+  @@index([event_type])
+  @@index([order_id])
 }
 
 model payment_webhooks {
   id             BigInt    @id @default(autoincrement())
-  webhook_id     String    @unique(map: "idx_payment_webhooks_webhook_id") @db.VarChar(255)
+  webhook_id     String    @unique @db.VarChar(255)
   provider       String    @default("sepay") @db.VarChar(50)
   order_code     String    @db.VarChar(255)
   transaction_id String?   @db.VarChar(255)
@@ -311,8 +284,9 @@ model payment_webhooks {
   created_date   DateTime? @default(now()) @db.DateTime(6)
   updated_date   DateTime? @default(now()) @db.DateTime(6)
 
-  @@index([order_code], map: "idx_payment_webhooks_order_code")
-  @@index([processed], map: "idx_payment_webhooks_processed")
-  @@index([status], map: "idx_payment_webhooks_status")
-  @@index([transaction_id], map: "idx_payment_webhooks_transaction_id")
+  @@index([order_code])
+  @@index([processed])
+  @@index([status])
+  @@index([transaction_id])
+  @@index([webhook_id])
 }
