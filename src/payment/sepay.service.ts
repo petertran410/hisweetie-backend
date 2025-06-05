@@ -137,8 +137,8 @@ export class SepayService {
       this.logger.log(`Creating SePay payment for order: ${request.orderCode}`);
 
       // CRITICAL: Format transfer content for SePay detection
-      // SePay detects payment codes better when they're at the beginning
-      const transferContent = request.orderCode; // Just the order code, clean and simple
+      // SePay REQUIRES "SEVQR" prefix to detect transactions
+      const transferContent = `SEVQR ${request.orderCode}`;
 
       this.logger.log(`Transfer content: "${transferContent}"`);
 
@@ -385,20 +385,23 @@ export class SepayService {
     try {
       this.logger.log(`Extracting order code from content: "${content}"`);
 
-      // Enhanced patterns for SePay order code detection
+      // Enhanced patterns for SePay order code detection with SEVQR prefix
       const patterns = [
-        /DT\d{8}[A-Z0-9]{6}/i, // DT12345678ABC123 (your format)
-        /DT[A-Z0-9]{14}/i, // DT + 14 alphanumeric
-        /DT\d{8}[A-Z]{6}/i, // DT + 8 digits + 6 letters
-        /\bDT\w{8,}\b/i, // DT followed by 8+ word characters
-        /^DT\w+/i, // DT at start of content
-        /\bDT\d+\b/i, // DT followed by digits
+        /SEVQR\s+(DT\d{8}[A-Z0-9]{6})/i, // SEVQR DT12345678ABC123 (required format)
+        /SEVQR\s+(DT[A-Z0-9]{14})/i, // SEVQR DT + 14 alphanumeric
+        /SEVQR\s+(DT\d{8}[A-Z]{6})/i, // SEVQR DT + 8 digits + 6 letters
+        /SEVQR\s+(DT\w{8,})/i, // SEVQR DT followed by 8+ word characters
+        /DT\d{8}[A-Z0-9]{6}/i, // Fallback: DT12345678ABC123 (without SEVQR)
+        /DT[A-Z0-9]{14}/i, // Fallback: DT + 14 alphanumeric
+        /\bDT\w{8,}\b/i, // Fallback: DT followed by 8+ word characters
       ];
 
       for (const pattern of patterns) {
         const match = content.match(pattern);
         if (match) {
-          const extracted = match[0].toUpperCase();
+          // If pattern has capture group (SEVQR patterns), use captured group
+          // Otherwise use the full match (fallback patterns)
+          const extracted = (match[1] || match[0]).toUpperCase();
           this.logger.log(
             `Order code extracted using pattern ${pattern}: ${extracted}`,
           );
@@ -406,8 +409,25 @@ export class SepayService {
         }
       }
 
-      // Final fallback: look for any word starting with DT
+      // Final fallback: look for SEVQR followed by order code, then any word starting with DT
       const words = content.split(/\s+/);
+
+      // First, look for SEVQR pattern
+      for (let i = 0; i < words.length - 1; i++) {
+        if (
+          words[i].toUpperCase() === 'SEVQR' &&
+          words[i + 1].toUpperCase().startsWith('DT') &&
+          words[i + 1].length > 3
+        ) {
+          const extracted = words[i + 1].toUpperCase();
+          this.logger.log(
+            `Order code extracted from SEVQR pattern: ${extracted}`,
+          );
+          return extracted;
+        }
+      }
+
+      // Then fallback to any word starting with DT
       for (const word of words) {
         if (word.toUpperCase().startsWith('DT') && word.length > 3) {
           const extracted = word.toUpperCase();
@@ -442,7 +462,7 @@ export class SepayService {
         return { success: false, message: 'SePay not configured' };
       }
 
-      const transferContent = orderCode; // Clean order code only
+      const transferContent = `SEVQR ${orderCode}`; // Must include SEVQR prefix
       const finalBankCode = bankCode || this.getBankCode(this.config.bankName);
 
       // Use SePay QR service
