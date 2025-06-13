@@ -120,32 +120,45 @@ export class LarkService {
   private currentDomain = this.domains.global; // Start with global domain
 
   // Lark Base configuration
-  private readonly baseId = 'Zythb8m0ba8a5WsgEMBlJtzCgpK';
-  private readonly tableId = 'tbl0XzMnEuod7YPA';
-  private readonly viewId = 'vewaSpQFOA';
+  private readonly baseId = 'RgpFbW88iavwpNscUW2lQamOgtg';
+  private readonly tableId = 'tbljJpHW18wYyTkI';
+  private readonly viewId = 'vewIYQlgmu';
 
-  // 🔧 FIXED: Field mapping dựa trên Bảng Khách Hàng.txt và KiotViet API
+  // 🔧 COMPLETE Field mapping dựa trên Bảng Khách Hàng.txt và KiotViet API
   private readonly fieldIds = {
-    id: 'fldGVtW2LC', // Id (Primary)
-    customerCode: 'fldW0iwzXc', // Mã Khách Hàng
-    customerName: 'fldPhKUyjp', // Tên Khách Hàng
-    gender: 'fldXAZfN19', // Giới tính
-    company: 'fldMPpT7eR', // Công Ty (organization)
-    comments: 'fld9vIqRqB', // Ghi Chú (comments)
-    taxCode: 'fldoVQXwDF', // Mã Số Thuế (taxCode)
-    currentDebt: 'fldMc6hjE3', // Nợ Hiện Tại (debt)
-    totalSales: 'fldxQRtVgJ', // Tổng Bán (totalInvoiced)
-    // Có thể thêm các field khác nếu cần:
-    // phone: 'fld...',         // Số Điện Thoại
-    // email: 'fld...',         // Email
-    // address: 'fld...',       // Địa Chỉ
-    // birthDate: 'fld...',     // Ngày Sinh
+    // Basic Info
+    id: 'fldr72pFQA', // Id (Primary)
+    customerCode: 'fldcui5IWc', // Mã Khách Hàng
+    customerName: 'fld4D781z6', // Tên Khách Hàng
+    gender: 'fldYSkyalS', // Giới tính (Select field)
+
+    // Contact Info
+    phone: 'fldRIayaYe', // Số Điện Thoại
+    email: 'fldoMPWPnC', // Email
+    address: 'fldBxav8oZ', // Địa Chỉ
+    locationArea: 'flda8DECHt', // Khu Vực (locationName from KiotViet)
+    ward: 'fldJ4N74yG', // Phường Xã
+
+    // Business Info
+    company: 'fld89HfsM9', // Công Ty (organization)
+    taxCode: 'fldiZjVChN', // Mã Số Thuế
+    comments: 'fldQ0XGZB2', // Ghi Chú
+
+    // Financial Info
+    currentDebt: 'fldEJ3qsQu', // Nợ Hiện Tại (debt)
+    totalSales: 'fld6sp6GiO', // Tổng Bán (totalInvoiced)
+    currentPoints: 'fldtThsHzM', // Điểm Hiện Tại (totalPoint)
+
+    // System Info
+    retailerId: 'fldkvr7Rkz', // Id Cửa Hàng (retailerId)
+    modifiedDate: 'fld2TV7kJd', // Thời Gian Cập Nhật
+    createdDate: 'fldpLPIYMY', // Ngày Tạo
   };
 
   // 🔧 FIXED: Gender options cho Lark Select field
   private readonly genderOptions = {
-    male: 'optyGBt7EU', // nam
-    female: 'optq1lTuim', // nữ
+    male: 'opt6L47AiX', // nam
+    female: 'opt9betydF', // nữ
   };
 
   private axiosInstance: AxiosInstance;
@@ -422,29 +435,50 @@ export class LarkService {
         };
       }
 
-      // Step 3: Test actual record access
+      // Step 3: Test actual record access with detailed logging
+      this.logger.log('🔍 Testing record access...');
       const url = `/apps/${this.baseId}/tables/${this.tableId}/records`;
       const params = {
         view_id: this.viewId,
         page_size: '5',
       };
 
+      this.logger.debug(
+        `📡 Testing with URL: ${this.currentDomain.baseUrl}${url}`,
+      );
+      this.logger.debug(`📡 Params:`, params);
+
       const response = await this.axiosInstance.get<LarkListRecordsResponse>(
         url,
         { params },
       );
 
+      this.logger.debug(`📥 Raw response:`, {
+        status: response.status,
+        statusText: response.statusText,
+        data: response.data,
+      });
+
       if (response.data.code !== 0) {
-        throw new Error(`Lark API error: ${response.data.msg}`);
+        throw new Error(
+          `Lark API error: ${response.data.msg} (code: ${response.data.code})`,
+        );
       }
 
-      this.logger.log('✅ Lark Base connection test successful!');
+      // 🔧 FIXED: Better validation of response structure
+      const responseData = response.data.data;
+      const items = responseData?.items || [];
+      const total = responseData?.total || 0;
+
+      this.logger.log(
+        `✅ Lark Base connection test successful! Found ${total} total records, fetched ${items.length} sample records`,
+      );
 
       return {
         success: true,
         status: response.status,
-        totalRecords: response.data.data.total || 0,
-        sampleRecords: response.data.data.items?.slice(0, 2) || [],
+        totalRecords: total,
+        sampleRecords: Array.isArray(items) ? items.slice(0, 2) : [],
         message: 'Lark Base connection test successful!',
         baseConfig: {
           baseId: this.baseId,
@@ -455,6 +489,13 @@ export class LarkService {
         },
         baseInfo: baseInfo.baseInfo,
         tableInfo: tablesInfo.targetTable,
+        rawResponse: {
+          code: response.data.code,
+          msg: response.data.msg,
+          hasData: !!responseData,
+          itemsType: typeof items,
+          itemsLength: Array.isArray(items) ? items.length : 'not_array',
+        },
       };
     } catch (error) {
       this.logger.error('❌ Lark Base connection test failed:', error.message);
@@ -472,7 +513,19 @@ export class LarkService {
           checkTableId: `Verify Table ID: ${this.tableId}`,
           checkViewId: `Verify View ID: ${this.viewId}`,
           currentDomain: this.getCurrentDomainName(),
+          possibleIssues: [
+            'Base/Table is empty (no records)',
+            'View permissions not granted',
+            'Field permissions restricted',
+            'App not granted access to specific Base',
+          ],
         },
+        errorDetails: error.response
+          ? {
+              status: error.response.status,
+              data: error.response.data,
+            }
+          : null,
       };
     }
   }
@@ -501,24 +554,58 @@ export class LarkService {
           params.page_token = pageToken;
         }
 
+        this.logger.debug(`🔍 Requesting records with params:`, params);
+
         const response = await this.axiosInstance.get<LarkListRecordsResponse>(
           url,
           { params },
         );
 
+        this.logger.debug(`📥 Lark API Response:`, {
+          status: response.status,
+          code: response.data?.code,
+          msg: response.data?.msg,
+          hasData: !!response.data?.data,
+          dataKeys: response.data?.data ? Object.keys(response.data.data) : [],
+        });
+
         if (response.data.code !== 0) {
-          throw new Error(`Lark API error: ${response.data.msg}`);
+          throw new Error(
+            `Lark API error: ${response.data.msg} (code: ${response.data.code})`,
+          );
         }
 
-        const { items, has_more, page_token } = response.data.data;
-        allRecords.push(...items);
+        // 🔧 FIXED: Defensive programming for missing/null items
+        const responseData = response.data.data;
+        if (!responseData) {
+          this.logger.warn('⚠️ No data field in response, treating as empty');
+          break;
+        }
 
-        hasMore = has_more;
+        const items = responseData.items || []; // Default to empty array if items is null/undefined
+        const has_more = responseData.has_more || false;
+        const page_token = responseData.page_token;
+
+        // 🔧 FIXED: Safe spreading of items
+        if (Array.isArray(items)) {
+          allRecords.push(...items);
+          this.logger.log(
+            `Fetched ${items.length} records. Total so far: ${allRecords.length}`,
+          );
+        } else {
+          this.logger.warn(`⚠️ Items is not an array:`, typeof items, items);
+        }
+
+        hasMore = has_more && items.length > 0;
         pageToken = page_token;
 
-        this.logger.log(
-          `Fetched ${items.length} records. Total so far: ${allRecords.length}`,
-        );
+        // Safety break to prevent infinite loops
+        if (allRecords.length > 10000) {
+          this.logger.warn(
+            '⚠️ Breaking loop - too many records, possible infinite loop',
+          );
+          break;
+        }
       }
 
       this.logger.log(
@@ -530,6 +617,16 @@ export class LarkService {
         'Failed to fetch records from Lark Base:',
         error.message,
       );
+
+      // 🔧 ADDED: More detailed error info
+      if (error.response) {
+        this.logger.error('Response details:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data,
+        });
+      }
+
       throw new HttpException(
         `Failed to fetch records from Lark: ${error.message}`,
         HttpStatus.BAD_GATEWAY,
@@ -537,13 +634,18 @@ export class LarkService {
     }
   }
 
+  /**
+   * 🔧 FIXED: Convert KiotViet customer to Lark record format with proper field mapping
+   */
   private kiotVietToLarkRecord(customer: KiotVietCustomer): any {
-    let genderValue: string | null = null;
+    // 🔧 FIXED: Handle gender properly - KiotViet returns boolean, convert to Lark option
+    let genderValue: string | null = null; // 🔧 FIXED: Explicit type annotation
     if (customer.gender === true) {
-      genderValue = this.genderOptions.male;
+      genderValue = this.genderOptions.male; // Assume true = male
     } else if (customer.gender === false) {
-      genderValue = this.genderOptions.female;
+      genderValue = this.genderOptions.female; // Assume false = female
     }
+    // If gender is undefined/null, leave as null
 
     return {
       fields: {
@@ -690,7 +792,7 @@ export class LarkService {
   }
 
   /**
-   * 🔧 DIAGNOSTIC: Get current configuration and status
+   * 🔧 DIAGNOSTIC: Get current configuration and status with complete field mapping
    */
   async getDiagnostics(): Promise<any> {
     const credentials = this.getLarkCredentials();
@@ -716,8 +818,42 @@ export class LarkService {
           : null,
         expiresAt: this.currentToken?.expiresAt?.toISOString() || null,
       },
-      fieldMapping: this.fieldIds,
+      // 🔧 COMPLETE field mapping info
+      fieldMapping: {
+        total: Object.keys(this.fieldIds).length,
+        fields: this.fieldIds,
+        categories: {
+          basic: ['id', 'customerCode', 'customerName', 'gender'],
+          contact: ['phone', 'email', 'address', 'locationArea', 'ward'],
+          business: ['company', 'taxCode', 'comments'],
+          financial: ['currentDebt', 'totalSales', 'currentPoints'],
+          system: ['retailerId', 'modifiedDate', 'createdDate'],
+        },
+      },
       genderOptions: this.genderOptions,
+      kiotVietMapping: {
+        description: 'KiotViet API fields → Lark Base fields',
+        mappings: {
+          'id → fldr72pFQA': 'Id (Primary)',
+          'code → fldcui5IWc': 'Mã Khách Hàng',
+          'name → fld4D781z6': 'Tên Khách Hàng',
+          'gender (boolean) → fldYSkyalS': 'Giới tính (Select)',
+          'contactNumber → fldRIayaYe': 'Số Điện Thoại',
+          'email → fldoMPWPnC': 'Email',
+          'address → fldBxav8oZ': 'Địa Chỉ',
+          'locationName → flda8DECHt': 'Khu Vực',
+          'ward → fldJ4N74yG': 'Phường Xã',
+          'organization → fld89HfsM9': 'Công Ty',
+          'taxCode → fldiZjVChN': 'Mã Số Thuế',
+          'comments → fldQ0XGZB2': 'Ghi Chú',
+          'debt → fldEJ3qsQu': 'Nợ Hiện Tại',
+          'totalInvoiced → fld6sp6GiO': 'Tổng Bán',
+          'totalPoint → fldtThsHzM': 'Điểm Hiện Tại',
+          'retailerId → fldkvr7Rkz': 'Id Cửa Hàng',
+          'modifiedDate → fld2TV7kJd': 'Thời Gian Cập Nhật',
+          'createdDate → fldpLPIYMY': 'Ngày Tạo',
+        },
+      },
     };
   }
 }
