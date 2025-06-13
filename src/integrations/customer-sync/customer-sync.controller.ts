@@ -310,76 +310,40 @@ export class CustomerSyncController {
   @Get('test-lark')
   @ApiOperation({
     summary: 'Test Lark Base connection',
-    description: 'Test if Lark credentials and Base access are working',
+    description:
+      'Test if Lark credentials and Base access are working with auto token refresh',
   })
   async testLarkConnection() {
     try {
-      const accessToken = this.configService.get<string>('LARK_ACCESS_TOKEN');
+      this.logger.log(
+        '🧪 Testing Lark Base connection with auto token refresh...',
+      );
 
-      if (!accessToken || accessToken === 'temp_disabled') {
-        return {
-          success: false,
-          message:
-            'LARK_ACCESS_TOKEN not configured. Please setup Lark credentials.',
-          setupRequired: true,
-        };
+      // Use the service's built-in test method (with auto token refresh)
+      const result = await this.larkService.testConnection();
+
+      if (result.success) {
+        this.logger.log('✅ Lark Base connection successful!');
+      } else {
+        this.logger.error('❌ Lark Base connection failed!');
       }
 
-      // Test by getting records from Lark Base
-      const records = await this.larkService.getAllRecords();
-
-      return {
-        success: true,
-        message: 'Lark Base connection successful!',
-        totalRecords: records.length,
-        baseConfig: {
-          baseId: 'Zythb8m0ba8a5WsgEMBlJtzCgpK',
-          tableId: 'tbl0XzMnEuod7YPA',
-          viewId: 'vewaSpQFOA',
-        },
-      };
+      return result;
     } catch (error) {
-      this.logger.error('❌ Lark Base connection failed:', error.message);
+      this.logger.error('❌ Lark Base connection test failed:', error.message);
 
       return {
         success: false,
         error: error.message,
         message: 'Lark Base connection test failed!',
+        troubleshooting: {
+          checkCredentials: 'Verify LARK_APP_ID and LARK_APP_SECRET in .env',
+          checkPermissions:
+            'Verify app has bitable permissions and is published',
+          checkBaseAccess: 'Ensure app has access to the specific Base',
+        },
         setupRequired: true,
       };
-    }
-  }
-
-  @Get('health')
-  @ApiOperation({
-    summary: 'Health check',
-    description:
-      'Kiểm tra sức khỏe của hệ thống sync với test cả KiotViet và Lark',
-  })
-  async healthCheck() {
-    try {
-      const status = this.customerSyncService.getSyncStatus();
-
-      // Quick test các services
-      const kiotVietTest = await this.testKiotVietConnection();
-      const larkTest = await this.testLarkConnection();
-
-      return {
-        success: true,
-        message: 'Customer sync service health check completed',
-        data: {
-          serviceStatus: 'healthy',
-          syncStatus: status,
-          connections: {
-            kiotViet: kiotVietTest.success,
-            larkBase: larkTest.success,
-          },
-          timestamp: new Date().toISOString(),
-        },
-      };
-    } catch (error) {
-      this.logger.error('Health check failed:', error.message);
-      throw new BadRequestException(`Health check failed: ${error.message}`);
     }
   }
 
