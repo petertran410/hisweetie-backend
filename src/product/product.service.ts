@@ -56,7 +56,7 @@ interface SyncResult {
 @Injectable()
 export class ProductService {
   private readonly logger = new Logger(ProductService.name);
-  prisma = new PrismaClient();
+  private readonly prisma = new PrismaClient();
 
   constructor(private readonly kiotVietService: KiotVietService) {}
 
@@ -1067,8 +1067,9 @@ export class ProductService {
     pageSize: number;
     pageNumber: number;
     title?: string;
-    parentCategoryIds?: number[];
-    specificSubCategoryId?: number; // NEW: for subcategory filtering
+    parentCategoryIds: number[];
+    specificSubCategoryId?: number;
+    showOnlyVisible?: boolean; // NEW PARAMETER
   }) {
     const {
       pageSize,
@@ -1076,123 +1077,65 @@ export class ProductService {
       title,
       parentCategoryIds,
       specificSubCategoryId,
+      showOnlyVisible = true, // Default to true for main website
     } = params;
 
     try {
-      // CRITICAL FIX: Always default to both categories if none specified
-      const targetParentIds =
-        parentCategoryIds && parentCategoryIds.length > 0
-          ? parentCategoryIds
-          : [2205381, 2205374];
+      // Build where conditions
+      const whereConditions: any = {};
 
-      this.logger.log(
-        `Fetching products from parent categories: ${targetParentIds.join(', ')}${specificSubCategoryId ? `, subcategory: ${specificSubCategoryId}` : ''}`,
-      );
+      // Add visibility filter for main website
+      if (showOnlyVisible) {
+        whereConditions.is_visible = true; // Only show visible products
+      }
 
-      let allCategoryIds: number[];
+      // Add title search
+      if (title) {
+        whereConditions.title = {
+          contains: title,
+          mode: 'insensitive',
+        };
+      }
+
+      // Get all subcategories for the specified parents
+      let targetCategoryIds: number[] = [];
 
       if (specificSubCategoryId) {
-        // If filtering by specific subcategory, only use that subcategory (works for both Lermao and Trà Phượng Hoàng)
-        allCategoryIds = [specificSubCategoryId];
-        this.logger.log(
-          `Filtering by specific subcategory only: ${specificSubCategoryId}`,
-        );
+        // If specific subcategory is requested, only use that one
+        targetCategoryIds = [specificSubCategoryId];
       } else {
-        // Get all descendant category IDs for the specified parent categories
-        allCategoryIds =
-          await this.kiotVietService.findDescendantCategoryIds(targetParentIds);
-        this.logger.log(
-          `Found ${allCategoryIds.length} category IDs for the specified parent categories (including both parents and children)`,
-        );
-      }
-
-      if (allCategoryIds.length === 0) {
-        this.logger.warn('No categories found');
-        return {
-          content: [],
-          totalElements: 0,
-          pageable: {
-            pageNumber,
-            pageSize,
-          },
-          categoryInfo: {
-            targetParentIds,
-            allCategoryIds,
-            totalCategoriesSearched: 0,
-            isSubCategoryFilter: !!specificSubCategoryId,
-            specificSubCategoryId,
-          },
-        };
-      }
-
-      // Convert to BigInt for database query
-      const categoryIdsBigInt = allCategoryIds.map((id) => BigInt(id));
-
-      // Get all product IDs that belong to the specified categories
-      const productCategoryRelations =
-        await this.prisma.product_categories.findMany({
+        // Get all subcategories under the parent categories
+        const allSubcategories = await this.prisma.category.findMany({
           where: {
-            categories_id: {
-              in: categoryIdsBigInt,
+            parent_id: {
+              in: parentCategoryIds.map((id) => BigInt(id)),
             },
           },
-          select: {
-            product_id: true,
-            categories_id: true,
-          },
+          select: { id: true },
         });
 
-      this.logger.log(
-        `Found ${productCategoryRelations.length} product-category relationships${specificSubCategoryId ? ' for subcategory' : ''}`,
-      );
+        targetCategoryIds = allSubcategories.map((cat) => Number(cat.id));
+      }
 
-      const productIds = [
-        ...new Set(productCategoryRelations.map((rel) => rel.product_id)),
-      ];
-
-      this.logger.log(`Unique products in categories: ${productIds.length}`);
-
-      if (productIds.length === 0) {
-        this.logger.log('No products found in the specified categories');
-        return {
-          content: [],
-          totalElements: 0,
-          pageable: {
-            pageNumber,
-            pageSize,
-          },
-          categoryInfo: {
-            targetParentIds,
-            allCategoryIds,
-            totalCategoriesSearched: allCategoryIds.length,
-            isSubCategoryFilter: !!specificSubCategoryId,
-            specificSubCategoryId,
+      // Add category filter
+      if (targetCategoryIds.length > 0) {
+        whereConditions.product_categories = {
+          some: {
+            categories_id: {
+              in: targetCategoryIds.map((id) => BigInt(id)),
+            },
           },
         };
       }
 
-      // Build where clause for products
-      const where: any = {
-        id: {
-          in: productIds,
-        },
-      };
+      // Get total count
+      const totalElements = await this.prisma.product.count({
+        where: whereConditions,
+      });
 
-      if (title) {
-        where.title = { contains: title };
-      }
-
-      const totalElements = await this.prisma.product.count({ where });
-
-      this.logger.log(
-        `Total products matching criteria: ${totalElements}${specificSubCategoryId ? ' in subcategory' : ''}`,
-      );
-
+      // Get products with pagination
       const products = await this.prisma.product.findMany({
-        where,
-        skip: pageNumber * pageSize,
-        take: pageSize,
-        orderBy: { created_date: 'desc' },
+        where: whereConditions,
         include: {
           product_categories: {
             include: {
@@ -1200,26 +1143,21 @@ export class ProductService {
             },
           },
         },
+        skip: pageNumber * pageSize,
+        take: pageSize,
+        orderBy: { updated_date: 'desc' },
       });
 
+      // Format response
       const content = products.map((product) => {
         let imagesUrl = [];
         try {
           imagesUrl = product.images_url ? JSON.parse(product.images_url) : [];
         } catch (error) {
           this.logger.warn(
-            `Failed to parse images_url for product ${product.id}:`,
-            error,
+            `Failed to parse images_url for product ${product.id}`,
           );
         }
-
-        // Simple category mapping
-        const ofCategories = product.product_categories
-          .filter((pc) => allCategoryIds.includes(Number(pc.categories_id)))
-          .map((pc) => ({
-            id: pc.categories_id.toString(),
-            name: pc.category?.name || 'Unknown',
-          }));
 
         return {
           id: product.id.toString(),
@@ -1229,19 +1167,24 @@ export class ProductService {
           description: product.description,
           imagesUrl,
           generalDescription: product.general_description || '',
-          instruction: product.instruction || '',
+          instruction: product.instruction,
           isFeatured: product.is_featured || false,
+          isVisible: product.is_visible || false, // NEW FIELD
           featuredThumbnail: product.featured_thumbnail,
           recipeThumbnail: product.recipe_thumbnail,
           type: product.type,
-          createdDate: product.created_date,
-          updatedDate: product.updated_date,
-          ofCategories: ofCategories,
+          rate: product.rate,
+          createdDate: product.created_date?.toISOString(),
+          updatedDate: product.updated_date?.toISOString(),
+          ofCategories: product.product_categories.map((pc) => ({
+            id: pc.categories_id.toString(),
+            name: pc.category?.name || '',
+          })),
         };
       });
 
       this.logger.log(
-        `Successfully returning ${content.length} products${specificSubCategoryId ? ' for subcategory' : ''}`,
+        `Found ${totalElements} products${showOnlyVisible ? ' (visible only)' : ''} for categories: ${targetCategoryIds.join(', ')}`,
       );
 
       return {
@@ -1252,11 +1195,12 @@ export class ProductService {
           pageSize,
         },
         categoryInfo: {
-          targetParentIds,
-          allCategoryIds,
-          totalCategoriesSearched: allCategoryIds.length,
+          targetParentIds: parentCategoryIds,
+          allCategoryIds: targetCategoryIds,
+          totalCategoriesSearched: targetCategoryIds.length,
           isSubCategoryFilter: !!specificSubCategoryId,
           specificSubCategoryId,
+          showOnlyVisible, // NEW FIELD
         },
       };
     } catch (error) {
@@ -1265,6 +1209,40 @@ export class ProductService {
         `Failed to get products by categories: ${error.message}`,
       );
     }
+  }
+
+  async toggleProductVisibility(id: number): Promise<any> {
+    const productId = BigInt(id);
+
+    const existingProduct = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { is_visible: true, title: true },
+    });
+
+    if (!existingProduct) {
+      throw new NotFoundException(`Product with ID ${id} not found`);
+    }
+
+    const newVisibility = !existingProduct.is_visible;
+
+    const updatedProduct = await this.prisma.product.update({
+      where: { id: productId },
+      data: {
+        is_visible: newVisibility,
+        updated_date: new Date(),
+      },
+    });
+
+    this.logger.log(
+      `Product "${existingProduct.title}" (ID: ${id}) visibility changed to: ${newVisibility ? 'visible' : 'hidden'}`,
+    );
+
+    return {
+      id: id.toString(),
+      title: existingProduct.title,
+      isVisible: newVisibility,
+      message: `Product is now ${newVisibility ? 'visible' : 'hidden'} on the main website`,
+    };
   }
 
   // Standard CRUD Operations
@@ -1288,10 +1266,7 @@ export class ProductService {
     try {
       imagesUrl = product.images_url ? JSON.parse(product.images_url) : [];
     } catch (error) {
-      console.log(
-        `Failed to parse images_url for product ${product.id}:`,
-        error,
-      );
+      this.logger.warn(`Failed to parse images_url for product ${product.id}`);
     }
 
     return {
@@ -1301,6 +1276,8 @@ export class ProductService {
       quantity: product.quantity ? Number(product.quantity) : null,
       imagesUrl,
       generalDescription: product.general_description || '',
+      isFeatured: product.is_featured || false,
+      isVisible: product.is_visible || false, // NEW FIELD
       ofCategories: product.product_categories.map((pc) => ({
         id: pc.categories_id.toString(),
         name: pc.category?.name || '',
@@ -1319,6 +1296,7 @@ export class ProductService {
       generalDescription,
       instruction,
       isFeatured,
+      isVisible, // NEW FIELD
       featuredThumbnail,
       recipeThumbnail,
       type,
@@ -1334,22 +1312,25 @@ export class ProductService {
         general_description: generalDescription,
         instruction,
         is_featured: isFeatured || false,
+        is_visible: isVisible || false, // NEW FIELD - defaults to false
         featured_thumbnail: featuredThumbnail,
         recipe_thumbnail: recipeThumbnail,
         type,
         created_date: new Date(),
+        updated_date: new Date(),
       },
     });
 
+    // Handle category relationships if provided
     if (categoryIds && categoryIds.length > 0) {
-      for (const categoryId of categoryIds) {
-        await this.prisma.product_categories.create({
-          data: {
-            product_id: product.id,
-            categories_id: BigInt(categoryId),
-          },
-        });
-      }
+      const categoryRelations = categoryIds.map((categoryId) => ({
+        product_id: product.id,
+        categories_id: BigInt(categoryId),
+      }));
+
+      await this.prisma.product_categories.createMany({
+        data: categoryRelations,
+      });
     }
 
     return this.findById(Number(product.id));
@@ -1358,11 +1339,12 @@ export class ProductService {
   async update(id: number, updateProductDto: UpdateProductDto) {
     const productId = BigInt(id);
 
-    const product = await this.prisma.product.findUnique({
+    // Check if product exists
+    const existingProduct = await this.prisma.product.findUnique({
       where: { id: productId },
     });
 
-    if (!product) {
+    if (!existingProduct) {
       throw new NotFoundException(`Product with ID ${id} not found`);
     }
 
@@ -1376,40 +1358,56 @@ export class ProductService {
       generalDescription,
       instruction,
       isFeatured,
+      isVisible, // NEW FIELD
       featuredThumbnail,
       recipeThumbnail,
       type,
     } = updateProductDto;
 
-    await this.prisma.product.update({
+    // Update product
+    const updatedProduct = await this.prisma.product.update({
       where: { id: productId },
       data: {
-        title,
-        price: price !== undefined ? BigInt(price) : product.price,
-        quantity: quantity !== undefined ? BigInt(quantity) : product.quantity,
-        description,
-        images_url: imagesUrl ? JSON.stringify(imagesUrl) : product.images_url,
-        general_description: generalDescription,
-        instruction,
-        is_featured: isFeatured,
-        featured_thumbnail: featuredThumbnail,
-        recipe_thumbnail: recipeThumbnail,
-        type,
+        ...(title !== undefined && { title }),
+        ...(price !== undefined && { price: price ? BigInt(price) : null }),
+        ...(quantity !== undefined && { quantity: BigInt(quantity) }),
+        ...(description !== undefined && { description }),
+        ...(imagesUrl !== undefined && {
+          images_url: imagesUrl ? JSON.stringify(imagesUrl) : null,
+        }),
+        ...(generalDescription !== undefined && {
+          general_description: generalDescription,
+        }),
+        ...(instruction !== undefined && { instruction }),
+        ...(isFeatured !== undefined && { is_featured: isFeatured }),
+        ...(isVisible !== undefined && { is_visible: isVisible }), // NEW FIELD
+        ...(featuredThumbnail !== undefined && {
+          featured_thumbnail: featuredThumbnail,
+        }),
+        ...(recipeThumbnail !== undefined && {
+          recipe_thumbnail: recipeThumbnail,
+        }),
+        ...(type !== undefined && { type }),
         updated_date: new Date(),
       },
     });
 
-    if (categoryIds && categoryIds.length > 0) {
+    // Handle category relationships if provided
+    if (categoryIds !== undefined) {
+      // Delete existing relationships
       await this.prisma.product_categories.deleteMany({
         where: { product_id: productId },
       });
 
-      for (const categoryId of categoryIds) {
-        await this.prisma.product_categories.create({
-          data: {
-            product_id: productId,
-            categories_id: BigInt(categoryId),
-          },
+      // Create new relationships
+      if (categoryIds.length > 0) {
+        const categoryRelations = categoryIds.map((categoryId) => ({
+          product_id: productId,
+          categories_id: BigInt(categoryId),
+        }));
+
+        await this.prisma.product_categories.createMany({
+          data: categoryRelations,
         });
       }
     }

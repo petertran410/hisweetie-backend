@@ -129,6 +129,7 @@ model product {
   images_url          String?   @db.LongText
   instruction         String?   @db.LongText
   is_featured         Boolean?  @db.Bit(1)
+  is_visible          Boolean?  @default(false) @db.Bit(1)  // NEW FIELD - Controls visibility on main website
   price               BigInt?
   quantity            BigInt?
   rate                Float?
@@ -141,6 +142,7 @@ model product {
   review              review[]
 
   @@index([updated_date])
+  @@index([is_visible])  // NEW INDEX for better query performance
 }
 
 model product_categories {

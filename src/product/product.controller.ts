@@ -341,6 +341,16 @@ export class ProductController {
     });
   }
 
+  @Get(':id')
+  @ApiOperation({
+    summary: 'Get product by ID',
+    description: 'Get a specific product by its ID',
+  })
+  @ApiParam({ name: 'id', description: 'Product ID' })
+  findOne(@Param('id') id: string) {
+    return this.productService.findById(+id);
+  }
+
   @Post()
   @ApiOperation({
     summary: 'Create product',
@@ -372,22 +382,52 @@ export class ProductController {
 
   // Main Product Listing Endpoint (Used by Frontend)
   @Get('by-categories')
+  @ApiOperation({
+    summary: 'Get products by categories for main website',
+    description:
+      'Returns visible products from specified categories for the main website',
+  })
+  @ApiQuery({
+    name: 'pageSize',
+    required: false,
+    description: 'Number of products per page',
+  })
+  @ApiQuery({
+    name: 'pageNumber',
+    required: false,
+    description: 'Page number (0-based)',
+  })
+  @ApiQuery({
+    name: 'title',
+    required: false,
+    description: 'Search by product title',
+  })
+  @ApiQuery({
+    name: 'categoryId',
+    required: false,
+    description: 'Main category ID',
+  })
+  @ApiQuery({
+    name: 'subCategoryId',
+    required: false,
+    description: 'Subcategory ID',
+  })
   async getProductsByCategories(
     @Query('pageSize') pageSize: string = '10',
     @Query('pageNumber') pageNumber: string = '0',
     @Query('title') title?: string,
-    @Query('categoryId') categoryId?: string, // Main category (Lermao or Trà Phượng Hoàng)
-    @Query('subCategoryId') subCategoryId?: string, // Specific subcategory
+    @Query('categoryId') categoryId?: string,
+    @Query('subCategoryId') subCategoryId?: string,
   ) {
     try {
       this.logger.log(
-        `Fetching products - pageSize: ${pageSize}, pageNumber: ${pageNumber}, title: ${title || 'none'}, categoryId: ${categoryId || 'none'}, subCategoryId: ${subCategoryId || 'none'}`,
+        `Fetching visible products - pageSize: ${pageSize}, pageNumber: ${pageNumber}, title: ${title || 'none'}, categoryId: ${categoryId || 'none'}, subCategoryId: ${subCategoryId || 'none'}`,
       );
 
       let parentCategoryIds: number[];
       let specificSubCategoryId: number | undefined;
 
-      // Handle subcategory filtering (works for both Lermao and Trà Phượng Hoàng)
+      // Handle subcategory filtering
       if (subCategoryId) {
         const subCatId = parseInt(subCategoryId);
         if (!isNaN(subCatId)) {
@@ -402,18 +442,16 @@ export class ProductController {
       if (categoryId) {
         const categoryIdNum = parseInt(categoryId);
         if (categoryIdNum === 2205381 || categoryIdNum === 2205374) {
-          // Only show products from the selected category
           parentCategoryIds = [categoryIdNum];
           this.logger.log(`Filtering by specific category: ${categoryIdNum}`);
         } else {
-          // Default to both categories
           parentCategoryIds = [2205381, 2205374];
         }
       } else {
-        // CRITICAL FIX: Default behavior - show products from BOTH categories
+        // Default to both categories
         parentCategoryIds = [2205381, 2205374];
         this.logger.log(
-          'No category filter specified - showing all products from both Lermao and Trà Phượng Hoàng',
+          'No category filter specified - showing all visible products from both categories',
         );
       }
 
@@ -422,11 +460,12 @@ export class ProductController {
         pageNumber: parseInt(pageNumber),
         title,
         parentCategoryIds: parentCategoryIds,
-        specificSubCategoryId: specificSubCategoryId, // Pass subcategory filter for both categories
+        specificSubCategoryId: specificSubCategoryId,
+        showOnlyVisible: true,
       });
 
       this.logger.log(
-        `Successfully found ${result.totalElements} products from target categories`,
+        `Successfully found ${result.totalElements} visible products from target categories`,
       );
 
       return {
@@ -437,16 +476,133 @@ export class ProductController {
           title,
           categoryFilter: categoryId,
           subCategoryFilter: subCategoryId,
-          isDefaultView: !categoryId && !subCategoryId, // Flag for default view
+          isDefaultView: !categoryId && !subCategoryId,
           targetCategories: parentCategoryIds.map((id) => ({
             id: id,
             name: id === 2205381 ? 'Lermao' : 'Trà Phượng Hoàng',
           })),
+          visibleOnly: true, // Indicates this endpoint only returns visible products
         },
       };
     } catch (error) {
       this.logger.error('Failed to get products by categories:', error.message);
       throw new BadRequestException(`Failed to get products: ${error.message}`);
+    }
+  }
+
+  @Get('admin/all')
+  @ApiOperation({
+    summary: 'Get all products for admin dashboard',
+    description:
+      'Returns all products including hidden ones for CMS management',
+  })
+  @ApiQuery({ name: 'pageSize', required: false })
+  @ApiQuery({ name: 'pageNumber', required: false })
+  @ApiQuery({ name: 'title', required: false })
+  async getAllProductsForAdmin(
+    @Query('pageSize') pageSize: string = '10',
+    @Query('pageNumber') pageNumber: string = '0',
+    @Query('title') title?: string,
+  ) {
+    try {
+      const result = await this.productService.getProductsBySpecificCategories({
+        pageSize: parseInt(pageSize),
+        pageNumber: parseInt(pageNumber),
+        title,
+        parentCategoryIds: [2205381, 2205374],
+        showOnlyVisible: false, // Show all products for admin
+      });
+
+      return {
+        ...result,
+        searchCriteria: {
+          pageSize: parseInt(pageSize),
+          pageNumber: parseInt(pageNumber),
+          title,
+          visibleOnly: false, // Indicates this endpoint returns all products
+        },
+      };
+    } catch (error) {
+      this.logger.error('Failed to get all products for admin:', error.message);
+      throw new BadRequestException(`Failed to get products: ${error.message}`);
+    }
+  }
+
+  // Bulk Toggle Visibility Endpoint
+  @Patch('bulk-toggle-visibility')
+  @ApiOperation({
+    summary: 'Bulk toggle product visibility',
+    description: 'Toggle visibility for multiple products at once',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Bulk visibility toggle completed',
+  })
+  async bulkToggleVisibility(
+    @Body() body: { productIds: number[]; isVisible: boolean },
+  ) {
+    try {
+      const { productIds, isVisible } = body;
+      this.logger.log(
+        `Bulk toggling visibility for ${productIds.length} products to: ${isVisible}`,
+      );
+
+      const results = await Promise.all(
+        productIds.map(async (id) => {
+          try {
+            const result = await this.productService.update(id, { isVisible });
+            return { id, success: true, message: 'Updated successfully' };
+          } catch (error) {
+            return { id, success: false, message: error.message };
+          }
+        }),
+      );
+
+      const successCount = results.filter((r) => r.success).length;
+      const failureCount = results.filter((r) => !r.success).length;
+
+      this.logger.log(
+        `Bulk toggle completed: ${successCount} successful, ${failureCount} failed`,
+      );
+
+      return {
+        message: `Bulk toggle completed: ${successCount} successful, ${failureCount} failed`,
+        results,
+        summary: {
+          total: productIds.length,
+          successful: successCount,
+          failed: failureCount,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Failed to bulk toggle visibility:', error.message);
+      throw new BadRequestException(
+        `Failed to bulk toggle visibility: ${error.message}`,
+      );
+    }
+  }
+
+  // Get Product Visibility Statistics
+  @Get('visibility-stats')
+  @ApiOperation({
+    summary: 'Get product visibility statistics',
+    description: 'Returns statistics about visible and hidden products',
+  })
+  async getVisibilityStats() {
+    try {
+      // This would require additional service methods to count products
+      // For now, returning a placeholder structure
+      return {
+        totalProducts: 0,
+        visibleProducts: 0,
+        hiddenProducts: 0,
+        visibilityPercentage: 0,
+      };
+    } catch (error) {
+      this.logger.error('Failed to get visibility stats:', error.message);
+      throw new BadRequestException(
+        `Failed to get visibility stats: ${error.message}`,
+      );
     }
   }
 
