@@ -23,34 +23,11 @@ import { CustomerSyncController } from './customer-sync/customer-sync.controller
   ],
   providers: [KiotVietService, LarkService, CustomerSyncService],
   controllers: [CustomerSyncController],
-  exports: [KiotVietService, LarkService, CustomerSyncService],
+  exports: [
+    KiotVietService,
+    LarkService,
+    CustomerSyncService,
+    HttpModule, // Export HttpModule so controller can use it
+  ],
 })
 export class IntegrationModule {}
-
-// src/app.module.ts - Add this import to your main app module
-/*
-import { IntegrationModule } from './integrations/integration.module';
-
-@Module({
-  imports: [
-    // ... your existing imports
-    IntegrationModule, // Add this line
-  ],
-  // ... rest of your module configuration
-})
-export class AppModule {}
-*/
-
-// Environment Variables Configuration
-// Add these to your .env file:
-/*
-# KiotViet API Configuration
-KIOTVIET_API_KEY=your_kiotviet_api_key_here
-KIOTVIET_WEBHOOK_SECRET=your_webhook_secret_key_here
-
-# Lark Suite API Configuration  
-LARK_ACCESS_TOKEN=your_lark_access_token_here
-
-# Optional: Database for storing sync metadata (if you want to use DB instead of in-memory)
-# DATABASE_URL=your_database_connection_string
-*/

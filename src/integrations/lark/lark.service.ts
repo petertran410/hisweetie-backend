@@ -1,9 +1,29 @@
-// src/integrations/lark/lark.service.ts
+// src/integrations/lark/lark.service.ts - UPDATED with Auto Token Refresh
 import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
+import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import { KiotVietCustomer } from '../kiotviet/kiotviet.service';
+
+interface LarkCredentials {
+  appId: string;
+  appSecret: string;
+}
+
+interface LarkTokenResponse {
+  code: number;
+  msg: string;
+  tenant_access_token?: string;
+  app_access_token?: string;
+  expire: number;
+}
+
+interface StoredLarkToken {
+  accessToken: string;
+  expiresAt: Date;
+  tokenType: 'tenant' | 'app';
+}
 
 export interface LarkRecord {
   record_id?: string;
@@ -52,13 +72,14 @@ export interface LarkBatchOperationResponse {
 export class LarkService {
   private readonly logger = new Logger(LarkService.name);
   private readonly baseUrl = 'https://open.larksuite.com/open-apis/bitable/v1';
+  private readonly authUrl = 'https://open.larksuite.com/open-apis/auth/v3';
 
-  // Lark Base configuration từ user
+  // Lark Base configuration từ user (đã có trong code)
   private readonly baseId = 'Zythb8m0ba8a5WsgEMBlJtzCgpK';
   private readonly tableId = 'tbl0XzMnEuod7YPA';
   private readonly viewId = 'vewaSpQFOA';
 
-  // Field IDs từ Bảng Khách Hàng.txt
+  // Field IDs từ Bảng Khách Hàng.txt (đã có trong code)
   private readonly fieldIds = {
     id: 'fldGVtW2LC', // Id (Primary)
     customerCode: 'fldW0iwzXc', // Mã Khách Hàng
@@ -71,22 +92,110 @@ export class LarkService {
     female: 'optq1lTuim', // nữ
   };
 
-  private accessToken: string;
+  private axiosInstance: AxiosInstance;
+  private currentToken: StoredLarkToken | null = null;
 
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {
-    this.accessToken = this.configService.get<string>('LARK_ACCESS_TOKEN');
+    // Create axios instance for Lark API calls
+    this.axiosInstance = axios.create({
+      baseURL: this.baseUrl,
+      timeout: 30000,
+    });
 
-    if (!this.accessToken) {
-      this.logger.warn('LARK_ACCESS_TOKEN not configured');
+    this.logger.log('Lark Service initialized with auto token refresh');
+  }
+
+  private getLarkCredentials(): LarkCredentials {
+    const appId = this.configService.get<string>('LARK_APP_ID');
+    const appSecret = this.configService.get<string>('LARK_APP_SECRET');
+
+    if (!appId || !appSecret) {
+      throw new Error(
+        'Please set LARK_APP_ID and LARK_APP_SECRET environment variables. ' +
+          'You can get these from Lark Developer Console -> App Settings -> Credentials.',
+      );
+    }
+
+    return { appId, appSecret };
+  }
+
+  private async obtainAppAccessToken(
+    credentials: LarkCredentials,
+  ): Promise<StoredLarkToken> {
+    this.logger.log('Obtaining new app access token from Lark');
+
+    try {
+      const requestBody = {
+        app_id: credentials.appId,
+        app_secret: credentials.appSecret,
+      };
+
+      const response: AxiosResponse<LarkTokenResponse> = await axios.post(
+        `${this.authUrl}/app_access_token/internal`,
+        requestBody,
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 10000,
+        },
+      );
+
+      if (response.data.code !== 0) {
+        throw new Error(`Lark API error: ${response.data.msg}`);
+      }
+
+      const tokenData = response.data;
+      const expiresAt = new Date(Date.now() + (tokenData.expire - 300) * 1000); // 5 minutes buffer
+
+      const storedToken: StoredLarkToken = {
+        accessToken: tokenData.app_access_token!,
+        expiresAt: expiresAt,
+        tokenType: 'app',
+      };
+
+      this.logger.log(
+        `Successfully obtained Lark app access token. Expires at: ${expiresAt.toISOString()}`,
+      );
+      return storedToken;
+    } catch (error) {
+      this.logger.error(
+        'Failed to obtain Lark app access token:',
+        error.message,
+      );
+      throw new HttpException(
+        `Failed to authenticate with Lark: ${error.message}`,
+        HttpStatus.BAD_GATEWAY,
+      );
     }
   }
 
+  private async getValidAccessToken(): Promise<string> {
+    const credentials = this.getLarkCredentials();
+
+    if (this.currentToken && new Date() < this.currentToken.expiresAt) {
+      this.logger.debug('Using cached Lark access token');
+      return this.currentToken.accessToken;
+    }
+
+    this.logger.log(
+      'Lark access token expired or missing, obtaining new token',
+    );
+    this.currentToken = await this.obtainAppAccessToken(credentials);
+    return this.currentToken.accessToken;
+  }
+
+  private async setupAuthHeaders(): Promise<void> {
+    const accessToken = await this.getValidAccessToken();
+    this.axiosInstance.defaults.headers.common['Authorization'] =
+      `Bearer ${accessToken}`;
+  }
+
   private getHeaders() {
+    // This method will be deprecated in favor of setupAuthHeaders
     return {
-      Authorization: `Bearer ${this.accessToken}`,
+      Authorization: `Bearer ${this.currentToken?.accessToken || ''}`,
       'Content-Type': 'application/json',
     };
   }
@@ -118,10 +227,68 @@ export class LarkService {
   }
 
   /**
+   * Test Lark connection with auto token refresh
+   */
+  async testConnection(): Promise<any> {
+    try {
+      await this.setupAuthHeaders();
+
+      this.logger.log('Testing Lark Base connection...');
+
+      // Test by getting a few records
+      const url = `/apps/${this.baseId}/tables/${this.tableId}/records`;
+      const params = {
+        view_id: this.viewId,
+        page_size: '5',
+      };
+
+      const response = await this.axiosInstance.get<LarkListRecordsResponse>(
+        url,
+        { params },
+      );
+
+      if (response.data.code !== 0) {
+        throw new Error(`Lark API error: ${response.data.msg}`);
+      }
+
+      this.logger.log('✅ Lark Base connection test successful!');
+
+      return {
+        success: true,
+        status: response.status,
+        totalRecords: response.data.data.total || 0,
+        sampleRecords: response.data.data.items?.slice(0, 2) || [],
+        message: 'Lark Base connection test successful!',
+        baseConfig: {
+          baseId: this.baseId,
+          tableId: this.tableId,
+          viewId: this.viewId,
+        },
+      };
+    } catch (error) {
+      this.logger.error('❌ Lark Base connection test failed:', error.message);
+
+      return {
+        success: false,
+        error: error.message,
+        message: 'Lark Base connection test failed!',
+        troubleshooting: {
+          checkCredentials: 'Verify LARK_APP_ID and LARK_APP_SECRET in .env',
+          checkPermissions:
+            'Verify app has bitable:app, bitable:record, bitable:table permissions',
+          checkBaseAccess: 'Ensure app has access to the specific Base',
+        },
+      };
+    }
+  }
+
+  /**
    * Get all records from Lark Base
    */
   async getAllRecords(): Promise<LarkRecord[]> {
     try {
+      await this.setupAuthHeaders();
+
       this.logger.log('Fetching all records from Lark Base');
 
       const allRecords: LarkRecord[] = [];
@@ -129,7 +296,7 @@ export class LarkService {
       let hasMore = true;
 
       while (hasMore) {
-        const url = `${this.baseUrl}/apps/${this.baseId}/tables/${this.tableId}/records`;
+        const url = `/apps/${this.baseId}/tables/${this.tableId}/records`;
         const params: any = {
           view_id: this.viewId,
           page_size: '500', // Max allowed by Lark
@@ -139,11 +306,9 @@ export class LarkService {
           params.page_token = pageToken;
         }
 
-        const response = await firstValueFrom(
-          this.httpService.get<LarkListRecordsResponse>(url, {
-            headers: this.getHeaders(),
-            params,
-          }),
+        const response = await this.axiosInstance.get<LarkListRecordsResponse>(
+          url,
+          { params },
         );
 
         if (response.data.code !== 0) {
@@ -184,6 +349,8 @@ export class LarkService {
     customers: KiotVietCustomer[],
   ): Promise<LarkRecord[]> {
     try {
+      await this.setupAuthHeaders();
+
       this.logger.log(`Creating ${customers.length} records in Lark Base`);
 
       const allCreatedRecords: LarkRecord[] = [];
@@ -198,13 +365,13 @@ export class LarkService {
           ),
         };
 
-        const url = `${this.baseUrl}/apps/${this.baseId}/tables/${this.tableId}/records/batch_create`;
+        const url = `/apps/${this.baseId}/tables/${this.tableId}/records/batch_create`;
 
-        const response = await firstValueFrom(
-          this.httpService.post<LarkBatchOperationResponse>(url, requestBody, {
-            headers: this.getHeaders(),
-          }),
-        );
+        const response =
+          await this.axiosInstance.post<LarkBatchOperationResponse>(
+            url,
+            requestBody,
+          );
 
         if (response.data.code !== 0) {
           throw new Error(`Lark API error: ${response.data.msg}`);
@@ -245,6 +412,8 @@ export class LarkService {
     updates: Array<{ recordId: string; customer: KiotVietCustomer }>,
   ): Promise<LarkRecord[]> {
     try {
+      await this.setupAuthHeaders();
+
       this.logger.log(`Updating ${updates.length} records in Lark Base`);
 
       const allUpdatedRecords: LarkRecord[] = [];
@@ -260,13 +429,13 @@ export class LarkService {
           })),
         };
 
-        const url = `${this.baseUrl}/apps/${this.baseId}/tables/${this.tableId}/records/batch_update`;
+        const url = `/apps/${this.baseId}/tables/${this.tableId}/records/batch_update`;
 
-        const response = await firstValueFrom(
-          this.httpService.post<LarkBatchOperationResponse>(url, requestBody, {
-            headers: this.getHeaders(),
-          }),
-        );
+        const response =
+          await this.axiosInstance.post<LarkBatchOperationResponse>(
+            url,
+            requestBody,
+          );
 
         if (response.data.code !== 0) {
           throw new Error(`Lark API error: ${response.data.msg}`);
@@ -306,7 +475,9 @@ export class LarkService {
     customerCode: string,
   ): Promise<LarkRecord | null> {
     try {
-      const url = `${this.baseUrl}/apps/${this.baseId}/tables/${this.tableId}/records/search`;
+      await this.setupAuthHeaders();
+
+      const url = `/apps/${this.baseId}/tables/${this.tableId}/records/search`;
 
       const requestBody = {
         field_names: [this.fieldIds.customerCode],
@@ -321,10 +492,9 @@ export class LarkService {
         },
       };
 
-      const response = await firstValueFrom(
-        this.httpService.post<LarkListRecordsResponse>(url, requestBody, {
-          headers: this.getHeaders(),
-        }),
+      const response = await this.axiosInstance.post<LarkListRecordsResponse>(
+        url,
+        requestBody,
       );
 
       if (response.data.code !== 0) {
@@ -347,6 +517,8 @@ export class LarkService {
    */
   async batchDeleteRecords(recordIds: string[]): Promise<void> {
     try {
+      await this.setupAuthHeaders();
+
       this.logger.log(`Deleting ${recordIds.length} records from Lark Base`);
 
       const batchSize = 100;
@@ -354,14 +526,10 @@ export class LarkService {
       for (let i = 0; i < recordIds.length; i += batchSize) {
         const batch = recordIds.slice(i, i + batchSize);
 
-        const url = `${this.baseUrl}/apps/${this.baseId}/tables/${this.tableId}/records/batch_delete`;
+        const url = `/apps/${this.baseId}/tables/${this.tableId}/records/batch_delete`;
         const requestBody = { records: batch };
 
-        const response = await firstValueFrom(
-          this.httpService.post(url, requestBody, {
-            headers: this.getHeaders(),
-          }),
-        );
+        const response = await this.axiosInstance.post(url, requestBody);
 
         if (response.data.code !== 0) {
           throw new Error(`Lark API error: ${response.data.msg}`);

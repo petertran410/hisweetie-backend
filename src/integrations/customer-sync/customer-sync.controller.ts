@@ -16,7 +16,10 @@ import { ApiTags, ApiOperation, ApiResponse, ApiHeader } from '@nestjs/swagger';
 import { Request } from 'express';
 import { CustomerSyncService, SyncStats } from './customer-sync.service';
 import { KiotVietService } from '../kiotviet/kiotviet.service';
+import { LarkService } from '../lark/lark.service';
 import { ConfigService } from '@nestjs/config';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 
 @ApiTags('Customer Sync')
 @Controller('customer-sync')
@@ -27,11 +30,19 @@ export class CustomerSyncController {
   constructor(
     private readonly customerSyncService: CustomerSyncService,
     private readonly kiotVietService: KiotVietService,
+    private readonly larkService: LarkService,
     private readonly configService: ConfigService,
+    private readonly httpService: HttpService,
   ) {
     this.webhookSecret =
       this.configService.get<string>('KIOTVIET_WEBHOOK_SECRET') ||
       'default-secret';
+
+    if (this.webhookSecret === 'default-secret') {
+      this.logger.warn(
+        'KIOTVIET_WEBHOOK_SECRET not configured. Using default secret.',
+      );
+    }
   }
 
   @Post('full-sync')
@@ -244,25 +255,125 @@ export class CustomerSyncController {
     }
   }
 
-  @Get('health')
+  @Get('test-kiotviet')
   @ApiOperation({
-    summary: 'Health check',
-    description: 'Kiểm tra sức khỏe của hệ thống sync',
+    summary: 'Test KiotViet connection',
+    description:
+      'Test if KiotViet credentials are working properly with OAuth2 authentication',
   })
-  async healthCheck() {
+  @ApiResponse({
+    status: 200,
+    description: 'KiotViet connection test result',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        status: { type: 'number' },
+        totalCustomers: { type: 'number' },
+        sampleCustomers: { type: 'array' },
+        message: { type: 'string' },
+      },
+    },
+  })
+  async testKiotVietConnection() {
     try {
-      // Kiểm tra kết nối KiotViet (có thể gọi một API đơn giản)
-      // Kiểm tra kết nối Lark Base
-      // Kiểm tra trạng thái service
+      this.logger.log('🧪 Testing KiotViet connection with OAuth2...');
 
-      const status = this.customerSyncService.getSyncStatus();
+      // Use the service's built-in test method
+      const result = await this.kiotVietService.testConnection();
+
+      if (result.success) {
+        this.logger.log('✅ KiotViet connection successful!');
+      } else {
+        this.logger.error('❌ KiotViet connection failed!');
+      }
+
+      return result;
+    } catch (error) {
+      this.logger.error('❌ KiotViet connection test failed:', error.message);
+
+      return {
+        success: false,
+        error: error.message,
+        message: 'KiotViet connection test failed!',
+        troubleshooting: {
+          checkCredentials:
+            'Verify KIOTVIET_RETAILER_NAME, KIOTVIET_CLIENT_ID, KIOTVIET_CLIENT_SECRET in .env',
+          checkNetwork:
+            'Ensure server can reach https://id.kiotviet.vn and https://public.kiotapi.com',
+          checkPermissions: 'Verify client has PublicApi.Access scope',
+        },
+      };
+    }
+  }
+
+  @Get('test-lark')
+  @ApiOperation({
+    summary: 'Test Lark Base connection',
+    description: 'Test if Lark credentials and Base access are working',
+  })
+  async testLarkConnection() {
+    try {
+      const accessToken = this.configService.get<string>('LARK_ACCESS_TOKEN');
+
+      if (!accessToken || accessToken === 'temp_disabled') {
+        return {
+          success: false,
+          message:
+            'LARK_ACCESS_TOKEN not configured. Please setup Lark credentials.',
+          setupRequired: true,
+        };
+      }
+
+      // Test by getting records from Lark Base
+      const records = await this.larkService.getAllRecords();
 
       return {
         success: true,
-        message: 'Customer sync service is healthy',
+        message: 'Lark Base connection successful!',
+        totalRecords: records.length,
+        baseConfig: {
+          baseId: 'Zythb8m0ba8a5WsgEMBlJtzCgpK',
+          tableId: 'tbl0XzMnEuod7YPA',
+          viewId: 'vewaSpQFOA',
+        },
+      };
+    } catch (error) {
+      this.logger.error('❌ Lark Base connection failed:', error.message);
+
+      return {
+        success: false,
+        error: error.message,
+        message: 'Lark Base connection test failed!',
+        setupRequired: true,
+      };
+    }
+  }
+
+  @Get('health')
+  @ApiOperation({
+    summary: 'Health check',
+    description:
+      'Kiểm tra sức khỏe của hệ thống sync với test cả KiotViet và Lark',
+  })
+  async healthCheck() {
+    try {
+      const status = this.customerSyncService.getSyncStatus();
+
+      // Quick test các services
+      const kiotVietTest = await this.testKiotVietConnection();
+      const larkTest = await this.testLarkConnection();
+
+      return {
+        success: true,
+        message: 'Customer sync service health check completed',
         data: {
           serviceStatus: 'healthy',
           syncStatus: status,
+          connections: {
+            kiotViet: kiotVietTest.success,
+            larkBase: larkTest.success,
+          },
           timestamp: new Date().toISOString(),
         },
       };

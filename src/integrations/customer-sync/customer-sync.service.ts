@@ -214,7 +214,7 @@ export class CustomerSyncService {
 
           // Remove from mappings
           larkRecords.forEach((record) => {
-            if (toDelete.includes(record.record_id)) {
+            if (record.record_id && toDelete.includes(record.record_id)) {
               const customerCode = record.fields['fldW0iwzXc']; // Mã Khách Hàng field
               if (customerCode) {
                 this.customerMappings.delete(customerCode);
@@ -254,7 +254,17 @@ export class CustomerSyncService {
   async performIncrementalSync(): Promise<SyncStats> {
     if (this.isRunning) {
       this.logger.warn('Sync is already running, skipping incremental sync');
-      return null;
+      return {
+        totalKiotVietCustomers: 0,
+        totalLarkRecords: 0,
+        created: 0,
+        updated: 0,
+        deleted: 0,
+        errors: 0,
+        startTime: new Date(),
+        endTime: new Date(),
+        duration: '0s',
+      };
     }
 
     this.isRunning = true;
@@ -319,7 +329,7 @@ export class CustomerSyncService {
               customer,
             ]);
 
-            if (createResult.length > 0) {
+            if (createResult.length > 0 && createResult[0].record_id) {
               stats.created++;
               this.customerMappings.set(customer.code, {
                 customerCode: customer.code,
@@ -415,7 +425,7 @@ export class CustomerSyncService {
         customer,
       ]);
 
-      if (createResult.length > 0) {
+      if (createResult.length > 0 && createResult[0].record_id) {
         this.customerMappings.set(customer.code, {
           customerCode: customer.code,
           recordId: createResult[0].record_id,
