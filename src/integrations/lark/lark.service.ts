@@ -1,5 +1,5 @@
 // THAY THẾ TOÀN BỘ file: src/integrations/lark/lark.service.ts
-// Fixed version với multi-domain support và improved error handling
+// Fixed version với đúng field mapping và complete CRUD operations
 
 import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -49,6 +49,10 @@ export interface LarkBatchUpdateRequest {
       [fieldId: string]: any;
     };
   }>;
+}
+
+export interface LarkBatchDeleteRequest {
+  records: string[]; // Array of record IDs
 }
 
 export interface LarkListRecordsResponse {
@@ -101,7 +105,7 @@ export interface LarkTablesResponse {
 export class LarkService {
   private readonly logger = new Logger(LarkService.name);
 
-  // 🔧 FIXED: Multiple domain support
+  // 🔧 Multiple domain support
   private readonly domains = {
     singapore: {
       baseUrl: 'https://open.sg.larksuite.com/open-apis/bitable/v1',
@@ -113,22 +117,32 @@ export class LarkService {
     },
   };
 
-  // 🔧 Current domain configuration
   private currentDomain = this.domains.global; // Start with global domain
 
-  // Lark Base configuration từ user
+  // Lark Base configuration
   private readonly baseId = 'Zythb8m0ba8a5WsgEMBlJtzCgpK';
   private readonly tableId = 'tbl0XzMnEuod7YPA';
   private readonly viewId = 'vewaSpQFOA';
 
-  // Field IDs từ Bảng Khách Hàng.txt
+  // 🔧 FIXED: Field mapping dựa trên Bảng Khách Hàng.txt và KiotViet API
   private readonly fieldIds = {
     id: 'fldGVtW2LC', // Id (Primary)
     customerCode: 'fldW0iwzXc', // Mã Khách Hàng
     customerName: 'fldPhKUyjp', // Tên Khách Hàng
     gender: 'fldXAZfN19', // Giới tính
+    company: 'fldMPpT7eR', // Công Ty (organization)
+    comments: 'fld9vIqRqB', // Ghi Chú (comments)
+    taxCode: 'fldoVQXwDF', // Mã Số Thuế (taxCode)
+    currentDebt: 'fldMc6hjE3', // Nợ Hiện Tại (debt)
+    totalSales: 'fldxQRtVgJ', // Tổng Bán (totalInvoiced)
+    // Có thể thêm các field khác nếu cần:
+    // phone: 'fld...',         // Số Điện Thoại
+    // email: 'fld...',         // Email
+    // address: 'fld...',       // Địa Chỉ
+    // birthDate: 'fld...',     // Ngày Sinh
   };
 
+  // 🔧 FIXED: Gender options cho Lark Select field
   private readonly genderOptions = {
     male: 'optyGBt7EU', // nam
     female: 'optq1lTuim', // nữ
@@ -141,7 +155,6 @@ export class LarkService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {
-    // Create axios instance for Lark API calls
     this.axiosInstance = axios.create({
       baseURL: this.currentDomain.baseUrl,
       timeout: 30000,
@@ -221,7 +234,7 @@ export class LarkService {
       }
 
       const tokenData = response.data;
-      const expiresAt = new Date(Date.now() + (tokenData.expire - 300) * 1000); // 5 minutes buffer
+      const expiresAt = new Date(Date.now() + (tokenData.expire - 300) * 1000);
 
       const storedToken: StoredLarkToken = {
         accessToken: tokenData.app_access_token!,
@@ -248,7 +261,7 @@ export class LarkService {
       if (retryWithOtherDomain && error.response?.status === 404) {
         this.logger.log(`🔄 404 error detected, trying other domain...`);
         this.switchDomain();
-        return this.obtainAppAccessToken(credentials, false); // Don't retry again
+        return this.obtainAppAccessToken(credentials, false);
       }
 
       throw new HttpException(
@@ -332,7 +345,6 @@ export class LarkService {
       const tables = response.data.data.items;
       this.logger.log(`✅ Found ${tables.length} tables in Base`);
 
-      // Check if our target table exists
       const targetTable = tables.find(
         (table) => table.table_id === this.tableId,
       );
@@ -525,15 +537,11 @@ export class LarkService {
     }
   }
 
-  /**
-   * Convert KiotViet customer to Lark record format
-   */
   private kiotVietToLarkRecord(customer: KiotVietCustomer): any {
-    // Determine gender option ID
-    let genderValue = null;
-    if (customer.gender === 'Male' || customer.gender === 'Nam') {
+    let genderValue: string | null = null;
+    if (customer.gender === true) {
       genderValue = this.genderOptions.male;
-    } else if (customer.gender === 'Female' || customer.gender === 'Nữ') {
+    } else if (customer.gender === false) {
       genderValue = this.genderOptions.female;
     }
 
@@ -543,6 +551,11 @@ export class LarkService {
         [this.fieldIds.customerCode]: customer.code || '',
         [this.fieldIds.customerName]: customer.name || '',
         [this.fieldIds.gender]: genderValue,
+        [this.fieldIds.company]: customer.organization || '', // Map organization to Công Ty
+        [this.fieldIds.comments]: customer.comments || '', // Map comments to Ghi Chú
+        [this.fieldIds.taxCode]: customer.taxCode || '', // Map taxCode to Mã Số Thuế
+        [this.fieldIds.currentDebt]: customer.debt || 0, // Map debt to Nợ Hiện Tại
+        [this.fieldIds.totalSales]: customer.totalInvoiced || 0, // Map totalInvoiced to Tổng Bán
       },
     };
   }
@@ -631,6 +644,46 @@ export class LarkService {
       );
       throw new HttpException(
         `Failed to update records in Lark: ${error.message}`,
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+  }
+
+  /**
+   * 🆕 ADDED: Batch delete records in Lark Base
+   */
+  async batchDeleteRecords(recordIds: string[]): Promise<void> {
+    try {
+      await this.setupAuthHeaders();
+
+      if (recordIds.length === 0) {
+        this.logger.log('No records to delete');
+        return;
+      }
+
+      const url = `/apps/${this.baseId}/tables/${this.tableId}/records/batch_delete`;
+      const requestBody: LarkBatchDeleteRequest = { records: recordIds };
+
+      this.logger.log(`Deleting ${recordIds.length} records from Lark Base`);
+
+      const response =
+        await this.axiosInstance.post<LarkBatchOperationResponse>(
+          url,
+          requestBody,
+        );
+
+      if (response.data.code !== 0) {
+        throw new Error(`Lark API error: ${response.data.msg}`);
+      }
+
+      this.logger.log(`✅ Deleted ${recordIds.length} records from Lark`);
+    } catch (error) {
+      this.logger.error(
+        'Failed to batch delete records in Lark:',
+        error.message,
+      );
+      throw new HttpException(
+        `Failed to delete records in Lark: ${error.message}`,
         HttpStatus.BAD_GATEWAY,
       );
     }

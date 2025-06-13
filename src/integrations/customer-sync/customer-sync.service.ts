@@ -368,36 +368,75 @@ export class CustomerSyncService {
     }
   }
 
+  private async processSingleCustomer(
+    customer: KiotVietCustomer,
+  ): Promise<void> {
+    try {
+      const mapping = this.customerMappings.get(customer.code);
+
+      if (mapping) {
+        // Customer exists, update it
+        this.logger.log(`Updating existing customer: ${customer.code}`);
+        await this.larkService.batchUpdateRecords([
+          { recordId: mapping.recordId, customer },
+        ]);
+
+        // Update mapping
+        mapping.lastSyncDate = new Date();
+      } else {
+        // Customer doesn't exist, create it
+        this.logger.log(`Creating new customer: ${customer.code}`);
+        const createdRecords = await this.larkService.batchCreateRecords([
+          customer,
+        ]);
+
+        if (createdRecords.length > 0 && createdRecords[0].record_id) {
+          // Add to mappings
+          this.customerMappings.set(customer.code, {
+            customerCode: customer.code,
+            recordId: createdRecords[0].record_id,
+            lastSyncDate: new Date(),
+          });
+        }
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to process customer ${customer.code}:`,
+        error.message,
+      );
+      throw error;
+    }
+  }
+
   /**
    * Handle KiotViet webhook for real-time updates
    */
   async handleCustomerWebhook(webhookData: any): Promise<void> {
+    this.logger.log('Processing customer webhook from KiotViet');
+
     try {
-      this.logger.log('Processing KiotViet customer webhook');
+      // Process webhook data using KiotViet service
+      const customers =
+        await this.kiotVietService.processCustomerWebhook(webhookData);
 
-      const { Action, Data } = webhookData.Notifications?.[0] || {};
-
-      if (!Data || !Array.isArray(Data)) {
-        this.logger.warn('Invalid webhook data format');
+      if (customers.length === 0) {
+        this.logger.log('No customer data found in webhook');
         return;
       }
 
-      for (const customer of Data as KiotVietCustomer[]) {
-        try {
-          if (Action === 'create' || Action === 'update') {
-            await this.syncSingleCustomer(customer);
-          } else if (Action === 'delete') {
-            await this.deleteSingleCustomer(customer.code);
-          }
-        } catch (error) {
-          this.logger.error(
-            `Error processing webhook for customer ${customer.code}:`,
-            error.message,
-          );
-        }
+      this.logger.log(`Processing ${customers.length} customers from webhook`);
+
+      // Process each customer individually
+      for (const customer of customers) {
+        await this.processSingleCustomer(customer);
       }
+
+      this.logger.log('✅ Webhook processing completed successfully');
     } catch (error) {
-      this.logger.error('Error processing customer webhook:', error.message);
+      this.logger.error(
+        '❌ Failed to process customer webhook:',
+        error.message,
+      );
       throw error;
     }
   }
@@ -490,28 +529,23 @@ export class CustomerSyncService {
       const mapping = this.customerMappings.get(customer.code);
 
       if (mapping) {
-        // Customer exists, check if needs update
+        // Customer exists, add to update list
         toUpdate.push({
           recordId: mapping.recordId,
           customer: customer,
         });
       } else {
-        // New customer
+        // Customer doesn't exist, add to create list
         toCreate.push(customer);
       }
     }
 
-    // Find records to delete (records in Lark but not in KiotViet)
+    // Find customers to delete (exist in Lark but not in KiotViet)
     const kiotVietCodes = new Set(kiotVietCustomers.map((c) => c.code));
 
-    for (const record of larkRecords) {
-      const customerCode = record.fields['fldW0iwzXc'];
-      if (
-        customerCode &&
-        !kiotVietCodes.has(customerCode) &&
-        record.record_id
-      ) {
-        toDelete.push(record.record_id);
+    for (const [customerCode, mapping] of this.customerMappings) {
+      if (!kiotVietCodes.has(customerCode)) {
+        toDelete.push(mapping.recordId);
       }
     }
 

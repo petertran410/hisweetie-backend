@@ -175,31 +175,32 @@ export class KiotVietService {
   }
 
   private async setupAuthHeaders(): Promise<void> {
-    const credentials = this.getCredentials();
     const accessToken = await this.getValidAccessToken();
-
-    this.axiosInstance.defaults.headers.common['Retailer'] =
-      credentials.retailerName;
     this.axiosInstance.defaults.headers.common['Authorization'] =
       `Bearer ${accessToken}`;
+    this.axiosInstance.defaults.headers.common['Retailer'] =
+      this.getCredentials().retailerName;
   }
 
   private async checkRateLimit(): Promise<void> {
-    const currentTime = Date.now();
-    const hourElapsed = currentTime - this.hourStartTime;
+    const now = Date.now();
 
-    if (hourElapsed >= 3600000) {
+    // Reset counter if an hour has passed
+    if (now - this.hourStartTime > 3600000) {
+      // 1 hour in milliseconds
       this.requestCount = 0;
-      this.hourStartTime = currentTime;
-      this.logger.log('Rate limit counter reset');
+      this.hourStartTime = now;
     }
 
-    if (this.requestCount >= this.maxRequestsPerHour) {
-      const waitTime = 3600000 - hourElapsed;
-      this.logger.warn(
-        `Rate limit reached. Waiting ${waitTime}ms before next request.`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, waitTime));
+    // Check if we're approaching the rate limit
+    if (this.requestCount >= this.maxRequestsPerHour - 10) {
+      const timeToWait = 3600000 - (now - this.hourStartTime) + 1000; // Wait until next hour + 1 second
+      this.logger.warn(`Rate limit approaching. Waiting ${timeToWait}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, timeToWait));
+
+      // Reset counters
+      this.requestCount = 0;
+      this.hourStartTime = Date.now();
     }
 
     this.requestCount++;
@@ -209,63 +210,54 @@ export class KiotVietService {
    * Get all customers from KiotViet with pagination
    */
   async getAllCustomers(): Promise<KiotVietCustomer[]> {
-    try {
-      this.logger.log('Starting to fetch all customers from KiotViet');
+    this.logger.log('Fetching all customers from KiotViet...');
 
-      await this.setupAuthHeaders();
+    const allCustomers: KiotVietCustomer[] = [];
+    let currentItem = 0;
+    const pageSize = 100; // Max page size
+    let hasMore = true;
 
-      const allCustomers: KiotVietCustomer[] = [];
-      let currentItem = 0;
-      const pageSize = 100; // Max allowed by KiotViet
-      let hasMoreData = true;
-
-      while (hasMoreData) {
+    while (hasMore) {
+      try {
         await this.checkRateLimit();
-
-        this.logger.log(
-          `Fetching customers page: currentItem=${currentItem}, pageSize=${pageSize}`,
-        );
+        await this.setupAuthHeaders();
 
         const params = {
           pageSize: pageSize.toString(),
           currentItem: currentItem.toString(),
-          orderBy: 'modifiedDate',
-          orderDirection: 'ASC',
         };
 
         const response = await this.axiosInstance.get<KiotVietCustomerResponse>(
           '/customers',
           { params },
         );
-        const { data, total } = response.data;
 
-        this.logger.log(`Fetched ${data.length} customers. Total: ${total}`);
+        const customers = response.data.data || [];
+        allCustomers.push(...customers);
 
-        allCustomers.push(...data);
-        currentItem += data.length;
+        this.logger.log(
+          `Fetched ${customers.length} customers. Total so far: ${allCustomers.length}/${response.data.total}`,
+        );
 
-        // Check if we have more data
-        hasMoreData = currentItem < total && data.length === pageSize;
-
-        // Add small delay to avoid rate limiting
-        if (hasMoreData) {
-          await this.delay(200);
-        }
+        // Check if we have more pages
+        currentItem += customers.length;
+        hasMore =
+          customers.length === pageSize && currentItem < response.data.total;
+      } catch (error) {
+        this.logger.error(
+          'Failed to fetch customers from KiotViet:',
+          error.message,
+        );
+        throw new Error(
+          `Failed to get customers from KiotViet: ${error.message}`,
+        );
       }
-
-      this.logger.log(
-        `Successfully fetched all ${allCustomers.length} customers from KiotViet`,
-      );
-      return allCustomers;
-    } catch (error) {
-      this.logger.error(
-        'Failed to fetch customers from KiotViet:',
-        error.message,
-      );
-      throw new BadRequestException(
-        `Failed to fetch customers from KiotViet: ${error.message}`,
-      );
     }
+
+    this.logger.log(
+      `✅ Successfully fetched ${allCustomers.length} customers from KiotViet`,
+    );
+    return allCustomers;
   }
 
   /**
@@ -303,56 +295,54 @@ export class KiotVietService {
   async getCustomersModifiedAfter(
     lastModifiedDate: string,
   ): Promise<KiotVietCustomer[]> {
-    try {
-      await this.setupAuthHeaders();
+    this.logger.log(`Fetching customers modified after: ${lastModifiedDate}`);
 
-      this.logger.log(`Fetching customers modified after: ${lastModifiedDate}`);
+    const allCustomers: KiotVietCustomer[] = [];
+    let currentItem = 0;
+    const pageSize = 100;
+    let hasMore = true;
 
-      const allCustomers: KiotVietCustomer[] = [];
-      let currentItem = 0;
-      const pageSize = 100;
-      let hasMoreData = true;
-
-      while (hasMoreData) {
+    while (hasMore) {
+      try {
         await this.checkRateLimit();
+        await this.setupAuthHeaders();
 
         const params = {
           pageSize: pageSize.toString(),
           currentItem: currentItem.toString(),
           lastModifiedFrom: lastModifiedDate,
-          orderBy: 'modifiedDate',
-          orderDirection: 'ASC',
         };
 
         const response = await this.axiosInstance.get<KiotVietCustomerResponse>(
           '/customers',
           { params },
         );
-        const { data, total } = response.data;
 
-        allCustomers.push(...data);
-        currentItem += data.length;
+        const customers = response.data.data || [];
+        allCustomers.push(...customers);
 
-        hasMoreData = currentItem < total && data.length === pageSize;
+        this.logger.log(
+          `Fetched ${customers.length} modified customers. Total so far: ${allCustomers.length}`,
+        );
 
-        if (hasMoreData) {
-          await this.delay(200);
-        }
+        // Check if we have more pages
+        currentItem += customers.length;
+        hasMore = customers.length === pageSize;
+      } catch (error) {
+        this.logger.error(
+          'Failed to fetch modified customers from KiotViet:',
+          error.message,
+        );
+        throw new Error(
+          `Failed to get modified customers from KiotViet: ${error.message}`,
+        );
       }
-
-      this.logger.log(
-        `Fetched ${allCustomers.length} customers modified after ${lastModifiedDate}`,
-      );
-      return allCustomers;
-    } catch (error) {
-      this.logger.error(
-        'Failed to fetch modified customers from KiotViet:',
-        error.message,
-      );
-      throw new BadRequestException(
-        `Failed to fetch modified customers: ${error.message}`,
-      );
     }
+
+    this.logger.log(
+      `✅ Successfully fetched ${allCustomers.length} modified customers from KiotViet`,
+    );
+    return allCustomers;
   }
 
   /**
@@ -360,13 +350,12 @@ export class KiotVietService {
    */
   async testConnection(): Promise<any> {
     try {
-      await this.setupAuthHeaders();
-      await this.checkRateLimit();
+      this.logger.log('🧪 Testing KiotViet connection...');
 
-      this.logger.log('Testing KiotViet connection...');
+      await this.setupAuthHeaders();
 
       const params = {
-        pageSize: '5',
+        pageSize: '5', // Small test batch
         currentItem: '0',
       };
 
@@ -375,14 +364,21 @@ export class KiotVietService {
         { params },
       );
 
+      const customers = response.data.data || [];
+
       this.logger.log('✅ KiotViet connection test successful!');
 
       return {
         success: true,
         status: response.status,
         totalCustomers: response.data.total || 0,
-        sampleCustomers: response.data.data?.slice(0, 2) || [],
+        sampleCustomers: customers.slice(0, 2), // Return first 2 as sample
         message: 'KiotViet connection test successful!',
+        credentials: {
+          retailerName: this.getCredentials().retailerName,
+          hasClientId: !!this.getCredentials().clientId,
+          hasClientSecret: !!this.getCredentials().clientSecret,
+        },
       };
     } catch (error) {
       this.logger.error('❌ KiotViet connection test failed:', error.message);
@@ -390,8 +386,15 @@ export class KiotVietService {
       return {
         success: false,
         error: error.message,
-        status: error.response?.status || 0,
         message: 'KiotViet connection test failed!',
+        troubleshooting: {
+          checkCredentials:
+            'Verify KIOTVIET_RETAILER_NAME, KIOTVIET_CLIENT_ID, KIOTVIET_CLIENT_SECRET in .env',
+          checkNetwork:
+            'Ensure server can reach https://id.kiotviet.vn and https://public.kiotapi.com',
+          checkPermissions: 'Verify client has PublicApi.Access scope',
+          checkTokenExpiry: 'Token may have expired, will auto-refresh',
+        },
       };
     }
   }
@@ -418,6 +421,47 @@ export class KiotVietService {
     } catch (error) {
       this.logger.error('Failed to validate webhook signature:', error.message);
       return false;
+    }
+  }
+
+  async processCustomerWebhook(
+    webhookData: KiotVietWebhookPayload,
+  ): Promise<KiotVietCustomer[]> {
+    this.logger.log('Processing KiotViet customer webhook data');
+
+    try {
+      const customers: KiotVietCustomer[] = [];
+
+      for (const notification of webhookData.Notifications) {
+        if (notification.Action === 'customer.update') {
+          // Convert webhook format to standard customer format
+          for (const customerData of notification.Data) {
+            const customer: KiotVietCustomer = {
+              id: customerData.id,
+              code: customerData.code,
+              name: customerData.name,
+              gender: customerData.gender,
+              birthDate: customerData.birthDate,
+              contactNumber: customerData.contactNumber,
+              address: customerData.address,
+              locationName: customerData.locationName,
+              email: customerData.email,
+              modifiedDate: customerData.modifiedDate,
+              type: customerData.type,
+              organization: customerData.organization,
+              taxCode: customerData.taxCode,
+              comments: customerData.comments,
+            };
+            customers.push(customer);
+          }
+        }
+      }
+
+      this.logger.log(`Processed ${customers.length} customers from webhook`);
+      return customers;
+    } catch (error) {
+      this.logger.error('Failed to process customer webhook:', error.message);
+      throw new Error(`Failed to process webhook: ${error.message}`);
     }
   }
 

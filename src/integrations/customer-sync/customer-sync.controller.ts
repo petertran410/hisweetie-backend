@@ -1,5 +1,5 @@
-// THAY THẾ HOẶC CẬP NHẬT file: src/integrations/customer-sync/customer-sync.controller.ts
-// Enhanced version với better debugging cho Lark connection
+// THAY THẾ TOÀN BỘ file: src/integrations/customer-sync/customer-sync.controller.ts
+// Fixed version với proper method calls và type safety
 
 import {
   Controller,
@@ -37,24 +37,47 @@ export class CustomerSyncController {
     return this.customerSyncService.getSyncStatus();
   }
 
-  @Post('sync/now')
+  @Post('sync/full')
   @ApiOperation({
-    summary: 'Trigger immediate sync',
+    summary: 'Trigger full sync',
     description:
-      'Manually trigger customer synchronization between KiotViet and Lark',
+      'Manually trigger full customer synchronization between KiotViet and Lark',
   })
-  async triggerSync() {
+  async triggerFullSync() {
     try {
-      this.logger.log('Manual sync triggered');
-      const result = await this.customerSyncService.performSync();
+      this.logger.log('Manual full sync triggered');
+      const result = await this.customerSyncService.performFullSync();
       return {
         success: true,
-        message: 'Sync completed successfully',
+        message: 'Full sync completed successfully',
         result,
       };
     } catch (error) {
-      this.logger.error('Manual sync failed:', error.message);
-      throw new BadRequestException(`Sync failed: ${error.message}`);
+      this.logger.error('Manual full sync failed:', error.message);
+      throw new BadRequestException(`Full sync failed: ${error.message}`);
+    }
+  }
+
+  @Post('sync/incremental')
+  @ApiOperation({
+    summary: 'Trigger incremental sync',
+    description:
+      'Manually trigger incremental customer synchronization between KiotViet and Lark',
+  })
+  async triggerIncrementalSync() {
+    try {
+      this.logger.log('Manual incremental sync triggered');
+      const result = await this.customerSyncService.performIncrementalSync();
+      return {
+        success: true,
+        message: 'Incremental sync completed successfully',
+        result,
+      };
+    } catch (error) {
+      this.logger.error('Manual incremental sync failed:', error.message);
+      throw new BadRequestException(
+        `Incremental sync failed: ${error.message}`,
+      );
     }
   }
 
@@ -247,7 +270,7 @@ export class CustomerSyncController {
         },
         lark: larkDiagnostics,
         sync: syncStatus,
-        recommendations: [],
+        recommendations: [] as string[], // 🔧 FIXED: Explicit type annotation
       };
 
       // Add recommendations based on diagnostics
@@ -300,9 +323,9 @@ export class CustomerSyncController {
       const results = {
         timestamp: new Date().toISOString(),
         steps: {
-          kiotViet: null,
-          lark: null,
-          sync: null,
+          kiotViet: null as any,
+          lark: null as any,
+          sync: null as any,
         },
         overall: {
           success: false,
@@ -314,7 +337,7 @@ export class CustomerSyncController {
       this.logger.log('📋 Step 1: Testing KiotViet connection...');
       results.steps.kiotViet = await this.kiotVietService.testConnection();
 
-      if (!results.steps.kiotViet.success) {
+      if (results.steps.kiotViet && !results.steps.kiotViet.success) {
         results.overall.message = 'KiotViet connection failed';
         return results;
       }
@@ -323,7 +346,7 @@ export class CustomerSyncController {
       this.logger.log('📊 Step 2: Testing Lark connection...');
       results.steps.lark = await this.larkService.testConnection();
 
-      if (!results.steps.lark.success) {
+      if (results.steps.lark && !results.steps.lark.success) {
         results.overall.message = 'Lark connection failed';
         return results;
       }
@@ -331,7 +354,7 @@ export class CustomerSyncController {
       // Step 3: Test actual sync (dry run)
       this.logger.log('🔄 Step 3: Testing sync process...');
       try {
-        const syncResult = await this.customerSyncService.performSync();
+        const syncResult = await this.customerSyncService.performFullSync();
         results.steps.sync = {
           success: true,
           result: syncResult,
