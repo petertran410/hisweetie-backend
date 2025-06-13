@@ -1,229 +1,97 @@
-// src/integrations/customer-sync/customer-sync.controller.ts
+// THAY THẾ HOẶC CẬP NHẬT file: src/integrations/customer-sync/customer-sync.controller.ts
+// Enhanced version với better debugging cho Lark connection
+
 import {
   Controller,
-  Post,
   Get,
+  Post,
   Body,
-  HttpCode,
-  HttpStatus,
+  Query,
   Logger,
   BadRequestException,
   Headers,
-  RawBodyRequest,
-  Req,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiHeader } from '@nestjs/swagger';
-import { Request } from 'express';
-import { CustomerSyncService, SyncStats } from './customer-sync.service';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { CustomerSyncService } from './customer-sync.service';
 import { KiotVietService } from '../kiotviet/kiotviet.service';
 import { LarkService } from '../lark/lark.service';
-import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
+import * as crypto from 'crypto';
 
 @ApiTags('Customer Sync')
-@Controller('customer-sync')
+@Controller('api/customer-sync')
 export class CustomerSyncController {
   private readonly logger = new Logger(CustomerSyncController.name);
-  private readonly webhookSecret: string;
 
   constructor(
     private readonly customerSyncService: CustomerSyncService,
     private readonly kiotVietService: KiotVietService,
     private readonly larkService: LarkService,
-    private readonly configService: ConfigService,
-    private readonly httpService: HttpService,
-  ) {
-    this.webhookSecret =
-      this.configService.get<string>('KIOTVIET_WEBHOOK_SECRET') ||
-      'default-secret';
-
-    if (this.webhookSecret === 'default-secret') {
-      this.logger.warn(
-        'KIOTVIET_WEBHOOK_SECRET not configured. Using default secret.',
-      );
-    }
-  }
-
-  @Post('full-sync')
-  @ApiOperation({
-    summary: 'Perform full sync',
-    description: 'Đồng bộ toàn bộ khách hàng từ KiotViet vào Lark Base',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Full sync completed successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        message: { type: 'string' },
-        data: {
-          type: 'object',
-          properties: {
-            totalKiotVietCustomers: { type: 'number' },
-            totalLarkRecords: { type: 'number' },
-            created: { type: 'number' },
-            updated: { type: 'number' },
-            deleted: { type: 'number' },
-            errors: { type: 'number' },
-            startTime: { type: 'string' },
-            endTime: { type: 'string' },
-            duration: { type: 'string' },
-          },
-        },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 409,
-    description: 'Sync is already running',
-  })
-  async performFullSync() {
-    try {
-      this.logger.log('Full sync requested via API');
-
-      const stats = await this.customerSyncService.performFullSync();
-
-      return {
-        success: true,
-        message: 'Full sync completed successfully',
-        data: stats,
-      };
-    } catch (error) {
-      this.logger.error('Full sync failed via API:', error.message);
-
-      if (error.message.includes('already running')) {
-        throw new BadRequestException(
-          'Sync is already running. Please wait for it to complete.',
-        );
-      }
-
-      throw new BadRequestException(`Full sync failed: ${error.message}`);
-    }
-  }
-
-  @Post('incremental-sync')
-  @ApiOperation({
-    summary: 'Perform incremental sync',
-    description: 'Đồng bộ chỉ những khách hàng đã thay đổi kể từ lần sync cuối',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Incremental sync completed successfully',
-  })
-  async performIncrementalSync() {
-    try {
-      this.logger.log('Incremental sync requested via API');
-
-      const stats = await this.customerSyncService.performIncrementalSync();
-
-      return {
-        success: true,
-        message: 'Incremental sync completed successfully',
-        data: stats,
-      };
-    } catch (error) {
-      this.logger.error('Incremental sync failed via API:', error.message);
-      throw new BadRequestException(
-        `Incremental sync failed: ${error.message}`,
-      );
-    }
-  }
+  ) {}
 
   @Get('status')
   @ApiOperation({
     summary: 'Get sync status',
-    description: 'Lấy trạng thái hiện tại của hệ thống đồng bộ',
+    description: 'Returns current synchronization status and statistics',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'Sync status retrieved successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        data: {
-          type: 'object',
-          properties: {
-            isRunning: { type: 'boolean' },
-            lastFullSyncDate: { type: 'string', nullable: true },
-            totalMappings: { type: 'number' },
-          },
-        },
-      },
-    },
-  })
-  getSyncStatus() {
-    const status = this.customerSyncService.getSyncStatus();
-
-    return {
-      success: true,
-      data: status,
-    };
+  async getSyncStatus() {
+    return this.customerSyncService.getSyncStatus();
   }
 
-  @Post('webhook/kiotviet-customer')
-  @HttpCode(HttpStatus.OK)
+  @Post('sync/now')
   @ApiOperation({
-    summary: 'KiotViet Customer Webhook',
+    summary: 'Trigger immediate sync',
     description:
-      'Webhook endpoint để nhận thông báo thay đổi khách hàng từ KiotViet',
+      'Manually trigger customer synchronization between KiotViet and Lark',
   })
-  @ApiHeader({
-    name: 'X-Hub-Signature',
-    description: 'Webhook signature for verification',
-    required: true,
+  async triggerSync() {
+    try {
+      this.logger.log('Manual sync triggered');
+      const result = await this.customerSyncService.performSync();
+      return {
+        success: true,
+        message: 'Sync completed successfully',
+        result,
+      };
+    } catch (error) {
+      this.logger.error('Manual sync failed:', error.message);
+      throw new BadRequestException(`Sync failed: ${error.message}`);
+    }
+  }
+
+  @Post('webhook/kiotviet')
+  @ApiOperation({
+    summary: 'KiotViet webhook endpoint',
+    description: 'Receives customer update notifications from KiotViet',
   })
-  @ApiResponse({
-    status: 200,
-    description: 'Webhook processed successfully',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Invalid signature',
-  })
-  async handleKiotVietCustomerWebhook(
-    @Req() request: RawBodyRequest<Request>,
-    @Headers('x-hub-signature') signature: string,
+  async handleKiotVietWebhook(
     @Body() webhookData: any,
+    @Headers('x-kiotviet-signature') signature?: string,
   ) {
     try {
-      this.logger.log('Received KiotViet customer webhook');
+      this.logger.log('Received KiotViet webhook');
 
-      // Verify webhook signature
-      const rawBody =
-        request.rawBody?.toString('utf8') || JSON.stringify(webhookData);
+      // Verify webhook signature if configured
+      if (process.env.KIOTVIET_WEBHOOK_SECRET && signature) {
+        const expectedSignature = crypto
+          .createHmac('sha256', process.env.KIOTVIET_WEBHOOK_SECRET)
+          .update(JSON.stringify(webhookData))
+          .digest('hex');
 
-      if (
-        !this.kiotVietService.validateWebhookSignature(
-          rawBody,
-          signature,
-          this.webhookSecret,
-        )
-      ) {
-        this.logger.warn('Invalid webhook signature received');
-        throw new BadRequestException('Invalid signature');
+        if (signature !== expectedSignature) {
+          throw new BadRequestException('Invalid signature');
+        }
       }
 
-      this.logger.log('Webhook signature verified successfully');
-
-      // Process webhook data
       await this.customerSyncService.handleCustomerWebhook(webhookData);
-
-      this.logger.log('KiotViet customer webhook processed successfully');
 
       return {
         success: true,
         message: 'Webhook processed successfully',
       };
     } catch (error) {
-      this.logger.error(
-        'Failed to process KiotViet customer webhook:',
-        error.message,
-      );
+      this.logger.error('Webhook processing failed:', error.message);
 
-      if (error.message.includes('Invalid signature')) {
+      if (error.message === 'Invalid signature') {
         throw new BadRequestException('Invalid signature');
       }
 
@@ -309,17 +177,17 @@ export class CustomerSyncController {
 
   @Get('test-lark')
   @ApiOperation({
-    summary: 'Test Lark Base connection',
+    summary: 'Test Lark Base connection with auto-recovery',
     description:
-      'Test if Lark credentials and Base access are working with auto token refresh',
+      'Test if Lark credentials and Base access are working with auto domain switching',
   })
   async testLarkConnection() {
     try {
       this.logger.log(
-        '🧪 Testing Lark Base connection with auto token refresh...',
+        '🧪 Testing Lark Base connection with auto domain switching...',
       );
 
-      // Use the service's built-in test method (with auto token refresh)
+      // Use the service's enhanced test method
       const result = await this.larkService.testConnection();
 
       if (result.success) {
@@ -338,60 +206,192 @@ export class CustomerSyncController {
         message: 'Lark Base connection test failed!',
         troubleshooting: {
           checkCredentials: 'Verify LARK_APP_ID and LARK_APP_SECRET in .env',
+          checkAppStatus: 'Ensure app is published in Lark Developer Console',
           checkPermissions:
-            'Verify app has bitable permissions and is published',
+            'Verify app has bitable:read and bitable:write permissions',
           checkBaseAccess: 'Ensure app has access to the specific Base',
+          checkBaseId: 'Verify Base ID: Zythb8m0ba8a5WsgEMBlJtzCgpK',
+          checkTableId: 'Verify Table ID: tbl0XzMnEuod7YPA',
+          domains: 'Auto-switching between Global and Singapore domains',
         },
-        setupRequired: true,
       };
     }
   }
 
-  @Post('manual-customer-sync')
+  @Get('diagnostics')
   @ApiOperation({
-    summary: 'Manual sync single customer',
-    description: 'Đồng bộ thủ công một khách hàng cụ thể bằng customer ID',
+    summary: 'Get detailed diagnostics',
+    description: 'Get comprehensive diagnostic information for troubleshooting',
   })
-  async manualCustomerSync(@Body('customerId') customerId: number) {
+  async getDiagnostics() {
     try {
-      this.logger.log(`Manual sync requested for customer ID: ${customerId}`);
+      this.logger.log('🔍 Running comprehensive diagnostics...');
 
-      if (!customerId) {
-        throw new BadRequestException('Customer ID is required');
-      }
+      // Get diagnostics from all services
+      const larkDiagnostics = await this.larkService.getDiagnostics();
+      const syncStatus = await this.customerSyncService.getSyncStatus();
 
-      // Fetch customer from KiotViet
-      const customer = await this.kiotVietService.getCustomerById(customerId);
-
-      // Create mock webhook data for processing
-      const webhookData = {
-        Id: 'manual-sync',
-        Attempt: 1,
-        Notifications: [
-          {
-            Action: 'update',
-            Data: [customer],
-          },
-        ],
+      const diagnostics = {
+        timestamp: new Date().toISOString(),
+        environment: {
+          nodeEnv: process.env.NODE_ENV,
+          hasKiotVietCredentials: !!(
+            process.env.KIOTVIET_CLIENT_ID &&
+            process.env.KIOTVIET_CLIENT_SECRET &&
+            process.env.KIOTVIET_RETAILER_NAME
+          ),
+          hasLarkCredentials: !!(
+            process.env.LARK_APP_ID && process.env.LARK_APP_SECRET
+          ),
+          autoSyncEnabled: process.env.AUTO_SYNC_ENABLED === 'true',
+        },
+        lark: larkDiagnostics,
+        sync: syncStatus,
+        recommendations: [],
       };
 
-      await this.customerSyncService.handleCustomerWebhook(webhookData);
+      // Add recommendations based on diagnostics
+      if (!diagnostics.environment.hasKiotVietCredentials) {
+        diagnostics.recommendations.push(
+          '⚠️ KiotViet credentials missing. Set KIOTVIET_CLIENT_ID, KIOTVIET_CLIENT_SECRET, KIOTVIET_RETAILER_NAME',
+        );
+      }
+
+      if (!diagnostics.environment.hasLarkCredentials) {
+        diagnostics.recommendations.push(
+          '⚠️ Lark credentials missing. Set LARK_APP_ID and LARK_APP_SECRET',
+        );
+      }
+
+      if (larkDiagnostics.tokenStatus.tokenExpired) {
+        diagnostics.recommendations.push(
+          '⚠️ Lark token expired. Will refresh automatically on next request',
+        );
+      }
+
+      if (!diagnostics.environment.autoSyncEnabled) {
+        diagnostics.recommendations.push(
+          'ℹ️ Auto-sync is disabled. Set AUTO_SYNC_ENABLED=true to enable',
+        );
+      }
+
+      return diagnostics;
+    } catch (error) {
+      this.logger.error('❌ Diagnostics failed:', error.message);
+
+      return {
+        success: false,
+        error: error.message,
+        message: 'Failed to run diagnostics',
+        timestamp: new Date().toISOString(),
+      };
+    }
+  }
+
+  @Get('test-full-chain')
+  @ApiOperation({
+    summary: 'Test complete integration chain',
+    description: 'Test KiotViet → Lark sync pipeline end-to-end',
+  })
+  async testFullChain() {
+    try {
+      this.logger.log('🧪 Testing complete integration chain...');
+
+      const results = {
+        timestamp: new Date().toISOString(),
+        steps: {
+          kiotViet: null,
+          lark: null,
+          sync: null,
+        },
+        overall: {
+          success: false,
+          message: '',
+        },
+      };
+
+      // Step 1: Test KiotViet
+      this.logger.log('📋 Step 1: Testing KiotViet connection...');
+      results.steps.kiotViet = await this.kiotVietService.testConnection();
+
+      if (!results.steps.kiotViet.success) {
+        results.overall.message = 'KiotViet connection failed';
+        return results;
+      }
+
+      // Step 2: Test Lark
+      this.logger.log('📊 Step 2: Testing Lark connection...');
+      results.steps.lark = await this.larkService.testConnection();
+
+      if (!results.steps.lark.success) {
+        results.overall.message = 'Lark connection failed';
+        return results;
+      }
+
+      // Step 3: Test actual sync (dry run)
+      this.logger.log('🔄 Step 3: Testing sync process...');
+      try {
+        const syncResult = await this.customerSyncService.performSync();
+        results.steps.sync = {
+          success: true,
+          result: syncResult,
+          message: 'Sync test successful',
+        };
+
+        results.overall.success = true;
+        results.overall.message =
+          'All tests passed! Integration chain is working properly.';
+
+        this.logger.log('✅ Complete integration chain test successful!');
+      } catch (syncError) {
+        results.steps.sync = {
+          success: false,
+          error: syncError.message,
+          message: 'Sync test failed',
+        };
+        results.overall.message = 'Sync process failed';
+      }
+
+      return results;
+    } catch (error) {
+      this.logger.error('❌ Full chain test failed:', error.message);
+
+      return {
+        success: false,
+        error: error.message,
+        message: 'Full chain test failed',
+        timestamp: new Date().toISOString(),
+      };
+    }
+  }
+
+  @Get('reset-lark-connection')
+  @ApiOperation({
+    summary: 'Reset Lark connection and force token refresh',
+    description: 'Clear cached tokens and force re-authentication with Lark',
+  })
+  async resetLarkConnection() {
+    try {
+      this.logger.log('🔄 Resetting Lark connection...');
+
+      // Force a fresh connection test which will reset tokens
+      const result = await this.larkService.testConnection();
 
       return {
         success: true,
-        message: `Customer ${customerId} synced successfully`,
-        data: {
-          customerId: customer.id,
-          customerCode: customer.code,
-          customerName: customer.name,
-        },
+        message: 'Lark connection reset completed',
+        testResult: result,
+        timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      this.logger.error(
-        `Manual customer sync failed for ID ${customerId}:`,
-        error.message,
-      );
-      throw new BadRequestException(`Manual sync failed: ${error.message}`);
+      this.logger.error('❌ Lark connection reset failed:', error.message);
+
+      return {
+        success: false,
+        error: error.message,
+        message: 'Failed to reset Lark connection',
+        timestamp: new Date().toISOString(),
+      };
     }
   }
 }

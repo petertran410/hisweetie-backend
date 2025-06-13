@@ -1,5 +1,5 @@
 // THAY THẾ TOÀN BỘ file: src/integrations/lark/lark.service.ts
-// Fixed version với Singapore domain và debug methods
+// Fixed version với multi-domain support và improved error handling
 
 import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -101,10 +101,20 @@ export interface LarkTablesResponse {
 export class LarkService {
   private readonly logger = new Logger(LarkService.name);
 
-  // 🚨 FIX: Sử dụng Singapore domain thay vì global domain
-  private readonly baseUrl =
-    'https://open.sg.larksuite.com/open-apis/bitable/v1';
-  private readonly authUrl = 'https://open.sg.larksuite.com/open-apis/auth/v3';
+  // 🔧 FIXED: Multiple domain support
+  private readonly domains = {
+    singapore: {
+      baseUrl: 'https://open.sg.larksuite.com/open-apis/bitable/v1',
+      authUrl: 'https://open.sg.larksuite.com/open-apis/auth/v3',
+    },
+    global: {
+      baseUrl: 'https://open.larksuite.com/open-apis/bitable/v1',
+      authUrl: 'https://open.larksuite.com/open-apis/auth/v3',
+    },
+  };
+
+  // 🔧 Current domain configuration
+  private currentDomain = this.domains.global; // Start with global domain
 
   // Lark Base configuration từ user
   private readonly baseId = 'Zythb8m0ba8a5WsgEMBlJtzCgpK';
@@ -133,13 +143,31 @@ export class LarkService {
   ) {
     // Create axios instance for Lark API calls
     this.axiosInstance = axios.create({
-      baseURL: this.baseUrl,
+      baseURL: this.currentDomain.baseUrl,
       timeout: 30000,
     });
 
     this.logger.log(
-      'Lark Service initialized with Singapore domain and auto token refresh',
+      `Lark Service initialized with domain: ${this.getCurrentDomainName()}`,
     );
+  }
+
+  private getCurrentDomainName(): string {
+    return this.currentDomain === this.domains.singapore
+      ? 'Singapore'
+      : 'Global';
+  }
+
+  private switchDomain(): void {
+    this.currentDomain =
+      this.currentDomain === this.domains.singapore
+        ? this.domains.global
+        : this.domains.singapore;
+
+    this.axiosInstance.defaults.baseURL = this.currentDomain.baseUrl;
+    this.currentToken = null; // Reset token when switching domains
+
+    this.logger.log(`🔄 Switched to ${this.getCurrentDomainName()} domain`);
   }
 
   private getLarkCredentials(): LarkCredentials {
@@ -148,8 +176,9 @@ export class LarkService {
 
     if (!appId || !appSecret) {
       throw new Error(
-        'Please set LARK_APP_ID and LARK_APP_SECRET environment variables. ' +
-          'You can get these from Lark Developer Console -> App Settings -> Credentials.',
+        'Please set LARK_APP_ID and LARK_APP_SECRET environment variables.\n' +
+          'You can get these from Lark Developer Console -> App Settings -> Credentials.\n' +
+          'Make sure your app is published and has bitable permissions.',
       );
     }
 
@@ -158,8 +187,11 @@ export class LarkService {
 
   private async obtainAppAccessToken(
     credentials: LarkCredentials,
+    retryWithOtherDomain = true,
   ): Promise<StoredLarkToken> {
-    this.logger.log('Obtaining new app access token from Lark Singapore');
+    this.logger.log(
+      `Obtaining app access token from Lark ${this.getCurrentDomainName()}`,
+    );
 
     try {
       const requestBody = {
@@ -167,17 +199,25 @@ export class LarkService {
         app_secret: credentials.appSecret,
       };
 
+      this.logger.debug(`🔑 Using credentials:`, {
+        app_id: credentials.appId,
+        domain: this.getCurrentDomainName(),
+        endpoint: `${this.currentDomain.authUrl}/app_access_token/internal`,
+      });
+
       const response: AxiosResponse<LarkTokenResponse> = await axios.post(
-        `${this.authUrl}/app_access_token/internal`,
+        `${this.currentDomain.authUrl}/app_access_token/internal`,
         requestBody,
         {
           headers: { 'Content-Type': 'application/json' },
-          timeout: 10000,
+          timeout: 15000,
         },
       );
 
       if (response.data.code !== 0) {
-        throw new Error(`Lark API error: ${response.data.msg}`);
+        throw new Error(
+          `Lark API error: ${response.data.msg} (code: ${response.data.code})`,
+        );
       }
 
       const tokenData = response.data;
@@ -190,14 +230,27 @@ export class LarkService {
       };
 
       this.logger.log(
-        `Successfully obtained Lark app access token. Expires at: ${expiresAt.toISOString()}`,
+        `✅ Successfully obtained Lark app access token from ${this.getCurrentDomainName()} domain. Expires at: ${expiresAt.toISOString()}`,
       );
       return storedToken;
     } catch (error) {
       this.logger.error(
-        'Failed to obtain Lark app access token:',
-        error.message,
+        `❌ Failed to obtain Lark app access token from ${this.getCurrentDomainName()} domain:`,
+        {
+          error: error.message,
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+        },
       );
+
+      // 🔄 Try other domain if this is first attempt and we get 404
+      if (retryWithOtherDomain && error.response?.status === 404) {
+        this.logger.log(`🔄 404 error detected, trying other domain...`);
+        this.switchDomain();
+        return this.obtainAppAccessToken(credentials, false); // Don't retry again
+      }
+
       throw new HttpException(
         `Failed to authenticate with Lark: ${error.message}`,
         HttpStatus.BAD_GATEWAY,
@@ -247,6 +300,7 @@ export class LarkService {
         success: true,
         baseInfo: response.data.data.app,
         message: 'Base access verified',
+        domain: this.getCurrentDomainName(),
       };
     } catch (error) {
       this.logger.error('❌ Failed to get Base info:', error.message);
@@ -254,6 +308,7 @@ export class LarkService {
         success: false,
         error: error.message,
         message: 'Failed to access Base',
+        domain: this.getCurrentDomainName(),
       };
     }
   }
@@ -287,8 +342,7 @@ export class LarkService {
         tables: tables,
         targetTableFound: !!targetTable,
         targetTable: targetTable,
-        expectedTableId: this.tableId,
-        message: `Found ${tables.length} tables in Base`,
+        domain: this.getCurrentDomainName(),
       };
     } catch (error) {
       this.logger.error('❌ Failed to list tables:', error.message);
@@ -296,45 +350,18 @@ export class LarkService {
         success: false,
         error: error.message,
         message: 'Failed to list tables',
+        domain: this.getCurrentDomainName(),
       };
     }
   }
 
   /**
-   * Convert KiotViet customer to Lark record format
-   */
-  private convertCustomerToLarkRecord(customer: KiotVietCustomer): any {
-    const fields: any = {};
-
-    // Map customer code
-    if (customer.code) {
-      fields[this.fieldIds.customerCode] = customer.code;
-    }
-
-    // Map customer name
-    if (customer.name) {
-      fields[this.fieldIds.customerName] = customer.name;
-    }
-
-    // Map gender (KiotViet: true=male, false=female, null/undefined=unknown)
-    if (customer.gender !== null && customer.gender !== undefined) {
-      fields[this.fieldIds.gender] = customer.gender
-        ? this.genderOptions.male
-        : this.genderOptions.female;
-    }
-
-    return { fields };
-  }
-
-  /**
-   * Test Lark connection with comprehensive diagnostics
+   * 🧪 TEST: Comprehensive connection test with auto-recovery
    */
   async testConnection(): Promise<any> {
     try {
-      await this.setupAuthHeaders();
-
       this.logger.log(
-        'Testing Lark Base connection with comprehensive diagnostics...',
+        `🧪 Testing Lark connection with ${this.getCurrentDomainName()} domain...`,
       );
 
       // Step 1: Test Base access
@@ -349,7 +376,10 @@ export class LarkService {
             checkAppPermissions:
               'Verify app has been granted access to this specific Base',
             checkBaseId: `Verify Base ID: ${this.baseId}`,
-            checkDomain: 'Using Singapore domain: open.sg.larksuite.com',
+            checkDomain: `Current domain: ${this.getCurrentDomainName()}`,
+            checkCredentials:
+              'Verify LARK_APP_ID and LARK_APP_SECRET are correct',
+            checkAppStatus: 'Ensure app is published in Lark Developer Console',
           },
         };
       }
@@ -408,7 +438,8 @@ export class LarkService {
           baseId: this.baseId,
           tableId: this.tableId,
           viewId: this.viewId,
-          domain: 'open.sg.larksuite.com',
+          domain: this.getCurrentDomainName(),
+          currentDomainUrl: this.currentDomain.baseUrl,
         },
         baseInfo: baseInfo.baseInfo,
         tableInfo: tablesInfo.targetTable,
@@ -428,6 +459,7 @@ export class LarkService {
           checkBaseAccess: 'Ensure app has access to the specific Base',
           checkTableId: `Verify Table ID: ${this.tableId}`,
           checkViewId: `Verify View ID: ${this.viewId}`,
+          currentDomain: this.getCurrentDomainName(),
         },
       };
     }
@@ -478,7 +510,7 @@ export class LarkService {
       }
 
       this.logger.log(
-        `Successfully fetched all ${allRecords.length} records from Lark Base`,
+        `✅ Fetched total ${allRecords.length} records from Lark`,
       );
       return allRecords;
     } catch (error) {
@@ -494,6 +526,28 @@ export class LarkService {
   }
 
   /**
+   * Convert KiotViet customer to Lark record format
+   */
+  private kiotVietToLarkRecord(customer: KiotVietCustomer): any {
+    // Determine gender option ID
+    let genderValue = null;
+    if (customer.gender === 'Male' || customer.gender === 'Nam') {
+      genderValue = this.genderOptions.male;
+    } else if (customer.gender === 'Female' || customer.gender === 'Nữ') {
+      genderValue = this.genderOptions.female;
+    }
+
+    return {
+      fields: {
+        [this.fieldIds.id]: customer.id.toString(),
+        [this.fieldIds.customerCode]: customer.code || '',
+        [this.fieldIds.customerName]: customer.name || '',
+        [this.fieldIds.gender]: genderValue,
+      },
+    };
+  }
+
+  /**
    * Batch create records in Lark Base
    */
   async batchCreateRecords(
@@ -502,51 +556,32 @@ export class LarkService {
     try {
       await this.setupAuthHeaders();
 
-      this.logger.log(`Creating ${customers.length} records in Lark Base`);
+      const records = customers.map((customer) =>
+        this.kiotVietToLarkRecord(customer),
+      );
 
-      const allCreatedRecords: LarkRecord[] = [];
-      const batchSize = 100; // Lark API limit
+      const url = `/apps/${this.baseId}/tables/${this.tableId}/records/batch_create`;
+      const requestBody: LarkBatchCreateRequest = { records };
 
-      for (let i = 0; i < customers.length; i += batchSize) {
-        const batch = customers.slice(i, i + batchSize);
+      this.logger.log(`Creating ${records.length} records in Lark Base`);
 
-        const requestBody: LarkBatchCreateRequest = {
-          records: batch.map((customer) =>
-            this.convertCustomerToLarkRecord(customer),
-          ),
-        };
-
-        const url = `/apps/${this.baseId}/tables/${this.tableId}/records/batch_create`;
-
-        const response =
-          await this.axiosInstance.post<LarkBatchOperationResponse>(
-            url,
-            requestBody,
-          );
-
-        if (response.data.code !== 0) {
-          throw new Error(`Lark API error: ${response.data.msg}`);
-        }
-
-        allCreatedRecords.push(...response.data.data.records);
-
-        this.logger.log(
-          `Created batch ${Math.floor(i / batchSize) + 1}: ${batch.length} records`,
+      const response =
+        await this.axiosInstance.post<LarkBatchOperationResponse>(
+          url,
+          requestBody,
         );
 
-        // Small delay to avoid rate limiting
-        if (i + batchSize < customers.length) {
-          await this.delay(200);
-        }
+      if (response.data.code !== 0) {
+        throw new Error(`Lark API error: ${response.data.msg}`);
       }
 
       this.logger.log(
-        `Successfully created ${allCreatedRecords.length} records in Lark Base`,
+        `✅ Created ${response.data.data.records.length} records in Lark`,
       );
-      return allCreatedRecords;
+      return response.data.data.records;
     } catch (error) {
       this.logger.error(
-        'Failed to create records in Lark Base:',
+        'Failed to batch create records in Lark:',
         error.message,
       );
       throw new HttpException(
@@ -565,51 +600,33 @@ export class LarkService {
     try {
       await this.setupAuthHeaders();
 
-      this.logger.log(`Updating ${updates.length} records in Lark Base`);
+      const records = updates.map((update) => ({
+        record_id: update.recordId,
+        ...this.kiotVietToLarkRecord(update.customer),
+      }));
 
-      const allUpdatedRecords: LarkRecord[] = [];
-      const batchSize = 100;
+      const url = `/apps/${this.baseId}/tables/${this.tableId}/records/batch_update`;
+      const requestBody: LarkBatchUpdateRequest = { records };
 
-      for (let i = 0; i < updates.length; i += batchSize) {
-        const batch = updates.slice(i, i + batchSize);
+      this.logger.log(`Updating ${records.length} records in Lark Base`);
 
-        const requestBody: LarkBatchUpdateRequest = {
-          records: batch.map((update) => ({
-            record_id: update.recordId,
-            ...this.convertCustomerToLarkRecord(update.customer),
-          })),
-        };
-
-        const url = `/apps/${this.baseId}/tables/${this.tableId}/records/batch_update`;
-
-        const response =
-          await this.axiosInstance.post<LarkBatchOperationResponse>(
-            url,
-            requestBody,
-          );
-
-        if (response.data.code !== 0) {
-          throw new Error(`Lark API error: ${response.data.msg}`);
-        }
-
-        allUpdatedRecords.push(...response.data.data.records);
-
-        this.logger.log(
-          `Updated batch ${Math.floor(i / batchSize) + 1}: ${batch.length} records`,
+      const response =
+        await this.axiosInstance.post<LarkBatchOperationResponse>(
+          url,
+          requestBody,
         );
 
-        if (i + batchSize < updates.length) {
-          await this.delay(200);
-        }
+      if (response.data.code !== 0) {
+        throw new Error(`Lark API error: ${response.data.msg}`);
       }
 
       this.logger.log(
-        `Successfully updated ${allUpdatedRecords.length} records in Lark Base`,
+        `✅ Updated ${response.data.data.records.length} records in Lark`,
       );
-      return allUpdatedRecords;
+      return response.data.data.records;
     } catch (error) {
       this.logger.error(
-        'Failed to update records in Lark Base:',
+        'Failed to batch update records in Lark:',
         error.message,
       );
       throw new HttpException(
@@ -620,97 +637,34 @@ export class LarkService {
   }
 
   /**
-   * Find record by customer code
+   * 🔧 DIAGNOSTIC: Get current configuration and status
    */
-  async findRecordByCustomerCode(
-    customerCode: string,
-  ): Promise<LarkRecord | null> {
-    try {
-      await this.setupAuthHeaders();
+  async getDiagnostics(): Promise<any> {
+    const credentials = this.getLarkCredentials();
 
-      const url = `/apps/${this.baseId}/tables/${this.tableId}/records/search`;
-
-      const requestBody = {
-        field_names: [this.fieldIds.customerCode],
-        filter: {
-          conditions: [
-            {
-              field_name: this.fieldIds.customerCode,
-              operator: 'is',
-              value: [customerCode],
-            },
-          ],
-        },
-      };
-
-      const response = await this.axiosInstance.post<LarkListRecordsResponse>(
-        url,
-        requestBody,
-      );
-
-      if (response.data.code !== 0) {
-        throw new Error(`Lark API error: ${response.data.msg}`);
-      }
-
-      const records = response.data.data.items;
-      return records.length > 0 ? records[0] : null;
-    } catch (error) {
-      this.logger.error(
-        `Failed to find record by customer code ${customerCode}:`,
-        error.message,
-      );
-      return null;
-    }
-  }
-
-  /**
-   * Delete records by record IDs
-   */
-  async batchDeleteRecords(recordIds: string[]): Promise<void> {
-    try {
-      await this.setupAuthHeaders();
-
-      this.logger.log(`Deleting ${recordIds.length} records from Lark Base`);
-
-      const batchSize = 100;
-
-      for (let i = 0; i < recordIds.length; i += batchSize) {
-        const batch = recordIds.slice(i, i + batchSize);
-
-        const url = `/apps/${this.baseId}/tables/${this.tableId}/records/batch_delete`;
-        const requestBody = { records: batch };
-
-        const response = await this.axiosInstance.post(url, requestBody);
-
-        if (response.data.code !== 0) {
-          throw new Error(`Lark API error: ${response.data.msg}`);
-        }
-
-        this.logger.log(
-          `Deleted batch ${Math.floor(i / batchSize) + 1}: ${batch.length} records`,
-        );
-
-        if (i + batchSize < recordIds.length) {
-          await this.delay(200);
-        }
-      }
-
-      this.logger.log(
-        `Successfully deleted ${recordIds.length} records from Lark Base`,
-      );
-    } catch (error) {
-      this.logger.error(
-        'Failed to delete records from Lark Base:',
-        error.message,
-      );
-      throw new HttpException(
-        `Failed to delete records from Lark: ${error.message}`,
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return {
+      configuration: {
+        baseId: this.baseId,
+        tableId: this.tableId,
+        viewId: this.viewId,
+        currentDomain: this.getCurrentDomainName(),
+        domainUrl: this.currentDomain.baseUrl,
+        authUrl: this.currentDomain.authUrl,
+      },
+      credentials: {
+        appId: credentials.appId,
+        hasAppSecret: !!credentials.appSecret,
+        appSecretLength: credentials.appSecret?.length || 0,
+      },
+      tokenStatus: {
+        hasToken: !!this.currentToken,
+        tokenExpired: this.currentToken
+          ? new Date() >= this.currentToken.expiresAt
+          : null,
+        expiresAt: this.currentToken?.expiresAt?.toISOString() || null,
+      },
+      fieldMapping: this.fieldIds,
+      genderOptions: this.genderOptions,
+    };
   }
 }
