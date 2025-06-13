@@ -1,4 +1,6 @@
-// src/integrations/lark/lark.service.ts - UPDATED with Auto Token Refresh
+// THAY THẾ TOÀN BỘ file: src/integrations/lark/lark.service.ts
+// Fixed version với Singapore domain và debug methods
+
 import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
@@ -68,18 +70,48 @@ export interface LarkBatchOperationResponse {
   };
 }
 
+export interface LarkBaseInfo {
+  code: number;
+  msg: string;
+  data: {
+    app: {
+      app_token: string;
+      name: string;
+      folder_token: string;
+      url: string;
+    };
+  };
+}
+
+export interface LarkTablesResponse {
+  code: number;
+  msg: string;
+  data: {
+    has_more: boolean;
+    page_token?: string;
+    items: Array<{
+      table_id: string;
+      name: string;
+      description?: string;
+    }>;
+  };
+}
+
 @Injectable()
 export class LarkService {
   private readonly logger = new Logger(LarkService.name);
-  private readonly baseUrl = 'https://open.larksuite.com/open-apis/bitable/v1';
-  private readonly authUrl = 'https://open.larksuite.com/open-apis/auth/v3';
 
-  // Lark Base configuration từ user (đã có trong code)
+  // 🚨 FIX: Sử dụng Singapore domain thay vì global domain
+  private readonly baseUrl =
+    'https://open.sg.larksuite.com/open-apis/bitable/v1';
+  private readonly authUrl = 'https://open.sg.larksuite.com/open-apis/auth/v3';
+
+  // Lark Base configuration từ user
   private readonly baseId = 'Zythb8m0ba8a5WsgEMBlJtzCgpK';
   private readonly tableId = 'tbl0XzMnEuod7YPA';
   private readonly viewId = 'vewaSpQFOA';
 
-  // Field IDs từ Bảng Khách Hàng.txt (đã có trong code)
+  // Field IDs từ Bảng Khách Hàng.txt
   private readonly fieldIds = {
     id: 'fldGVtW2LC', // Id (Primary)
     customerCode: 'fldW0iwzXc', // Mã Khách Hàng
@@ -105,7 +137,9 @@ export class LarkService {
       timeout: 30000,
     });
 
-    this.logger.log('Lark Service initialized with auto token refresh');
+    this.logger.log(
+      'Lark Service initialized with Singapore domain and auto token refresh',
+    );
   }
 
   private getLarkCredentials(): LarkCredentials {
@@ -125,7 +159,7 @@ export class LarkService {
   private async obtainAppAccessToken(
     credentials: LarkCredentials,
   ): Promise<StoredLarkToken> {
-    this.logger.log('Obtaining new app access token from Lark');
+    this.logger.log('Obtaining new app access token from Lark Singapore');
 
     try {
       const requestBody = {
@@ -192,12 +226,78 @@ export class LarkService {
       `Bearer ${accessToken}`;
   }
 
-  private getHeaders() {
-    // This method will be deprecated in favor of setupAuthHeaders
-    return {
-      Authorization: `Bearer ${this.currentToken?.accessToken || ''}`,
-      'Content-Type': 'application/json',
-    };
+  /**
+   * 🔧 DEBUG: Get Base info to verify access
+   */
+  async getBaseInfo(): Promise<any> {
+    try {
+      await this.setupAuthHeaders();
+
+      this.logger.log(`Getting Base info for: ${this.baseId}`);
+
+      const url = `/apps/${this.baseId}`;
+      const response = await this.axiosInstance.get<LarkBaseInfo>(url);
+
+      if (response.data.code !== 0) {
+        throw new Error(`Lark API error: ${response.data.msg}`);
+      }
+
+      this.logger.log('✅ Base info retrieved successfully');
+      return {
+        success: true,
+        baseInfo: response.data.data.app,
+        message: 'Base access verified',
+      };
+    } catch (error) {
+      this.logger.error('❌ Failed to get Base info:', error.message);
+      return {
+        success: false,
+        error: error.message,
+        message: 'Failed to access Base',
+      };
+    }
+  }
+
+  /**
+   * 🔧 DEBUG: List all tables in Base to verify table ID
+   */
+  async listTables(): Promise<any> {
+    try {
+      await this.setupAuthHeaders();
+
+      this.logger.log(`Listing all tables in Base: ${this.baseId}`);
+
+      const url = `/apps/${this.baseId}/tables`;
+      const response = await this.axiosInstance.get<LarkTablesResponse>(url);
+
+      if (response.data.code !== 0) {
+        throw new Error(`Lark API error: ${response.data.msg}`);
+      }
+
+      const tables = response.data.data.items;
+      this.logger.log(`✅ Found ${tables.length} tables in Base`);
+
+      // Check if our target table exists
+      const targetTable = tables.find(
+        (table) => table.table_id === this.tableId,
+      );
+
+      return {
+        success: true,
+        tables: tables,
+        targetTableFound: !!targetTable,
+        targetTable: targetTable,
+        expectedTableId: this.tableId,
+        message: `Found ${tables.length} tables in Base`,
+      };
+    } catch (error) {
+      this.logger.error('❌ Failed to list tables:', error.message);
+      return {
+        success: false,
+        error: error.message,
+        message: 'Failed to list tables',
+      };
+    }
   }
 
   /**
@@ -227,15 +327,60 @@ export class LarkService {
   }
 
   /**
-   * Test Lark connection with auto token refresh
+   * Test Lark connection with comprehensive diagnostics
    */
   async testConnection(): Promise<any> {
     try {
       await this.setupAuthHeaders();
 
-      this.logger.log('Testing Lark Base connection...');
+      this.logger.log(
+        'Testing Lark Base connection with comprehensive diagnostics...',
+      );
 
-      // Test by getting a few records
+      // Step 1: Test Base access
+      const baseInfo = await this.getBaseInfo();
+      if (!baseInfo.success) {
+        return {
+          success: false,
+          step: 'base_access',
+          error: baseInfo.error,
+          message: 'Cannot access Base. Check app permissions.',
+          troubleshooting: {
+            checkAppPermissions:
+              'Verify app has been granted access to this specific Base',
+            checkBaseId: `Verify Base ID: ${this.baseId}`,
+            checkDomain: 'Using Singapore domain: open.sg.larksuite.com',
+          },
+        };
+      }
+
+      // Step 2: List tables to verify table ID
+      const tablesInfo = await this.listTables();
+      if (!tablesInfo.success) {
+        return {
+          success: false,
+          step: 'list_tables',
+          error: tablesInfo.error,
+          message: 'Cannot list tables in Base',
+          baseInfo: baseInfo.baseInfo,
+        };
+      }
+
+      if (!tablesInfo.targetTableFound) {
+        return {
+          success: false,
+          step: 'table_verification',
+          message: `Table ID ${this.tableId} not found in Base`,
+          availableTables: tablesInfo.tables,
+          expectedTableId: this.tableId,
+          troubleshooting: {
+            checkTableId: 'Verify the correct Table ID from Lark Base URL',
+            availableTableIds: tablesInfo.tables.map((t) => t.table_id),
+          },
+        };
+      }
+
+      // Step 3: Test actual record access
       const url = `/apps/${this.baseId}/tables/${this.tableId}/records`;
       const params = {
         view_id: this.viewId,
@@ -263,20 +408,26 @@ export class LarkService {
           baseId: this.baseId,
           tableId: this.tableId,
           viewId: this.viewId,
+          domain: 'open.sg.larksuite.com',
         },
+        baseInfo: baseInfo.baseInfo,
+        tableInfo: tablesInfo.targetTable,
       };
     } catch (error) {
       this.logger.error('❌ Lark Base connection test failed:', error.message);
 
       return {
         success: false,
+        step: 'record_access',
         error: error.message,
         message: 'Lark Base connection test failed!',
         troubleshooting: {
           checkCredentials: 'Verify LARK_APP_ID and LARK_APP_SECRET in .env',
           checkPermissions:
-            'Verify app has bitable:app, bitable:record, bitable:table permissions',
+            'Verify app has bitable permissions and is published',
           checkBaseAccess: 'Ensure app has access to the specific Base',
+          checkTableId: `Verify Table ID: ${this.tableId}`,
+          checkViewId: `Verify View ID: ${this.viewId}`,
         },
       };
     }
