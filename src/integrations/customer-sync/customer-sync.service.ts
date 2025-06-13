@@ -512,9 +512,6 @@ export class CustomerSyncService {
     );
   }
 
-  /**
-   * Analyze changes between KiotViet and Lark data
-   */
   private async analyzeChanges(
     kiotVietCustomers: KiotVietCustomer[],
     larkRecords: LarkRecord[],

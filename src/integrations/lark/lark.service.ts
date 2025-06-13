@@ -119,12 +119,12 @@ export class LarkService {
 
   private currentDomain = this.domains.global; // Start with global domain
 
-  // Lark Base configuration
-  private readonly baseId = 'RgpFbW88iavwpNscUW2lQamOgtg';
-  private readonly tableId = 'tbljJpHW18wYyTkI';
-  private readonly viewId = 'vewIYQlgmu';
+  // 🔧 UPDATED: New Base configuration from user
+  private readonly baseId = 'RgpFbW88iavwpNscUW2lQamOgtg'; // NEW Base ID
+  private readonly tableId = 'tbljJpHW18wYyTkI'; // NEW Table ID
+  private readonly viewId = 'vewIYQlgmu'; // NEW View ID
 
-  // 🔧 COMPLETE Field mapping dựa trên Bảng Khách Hàng.txt và KiotViet API
+  // 🔧 UPDATED: Complete field mapping dựa trên structure mới từ user
   private readonly fieldIds = {
     // Basic Info
     id: 'fldr72pFQA', // Id (Primary)
@@ -155,10 +155,10 @@ export class LarkService {
     createdDate: 'fldpLPIYMY', // Ngày Tạo
   };
 
-  // 🔧 FIXED: Gender options cho Lark Select field
+  // 🔧 UPDATED: New gender options from user's structure
   private readonly genderOptions = {
-    male: 'opt6L47AiX', // nam
-    female: 'opt9betydF', // nữ
+    male: 'opt6L47AiX', // nam (NEW ID)
+    female: 'opt9betydF', // nữ (NEW ID)
   };
 
   private axiosInstance: AxiosInstance;
@@ -832,17 +832,23 @@ export class LarkService {
       },
       genderOptions: this.genderOptions,
       kiotVietMapping: {
-        description: 'KiotViet API fields → Lark Base fields',
+        description: 'KiotViet API fields → Lark Base fields (UPDATED)',
+        baseInfo: {
+          baseId: 'RgpFbW88iavwpNscUW2lQamOgtg',
+          tableId: 'tbljJpHW18wYyTkI',
+          viewId: 'vewIYQlgmu',
+          url: 'https://dieptra2018.sg.larksuite.com/base/RgpFbW88iavwpNscUW2lQamOgtg',
+        },
         mappings: {
           'id → fldr72pFQA': 'Id (Primary)',
           'code → fldcui5IWc': 'Mã Khách Hàng',
           'name → fld4D781z6': 'Tên Khách Hàng',
-          'gender (boolean) → fldYSkyalS': 'Giới tính (Select)',
+          'gender (boolean) → fldYSkyalS':
+            'Giới tính (Select: opt6L47AiX=nam, opt9betydF=nữ)',
           'contactNumber → fldRIayaYe': 'Số Điện Thoại',
           'email → fldoMPWPnC': 'Email',
           'address → fldBxav8oZ': 'Địa Chỉ',
           'locationName → flda8DECHt': 'Khu Vực',
-          'ward → fldJ4N74yG': 'Phường Xã',
           'organization → fld89HfsM9': 'Công Ty',
           'taxCode → fldiZjVChN': 'Mã Số Thuế',
           'comments → fldQ0XGZB2': 'Ghi Chú',
@@ -850,8 +856,8 @@ export class LarkService {
           'totalInvoiced → fld6sp6GiO': 'Tổng Bán',
           'totalPoint → fldtThsHzM': 'Điểm Hiện Tại',
           'retailerId → fldkvr7Rkz': 'Id Cửa Hàng',
-          'modifiedDate → fld2TV7kJd': 'Thời Gian Cập Nhật',
-          'createdDate → fldpLPIYMY': 'Ngày Tạo',
+          'modifiedDate → fld2TV7kJd': 'Thời Gian Cập Nhật (Date)',
+          'createdDate → fldpLPIYMY': 'Ngày Tạo (Date)',
         },
       },
     };
