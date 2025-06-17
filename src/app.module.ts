@@ -8,6 +8,7 @@ import { ProductModule } from './product/product.module';
 import { NewsModule } from './news/news.module';
 import { JobpostModule } from './jobpost/jobpost.module';
 import { FileModule } from './file/file.module';
+import { PaymentModule } from './payment/payment.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { FileModule } from './file/file.module';
     NewsModule,
     JobpostModule,
     FileModule,
+    PaymentModule,
   ],
   controllers: [],
   providers: [],
