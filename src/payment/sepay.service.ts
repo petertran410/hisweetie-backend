@@ -1,6 +1,7 @@
-// src/payment/sepay.service.ts - FIXED VERSION with proper SePay QR integration
+// src/payment/sepay.service.ts - ENHANCED VERSION
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
 
 interface SepayConfig {
   apiToken: string;
@@ -104,6 +105,38 @@ export class SepayService {
     this.logger.log(
       `SePay service initialized. API Token: ${!!this.config.apiToken}, Bank: ${this.config.bankName} (${this.config.bankAccount}), Webhook: ${this.config.webhookUrl}`,
     );
+
+    // Register webhook with SePay if configured
+    if (this.config.apiToken && this.config.webhookUrl) {
+      this.registerWebhook();
+    }
+  }
+
+  /**
+   * Register webhook with SePay
+   */
+  private async registerWebhook(): Promise<void> {
+    try {
+      this.logger.log('Registering webhook with SePay...');
+
+      const response = await axios.post(
+        'https://my.sepay.vn/userapi/webhooks/register',
+        {
+          url: this.config.webhookUrl,
+          secret: this.config.apiToken,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${this.config.apiToken}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      this.logger.log('Webhook registration response:', response.data);
+    } catch (error) {
+      this.logger.error('Failed to register webhook:', error.message);
+    }
   }
 
   /**
@@ -119,7 +152,7 @@ export class SepayService {
   }
 
   /**
-   * FIXED: Generate payment QR code using SePay's service (preferred)
+   * FIXED: Generate payment QR code with improved format
    */
   async createPayment(
     request: CreatePaymentRequest,
@@ -136,20 +169,17 @@ export class SepayService {
 
       this.logger.log(`Creating SePay payment for order: ${request.orderCode}`);
 
-      // CRITICAL: Format transfer content for SePay detection
-      // SePay REQUIRES "SEVQR" prefix to detect transactions
-      const transferContent = `SEVQR ${request.orderCode}`;
+      // ENHANCED: Use only order code to avoid user modifications
+      // This makes it easier for SePay to detect the payment
+      const transferContent = request.orderCode;
 
       this.logger.log(`Transfer content: "${transferContent}"`);
 
-      // FIXED: Use SePay's QR service instead of VietQR.io
+      // FIXED: Use SePay's QR service
       const bankCode = this.getBankCode(this.config.bankName);
 
-      // PRIMARY: SePay's own QR service (RECOMMENDED)
+      // Use SePay's QR service with simplified content
       const sepayQrUrl = `https://qr.sepay.vn/img?acc=${this.config.bankAccount}&bank=${bankCode}&amount=${request.amount}&des=${encodeURIComponent(transferContent)}&template=compact`;
-
-      // BACKUP: VietQR service (for compatibility)
-      const vietqrUrl = `https://img.vietqr.io/image/${bankCode}-${this.config.bankAccount}-compact.png?amount=${request.amount}&addInfo=${encodeURIComponent(transferContent)}&accountName=${encodeURIComponent(this.config.accountHolder)}`;
 
       // Generate QR data for manual processing
       const qrData = this.generatePaymentInfo({
@@ -162,15 +192,14 @@ export class SepayService {
       this.logger.log(
         `SePay QR generated successfully for order: ${request.orderCode}`,
       );
-      this.logger.log(`Primary QR URL (SePay): ${sepayQrUrl}`);
-      this.logger.log(`Backup QR URL (VietQR): ${vietqrUrl}`);
+      this.logger.log(`QR URL: ${sepayQrUrl}`);
 
       return {
         success: true,
         message: 'SePay payment created successfully',
         data: {
           orderCode: request.orderCode,
-          qrCodeUrl: sepayQrUrl, // Use SePay's service as primary
+          qrCodeUrl: sepayQrUrl,
           qrCodeData: qrData,
           bankInfo: {
             accountNumber: this.config.bankAccount,
@@ -184,43 +213,43 @@ export class SepayService {
         },
       };
     } catch (error) {
-      this.logger.error(
-        `SePay payment creation failed for ${request.orderCode}:`,
-        error.message,
-      );
-
+      this.logger.error('Failed to create payment:', error.message);
       return {
         success: false,
-        message: error.message || 'Failed to create SePay payment',
+        message: error.message || 'Failed to create payment',
         error: error.message,
       };
     }
   }
 
   /**
-   * Generate payment information text
+   * Generate payment info string
    */
-  private generatePaymentInfo(params: {
+  private generatePaymentInfo(data: {
     bankAccount: string;
     accountHolder: string;
     amount: number;
     transferContent: string;
   }): string {
-    const { bankAccount, accountHolder, amount, transferContent } = params;
-    return `Bank: ${this.config.bankName}\nAccount: ${bankAccount}\nHolder: ${accountHolder}\nAmount: ${amount.toLocaleString('vi-VN')} VND\nContent: ${transferContent}`;
+    return JSON.stringify({
+      bank: this.config.bankName,
+      account: data.bankAccount,
+      holder: data.accountHolder,
+      amount: data.amount,
+      content: data.transferContent,
+    });
   }
 
   /**
-   * UPDATED: Get bank code from bank name (SePay format)
+   * Get bank code for QR generation
    */
   private getBankCode(bankName: string): string {
-    // SePay bank code mapping (updated for SePay compatibility)
     const bankCodes: Record<string, string> = {
-      // Major Vietnamese banks (SePay format)
       Vietcombank: 'VCB',
+      VietinBank: 'CTG',
+      'VietinBank ': 'CTG',
       Techcombank: 'TCB',
       BIDV: 'BIDV',
-      VietinBank: 'VietinBank',
       Agribank: 'AGR',
       'MB Bank': 'MBBank',
       MBBank: 'MBBank',
@@ -302,7 +331,7 @@ export class SepayService {
   }
 
   /**
-   * ENHANCED: Process webhook payload from SePay with better detection
+   * ENHANCED: Process webhook payload with flexible pattern matching
    */
   processWebhookPayload(payload: SepayWebhookPayload): {
     success: boolean;
@@ -342,7 +371,7 @@ export class SepayService {
         return { success: false, message };
       }
 
-      // Try multiple methods to extract order code
+      // ENHANCED: Try multiple methods to extract order code
       let orderCode: string | null = null;
 
       // Method 1: Use SePay auto-detected code
@@ -351,7 +380,7 @@ export class SepayService {
         this.logger.log(`📌 Using SePay auto-detected code: ${orderCode}`);
       }
 
-      // Method 2: Extract from content if no code
+      // Method 2: Extract from content with flexible patterns
       if (!orderCode && payload.content) {
         orderCode = this.extractOrderCodeFromContent(payload.content);
         if (orderCode) {
@@ -396,50 +425,52 @@ export class SepayService {
   }
 
   /**
-   * ENHANCED: Extract order code from transfer content with better patterns
+   * ENHANCED: Extract order code with comprehensive pattern matching
    */
   private extractOrderCodeFromContent(content: string): string | null {
     try {
       this.logger.log(`🔍 Extracting order code from content: "${content}"`);
 
-      // Enhanced patterns to handle various formats
+      // ENHANCED: More flexible patterns to handle various user input formats
       const patterns = [
-        // Pattern 1: SEVQR at the beginning with order code
-        /SEVQR\s+(DT\d{8}[A-Z0-9]{6})/i,
-
-        // Pattern 2: SEVQR anywhere in content with order code
-        /SEVQR\s*(DT\d{8}[A-Z0-9]{6})/i,
-
-        // Pattern 3: Just the order code pattern anywhere
+        // Pattern 1: Just the order code format (most flexible)
         /(DT\d{8}[A-Z0-9]{6})/i,
 
-        // Pattern 4: Handle user-added prefixes (like phone numbers)
-        /\d+-\d+-SEVQR\s*(DT\d{8}[A-Z0-9]{6})/i,
+        // Pattern 2: SEVQR prefix anywhere with order code
+        /SEVQR\s*(DT\d{8}[A-Z0-9]{6})/i,
 
-        // Pattern 5: Order code at the end after SEVQR
-        /SEVQR.*?(DT\d{8}[A-Z0-9]{6})/i,
+        // Pattern 3: Order code after phone numbers
+        /\d+-\d+-.*?(DT\d{8}[A-Z0-9]{6})/i,
 
-        // Pattern 6: Just SEVQR followed by any alphanumeric code
-        /SEVQR\s*([A-Z0-9]{10,20})/i,
+        // Pattern 4: Order code with any prefix
+        /[\w\s-]*(DT\d{8}[A-Z0-9]{6})/i,
+
+        // Pattern 5: Look for DT followed by numbers and letters
+        /(DT[\dA-Z]{14})/i,
+
+        // Pattern 6: More general pattern for order codes
+        /\b(DT\w{14})\b/i,
       ];
 
       for (const pattern of patterns) {
         const match = content.match(pattern);
         if (match && match[1]) {
+          const extractedCode = match[1].toUpperCase();
           this.logger.log(
-            `✅ Order code found with pattern ${pattern}: ${match[1]}`,
+            `✅ Order code found with pattern ${pattern}: ${extractedCode}`,
           );
-          return match[1];
+          return extractedCode;
         }
       }
 
-      // Fallback: Try to find any code that looks like an order
-      const fallbackMatch = content.match(/([A-Z0-9]{12,20})/);
-      if (fallbackMatch) {
-        this.logger.warn(
-          `⚠️ Using fallback pattern, found: ${fallbackMatch[1]}`,
-        );
-        return fallbackMatch[1];
+      // Additional check: if content contains DT, try to extract it
+      if (content.includes('DT')) {
+        const dtIndex = content.indexOf('DT');
+        const possibleCode = content.substring(dtIndex, dtIndex + 16);
+        if (/^DT[\dA-Z]{14}$/i.test(possibleCode)) {
+          this.logger.log(`✅ Order code found by DT search: ${possibleCode}`);
+          return possibleCode.toUpperCase();
+        }
       }
 
       this.logger.warn(`❌ No order code found in content: "${content}"`);
@@ -447,6 +478,34 @@ export class SepayService {
     } catch (error) {
       this.logger.error('Error extracting order code:', error.message);
       return null;
+    }
+  }
+
+  /**
+   * Manual transaction check via SePay API
+   */
+  async checkTransactionStatus(orderCode: string): Promise<any> {
+    try {
+      if (!this.config.apiToken) {
+        throw new Error('SePay API token not configured');
+      }
+
+      this.logger.log(`Checking transaction status for order: ${orderCode}`);
+
+      const response = await axios.get(
+        `https://my.sepay.vn/userapi/transactions/search?keyword=${orderCode}`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.config.apiToken}`,
+          },
+        },
+      );
+
+      this.logger.log('Transaction search response:', response.data);
+      return response.data;
+    } catch (error) {
+      this.logger.error('Failed to check transaction status:', error.message);
+      throw error;
     }
   }
 
@@ -468,7 +527,8 @@ export class SepayService {
         return { success: false, message: 'SePay not configured' };
       }
 
-      const transferContent = `SEVQR ${orderCode}`; // Must include SEVQR prefix
+      // Use only order code for simpler detection
+      const transferContent = orderCode;
       const finalBankCode = bankCode || this.getBankCode(this.config.bankName);
 
       // Use SePay QR service
@@ -536,10 +596,19 @@ export class SepayService {
       };
     }
 
-    return {
-      success: true,
-      message: `SePay configured successfully. Bank: ${this.config.bankName} (${this.config.bankAccount}), Webhook: ${this.config.webhookUrl}`,
-    };
+    // Test API connection
+    try {
+      await this.checkTransactionStatus('TEST');
+      return {
+        success: true,
+        message: `SePay configured and connected successfully. Bank: ${this.config.bankName} (${this.config.bankAccount}), Webhook: ${this.config.webhookUrl}`,
+      };
+    } catch (error) {
+      return {
+        success: true,
+        message: `SePay configured. Bank: ${this.config.bankName} (${this.config.bankAccount}), Webhook: ${this.config.webhookUrl}. API connection test failed but configuration is valid.`,
+      };
+    }
   }
 
   /**

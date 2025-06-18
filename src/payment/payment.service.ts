@@ -321,9 +321,10 @@ export class PaymentService {
       this.logger.log(`Extracted order code: ${orderCode}`);
       this.logger.log(`Transaction amount: ${amount}`);
 
+      // FIXED: Use only sepay_order_code field
       const order = await this.prisma.product_order.findFirst({
         where: {
-          OR: [{ order_code: orderCode }, { sepay_order_code: orderCode }],
+          sepay_order_code: orderCode,
           payment_status: 'PENDING',
         },
       });
@@ -347,14 +348,17 @@ export class PaymentService {
         return result;
       }
 
+      // FIXED: Handle bigint and null properly
+      const orderAmount = order.total_amount ? Number(order.total_amount) : 0;
+
       // Verify the amount matches
-      if (Math.abs(order.total_amount - amount) > 1) {
+      if (Math.abs(orderAmount - amount) > 1) {
         this.logger.error(
-          `Amount mismatch for order ${orderCode}: expected ${order.total_amount}, got ${amount}`,
+          `Amount mismatch for order ${orderCode}: expected ${orderAmount}, got ${amount}`,
         );
         const result = {
           success: false,
-          message: `Amount mismatch: expected ${order.total_amount}, received ${amount}`,
+          message: `Amount mismatch: expected ${orderAmount}, received ${amount}`,
         };
 
         // Update webhook log with error
@@ -375,6 +379,7 @@ export class PaymentService {
         data: {
           payment_status: 'SUCCESS',
           status: 'SUCCESS',
+          transaction_id: transactionId, // Store the SePay transaction ID
           payment_gateway_response: {
             ...((order.payment_gateway_response as any) || {}),
             sepayTransactionId: transactionId,
@@ -468,7 +473,7 @@ export class PaymentService {
         success: true,
         status,
         orderId,
-        amount: Number(order.total_amount || order.price),
+        amount: Number(order.total_amount || order.price || 0), // Handle bigint and null
         paymentMethod: order.payment_method || order.type || 'UNKNOWN',
         transactionId: order.transaction_id || undefined, // Convert null to undefined
         sepayOrderCode: order.sepay_order_code || undefined, // Convert null to undefined
@@ -514,7 +519,7 @@ export class PaymentService {
         sepayOrderCode: order.sepay_order_code || undefined, // Convert null to undefined
         paymentStatus: order.payment_status,
         status: order.status,
-        amount: Number(order.total_amount || order.price),
+        amount: Number(order.total_amount || order.price || 0), // Handle bigint and null
         createdDate: order.created_date,
       }));
     } catch (error) {

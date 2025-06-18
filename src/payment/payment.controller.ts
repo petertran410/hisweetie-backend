@@ -73,6 +73,100 @@ export class PaymentController {
     }
   }
 
+  @Post('debug/check-transaction/:orderCode')
+  @ApiOperation({
+    summary: 'Manually check transaction status from SePay',
+    description: 'Checks SePay API for transactions matching the order code',
+  })
+  async checkTransaction(@Param('orderCode') orderCode: string) {
+    try {
+      this.logger.log(
+        `🔍 Manually checking transaction for order: ${orderCode}`,
+      );
+
+      const result = await this.sepayService.checkTransactionStatus(orderCode);
+
+      return {
+        success: true,
+        orderCode,
+        transactions: result,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      this.logger.error(`❌ Failed to check transaction:`, error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  @Post('debug/process-manual-webhook')
+  @ApiOperation({
+    summary: 'Manually process a transaction as webhook',
+    description: 'Manually creates a webhook payload from transaction data',
+  })
+  async processManualWebhook(
+    @Body()
+    data: {
+      orderId: string;
+      transactionId: number;
+      amount: number;
+      content: string;
+      gateway: string;
+    },
+  ) {
+    try {
+      this.logger.log(
+        `🔧 Manually processing webhook for order: ${data.orderId}`,
+      );
+
+      // Find the order
+      const order = await this.paymentService.getPaymentStatus(data.orderId);
+
+      // Create webhook payload
+      const webhookPayload: SepayWebhookPayload = {
+        id: data.transactionId,
+        gateway: data.gateway || 'Manual',
+        transactionDate: new Date()
+          .toISOString()
+          .replace('T', ' ')
+          .slice(0, 19),
+        accountNumber: process.env.SEPAY_BANK_ACCOUNT || '',
+        code: order.sepayOrderCode || null,
+        content: data.content,
+        transferType: 'in',
+        transferAmount: data.amount,
+        accumulated: 0,
+        subAccount: null,
+        referenceCode: `MANUAL${data.transactionId}`,
+        description: data.content,
+      };
+
+      // Process the webhook
+      const headers = {
+        authorization: `Apikey ${process.env.SEPAY_API_TOKEN}`,
+      };
+
+      const result = await this.paymentService.handleSepayWebhook(
+        webhookPayload,
+        headers,
+      );
+
+      return {
+        success: result.success,
+        message: result.message,
+        processedData: webhookPayload,
+      };
+    } catch (error) {
+      this.logger.error(`❌ Manual webhook processing failed:`, error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
   @Get('debug/webhook-logs')
   @ApiOperation({
     summary: 'Get recent webhook logs',
