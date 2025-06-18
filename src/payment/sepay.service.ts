@@ -312,10 +312,7 @@ export class SepayService {
     message: string;
   } {
     try {
-      this.logger.log(
-        `Processing SePay webhook for transaction ID: ${payload.id}`,
-      );
-      this.logger.log(`Transaction details:`, {
+      this.logger.log('📦 Processing SePay webhook payload:', {
         id: payload.id,
         gateway: payload.gateway,
         transferType: payload.transferType,
@@ -323,6 +320,7 @@ export class SepayService {
         content: payload.content,
         code: payload.code,
         accountNumber: payload.accountNumber,
+        transactionDate: payload.transactionDate,
       });
 
       // Validate webhook payload
@@ -344,22 +342,41 @@ export class SepayService {
         return { success: false, message };
       }
 
-      // ENHANCED: Extract order code with multiple methods
-      let orderCode = payload.code; // SePay auto-detected code
+      // Try multiple methods to extract order code
+      let orderCode: string | null = null;
 
-      if (!orderCode) {
-        // Fallback: extract from content
+      // Method 1: Use SePay auto-detected code
+      if (payload.code) {
+        orderCode = payload.code;
+        this.logger.log(`📌 Using SePay auto-detected code: ${orderCode}`);
+      }
+
+      // Method 2: Extract from content if no code
+      if (!orderCode && payload.content) {
         orderCode = this.extractOrderCodeFromContent(payload.content);
+        if (orderCode) {
+          this.logger.log(`📌 Extracted order code from content: ${orderCode}`);
+        }
+      }
+
+      // Method 3: Try description field as fallback
+      if (!orderCode && payload.description) {
+        orderCode = this.extractOrderCodeFromContent(payload.description);
+        if (orderCode) {
+          this.logger.log(
+            `📌 Extracted order code from description: ${orderCode}`,
+          );
+        }
       }
 
       if (!orderCode) {
-        const message = `No order code found in transaction. Content: "${payload.content}", Code: "${payload.code}"`;
-        this.logger.warn(message);
+        const message = `No order code found in transaction. Content: "${payload.content}", Code: "${payload.code}", Description: "${payload.description}"`;
+        this.logger.error('❌ ' + message);
         return { success: false, message };
       }
 
       this.logger.log(
-        `Successfully extracted order code: ${orderCode} from transaction ${payload.id}`,
+        `✅ Successfully processed webhook for order: ${orderCode}`,
       );
 
       return {
@@ -370,7 +387,7 @@ export class SepayService {
         message: 'Webhook processed successfully',
       };
     } catch (error) {
-      this.logger.error('Error processing webhook payload:', error.message);
+      this.logger.error('❌ Error processing webhook payload:', error.message);
       return {
         success: false,
         message: `Webhook processing failed: ${error.message}`,
@@ -383,60 +400,49 @@ export class SepayService {
    */
   private extractOrderCodeFromContent(content: string): string | null {
     try {
-      this.logger.log(`Extracting order code from content: "${content}"`);
+      this.logger.log(`🔍 Extracting order code from content: "${content}"`);
 
-      // Enhanced patterns for SePay order code detection with SEVQR prefix
+      // Enhanced patterns to handle various formats
       const patterns = [
-        /SEVQR\s+(DT\d{8}[A-Z0-9]{6})/i, // SEVQR DT12345678ABC123 (required format)
-        /SEVQR\s+(DT[A-Z0-9]{14})/i, // SEVQR DT + 14 alphanumeric
-        /SEVQR\s+(DT\d{8}[A-Z]{6})/i, // SEVQR DT + 8 digits + 6 letters
-        /SEVQR\s+(DT\w{8,})/i, // SEVQR DT followed by 8+ word characters
-        /DT\d{8}[A-Z0-9]{6}/i, // Fallback: DT12345678ABC123 (without SEVQR)
-        /DT[A-Z0-9]{14}/i, // Fallback: DT + 14 alphanumeric
-        /\bDT\w{8,}\b/i, // Fallback: DT followed by 8+ word characters
+        // Pattern 1: SEVQR at the beginning with order code
+        /SEVQR\s+(DT\d{8}[A-Z0-9]{6})/i,
+
+        // Pattern 2: SEVQR anywhere in content with order code
+        /SEVQR\s*(DT\d{8}[A-Z0-9]{6})/i,
+
+        // Pattern 3: Just the order code pattern anywhere
+        /(DT\d{8}[A-Z0-9]{6})/i,
+
+        // Pattern 4: Handle user-added prefixes (like phone numbers)
+        /\d+-\d+-SEVQR\s*(DT\d{8}[A-Z0-9]{6})/i,
+
+        // Pattern 5: Order code at the end after SEVQR
+        /SEVQR.*?(DT\d{8}[A-Z0-9]{6})/i,
+
+        // Pattern 6: Just SEVQR followed by any alphanumeric code
+        /SEVQR\s*([A-Z0-9]{10,20})/i,
       ];
 
       for (const pattern of patterns) {
         const match = content.match(pattern);
-        if (match) {
-          // If pattern has capture group (SEVQR patterns), use captured group
-          // Otherwise use the full match (fallback patterns)
-          const extracted = (match[1] || match[0]).toUpperCase();
+        if (match && match[1]) {
           this.logger.log(
-            `Order code extracted using pattern ${pattern}: ${extracted}`,
+            `✅ Order code found with pattern ${pattern}: ${match[1]}`,
           );
-          return extracted;
+          return match[1];
         }
       }
 
-      // Final fallback: look for SEVQR followed by order code, then any word starting with DT
-      const words = content.split(/\s+/);
-
-      // First, look for SEVQR pattern
-      for (let i = 0; i < words.length - 1; i++) {
-        if (
-          words[i].toUpperCase() === 'SEVQR' &&
-          words[i + 1].toUpperCase().startsWith('DT') &&
-          words[i + 1].length > 3
-        ) {
-          const extracted = words[i + 1].toUpperCase();
-          this.logger.log(
-            `Order code extracted from SEVQR pattern: ${extracted}`,
-          );
-          return extracted;
-        }
+      // Fallback: Try to find any code that looks like an order
+      const fallbackMatch = content.match(/([A-Z0-9]{12,20})/);
+      if (fallbackMatch) {
+        this.logger.warn(
+          `⚠️ Using fallback pattern, found: ${fallbackMatch[1]}`,
+        );
+        return fallbackMatch[1];
       }
 
-      // Then fallback to any word starting with DT
-      for (const word of words) {
-        if (word.toUpperCase().startsWith('DT') && word.length > 3) {
-          const extracted = word.toUpperCase();
-          this.logger.log(`Order code extracted from words: ${extracted}`);
-          return extracted;
-        }
-      }
-
-      this.logger.warn(`No order code pattern found in content: "${content}"`);
+      this.logger.warn(`❌ No order code found in content: "${content}"`);
       return null;
     } catch (error) {
       this.logger.error('Error extracting order code:', error.message);

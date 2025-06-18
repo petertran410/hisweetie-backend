@@ -26,8 +26,8 @@ model application {
   status       String?    @db.VarChar(255)
   applicant_id BigInt?
   job_post_id  BigInt?
-  job_post     job_post?  @relation(fields: [job_post_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   applicant    applicant? @relation(fields: [applicant_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  job_post     job_post?  @relation(fields: [job_post_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([job_post_id])
   @@index([applicant_id])
@@ -43,16 +43,16 @@ model authority {
 }
 
 model category {
-  id           BigInt    @id @default(autoincrement())
-  created_by   String?   @db.VarChar(255)
-  created_date DateTime? @db.DateTime(6)
-  updated_by   String?   @db.VarChar(255)
-  updated_date DateTime? @db.DateTime(6)
-  description  String?   @db.LongText
-  images_url   String?   @db.LongText
-  name         String?   @db.VarChar(255)
-  parent_id    BigInt?
-  priority     Int?
+  id                 BigInt               @id @default(autoincrement())
+  created_by         String?              @db.VarChar(255)
+  created_date       DateTime?            @db.DateTime(6)
+  updated_by         String?              @db.VarChar(255)
+  updated_date       DateTime?            @db.DateTime(6)
+  description        String?              @db.LongText
+  images_url         String?              @db.LongText
+  name               String?              @db.VarChar(255)
+  parent_id          BigInt?
+  priority           Int?
   product_categories product_categories[]
 }
 
@@ -103,11 +103,11 @@ model news {
 }
 
 model orders {
-  id               BigInt    @id @default(autoincrement())
-  created_by       String?   @db.VarChar(255)
-  created_date     DateTime? @db.DateTime(6)
-  updated_by       String?   @db.VarChar(255)
-  updated_date     DateTime? @db.DateTime(6)
+  id               BigInt         @id @default(autoincrement())
+  created_by       String?        @db.VarChar(255)
+  created_date     DateTime?      @db.DateTime(6)
+  updated_by       String?        @db.VarChar(255)
+  updated_date     DateTime?      @db.DateTime(6)
   quantity         Int?
   product_id       BigInt?
   product_order_id BigInt?
@@ -119,28 +119,30 @@ model orders {
 }
 
 model product {
-  id                  BigInt    @id @default(autoincrement())
-  created_by          String?   @db.VarChar(255)
-  created_date        DateTime? @db.DateTime(6)
-  updated_by          String?   @db.VarChar(255)
-  updated_date        DateTime? @db.DateTime(6)
-  description         String?   @db.LongText
-  general_description String?   @db.LongText
-  images_url          String?   @db.LongText
-  instruction         String?   @db.LongText
-  is_featured         Boolean?  @db.Bit(1)
+  id                  BigInt               @id @default(autoincrement())
+  created_by          String?              @db.VarChar(255)
+  created_date        DateTime?            @db.DateTime(6)
+  updated_by          String?              @db.VarChar(255)
+  updated_date        DateTime?            @db.DateTime(6)
+  description         String?              @db.LongText
+  general_description String?              @db.LongText
+  images_url          String?              @db.LongText
+  instruction         String?              @db.LongText
+  is_featured         Boolean?             @db.Bit(1)
+  is_visible          Boolean?             @default(dbgenerated("b'0'")) @db.Bit(1)
   price               BigInt?
   quantity            BigInt?
   rate                Float?
-  title               String?   @db.VarChar(255)
-  type                String?   @db.VarChar(255)
-  featured_thumbnail  String?   @db.VarChar(255)
-  recipe_thumbnail    String?   @db.VarChar(255)
+  title               String?              @db.VarChar(255)
+  type                String?              @db.VarChar(255)
+  featured_thumbnail  String?              @db.VarChar(255)
+  recipe_thumbnail    String?              @db.VarChar(255)
   orders              orders[]
   product_categories  product_categories[]
   review              review[]
 
   @@index([updated_date])
+  @@index([is_visible])
 }
 
 model product_categories {
@@ -170,9 +172,6 @@ model product_order {
   status                   String?        @db.VarChar(255)
   type                     String?        @db.VarChar(255)
   user_id                  String?        @db.VarChar(255)
-  user                     user?          @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  
-  // Payment-related fields - KEEP THESE
   payment_method           String?        @default("COD") @db.VarChar(50)
   payment_status           String?        @default("PENDING") @db.VarChar(50)
   transaction_id           String?        @db.VarChar(255)
@@ -184,9 +183,9 @@ model product_order {
   shipping_cost            BigInt?        @default(0)
   subtotal                 BigInt?        @default(0)
   total_amount             BigInt?        @default(0)
-  
-  orders             orders[]
-  payment_logs       payment_logs[]
+  orders                   orders[]
+  payment_logs             payment_logs[]
+  user                     user?          @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([user_id])
   @@index([payment_method])
@@ -205,8 +204,8 @@ model review {
   rate         Int?
   product_id   BigInt?
   user_id      String?   @db.VarChar(255)
-  user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   product      product?  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([user_id])
   @@index([product_id])
@@ -289,4 +288,14 @@ model payment_webhooks {
   @@index([status])
   @@index([transaction_id])
   @@index([webhook_id])
+}
+
+model webhook_log {
+  id            Int       @id @default(autoincrement())
+  webhook_type  String    @db.VarChar(50)
+  payload       Json
+  headers       Json?
+  processed     Boolean?  @default(false)
+  error_message String?   @db.Text
+  created_at    DateTime? @default(now()) @db.Timestamp(0)
 }

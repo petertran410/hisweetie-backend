@@ -28,11 +28,13 @@ import {
   ApiHeader,
 } from '@nestjs/swagger';
 import { Request } from 'express';
+import { PrismaClient } from '@prisma/client';
 
 @ApiTags('payment')
 @Controller('payment')
 export class PaymentController {
   private readonly logger = new Logger(PaymentController.name);
+  prisma = new PrismaClient();
 
   constructor(
     private readonly paymentService: PaymentService,
@@ -68,6 +70,69 @@ export class PaymentController {
       throw new BadRequestException(
         `Payment creation failed: ${error.message}`,
       );
+    }
+  }
+
+  @Get('debug/webhook-logs')
+  @ApiOperation({
+    summary: 'Get recent webhook logs',
+    description: 'Returns recent webhook processing logs for debugging',
+  })
+  async getWebhookLogs(@Query('limit') limit: number = 10) {
+    try {
+      // This will help you see what webhooks were received
+      const logs = await this.prisma.webhook_log.findMany({
+        take: limit,
+        orderBy: { created_at: 'desc' },
+        select: {
+          id: true,
+          webhook_type: true,
+          payload: true,
+          headers: true,
+          processed: true,
+          error_message: true,
+          created_at: true,
+        },
+      });
+
+      return {
+        success: true,
+        logs: logs,
+        count: logs.length,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+        logs: [],
+      };
+    }
+  }
+
+  @Post('debug/test-order-extraction')
+  @ApiOperation({
+    summary: 'Test order code extraction',
+    description:
+      'Test the order code extraction logic with different content formats',
+  })
+  async testOrderExtraction(@Body() data: { content: string }) {
+    try {
+      const extractedCode = this.sepayService['extractOrderCodeFromContent'](
+        data.content,
+      );
+
+      return {
+        success: true,
+        input: data.content,
+        extractedCode: extractedCode,
+        found: !!extractedCode,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+      };
     }
   }
 

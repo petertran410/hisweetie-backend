@@ -201,9 +201,6 @@ export class PaymentService {
     }
   }
 
-  /**
-   * Handle SePay webhook - FIXED VERSION with proper null checks
-   */
   async handleSepayWebhook(
     webhookData: SepayWebhookPayload,
     headers: Record<string, string>,
@@ -211,8 +208,23 @@ export class PaymentService {
     success: boolean;
     message: string;
   }> {
+    let webhookLogId: number | null = null;
+
     try {
-      this.logger.log(`=== PROCESSING SEPAY WEBHOOK ===`);
+      // Log the incoming webhook first
+      const webhookLog = await this.prisma.webhook_log.create({
+        data: {
+          webhook_type: 'sepay',
+          payload: webhookData as any,
+          headers: headers as any,
+          processed: false,
+        },
+      });
+      webhookLogId = webhookLog.id;
+
+      this.logger.log(
+        `=== PROCESSING SEPAY WEBHOOK [Log ID: ${webhookLogId}] ===`,
+      );
       this.logger.log(`Transaction ID: ${webhookData.id}`);
       this.logger.log(`Gateway: ${webhookData.gateway}`);
       this.logger.log(`Amount: ${webhookData.transferAmount}`);
@@ -225,10 +237,21 @@ export class PaymentService {
 
       if (!isValidSignature) {
         this.logger.error('Invalid webhook signature');
-        return {
+        const result = {
           success: false,
           message: 'Invalid webhook signature',
         };
+
+        // Update webhook log with error
+        await this.prisma.webhook_log.update({
+          where: { id: webhookLogId },
+          data: {
+            processed: false,
+            error_message: result.message,
+          },
+        });
+
+        return result;
       }
 
       // Process webhook payload
@@ -239,154 +262,160 @@ export class PaymentService {
         this.logger.error(
           `Webhook payload processing failed: ${webhookResult.message}`,
         );
+
+        // Update webhook log with error
+        await this.prisma.webhook_log.update({
+          where: { id: webhookLogId },
+          data: {
+            processed: false,
+            error_message: webhookResult.message,
+          },
+        });
+
         return {
           success: false,
           message: webhookResult.message,
         };
       }
 
-      // FIXED: Proper null checks for extracted data
       const { orderCode, amount, transactionId } = webhookResult;
 
       if (!orderCode) {
         this.logger.error('No order code extracted from webhook');
-        return {
+        const result = {
           success: false,
           message: 'No order code found in webhook',
         };
+
+        // Update webhook log with error
+        await this.prisma.webhook_log.update({
+          where: { id: webhookLogId },
+          data: {
+            processed: false,
+            error_message: result.message,
+          },
+        });
+
+        return result;
       }
 
       if (!amount || !transactionId) {
         this.logger.error('Missing amount or transaction ID in webhook');
-        return {
+        const result = {
           success: false,
           message: 'Missing required webhook data',
         };
+
+        // Update webhook log with error
+        await this.prisma.webhook_log.update({
+          where: { id: webhookLogId },
+          data: {
+            processed: false,
+            error_message: result.message,
+          },
+        });
+
+        return result;
       }
 
       this.logger.log(`Extracted order code: ${orderCode}`);
       this.logger.log(`Transaction amount: ${amount}`);
 
-      // FIXED: Find order by sepay_order_code field with proper null handling
-      let order = await this.prisma.product_order.findFirst({
+      const order = await this.prisma.product_order.findFirst({
         where: {
-          sepay_order_code: orderCode,
-          payment_status: {
-            in: ['PENDING', 'PROCESSING'],
-          },
+          OR: [{ order_code: orderCode }, { sepay_order_code: orderCode }],
+          payment_status: 'PENDING',
         },
       });
 
       if (!order) {
-        this.logger.error(`Order not found for SePay order code: ${orderCode}`);
-
-        // Try to find by database ID for backward compatibility
-        const orderById = await this.prisma.product_order.findFirst({
-          where: {
-            id: BigInt(orderCode),
-            payment_status: {
-              in: ['PENDING', 'PROCESSING'],
-            },
-          },
-        });
-
-        if (!orderById) {
-          this.logger.error(`Order not found by ID either: ${orderCode}`);
-          return {
-            success: false,
-            message: 'Order not found',
-          };
-        }
-
-        this.logger.log(`Found order by database ID: ${orderById.id}`);
-
-        // Update this order to use the proper sepay_order_code
-        await this.prisma.product_order.update({
-          where: { id: orderById.id },
-          data: {
-            sepay_order_code: orderCode,
-          },
-        });
-
-        // Use the found order
-        order = orderById;
-      }
-
-      // FIXED: order is now guaranteed to be non-null due to the checks above
-      this.logger.log(
-        `Found order: ID ${order.id}, Amount ${order.total_amount || order.price}`,
-      );
-
-      // Verify amount matches (use total_amount if available, fallback to price)
-      const orderAmount = Number(order.total_amount || order.price);
-      if (orderAmount !== amount) {
-        this.logger.error(
-          `Amount mismatch for order ${orderCode}: expected ${orderAmount}, received ${amount}`,
-        );
-        return {
+        this.logger.error(`No pending order found for code: ${orderCode}`);
+        const result = {
           success: false,
-          message: 'Amount mismatch',
+          message: `No pending order found for code: ${orderCode}`,
         };
+
+        // Update webhook log with error
+        await this.prisma.webhook_log.update({
+          where: { id: webhookLogId },
+          data: {
+            processed: false,
+            error_message: result.message,
+          },
+        });
+
+        return result;
       }
 
-      // Check for duplicate transaction
-      const existingTransaction = await this.prisma.product_order.findFirst({
-        where: {
-          transaction_id: transactionId,
-        },
-      });
-
-      if (existingTransaction) {
-        this.logger.warn(
-          `Duplicate webhook for transaction ${transactionId}, order ${orderCode}`,
+      // Verify the amount matches
+      if (Math.abs(order.total_amount - amount) > 1) {
+        this.logger.error(
+          `Amount mismatch for order ${orderCode}: expected ${order.total_amount}, got ${amount}`,
         );
-        return {
-          success: true,
-          message: 'Duplicate webhook - already processed',
+        const result = {
+          success: false,
+          message: `Amount mismatch: expected ${order.total_amount}, received ${amount}`,
         };
+
+        // Update webhook log with error
+        await this.prisma.webhook_log.update({
+          where: { id: webhookLogId },
+          data: {
+            processed: false,
+            error_message: result.message,
+          },
+        });
+
+        return result;
       }
 
-      // Update order status to paid
+      // Update order status to SUCCESS
       await this.prisma.product_order.update({
         where: { id: order.id },
         data: {
-          status: 'PAID',
-          payment_status: 'PAID',
-          transaction_id: transactionId,
-          payment_completed_at: new Date(webhookData.transactionDate),
+          payment_status: 'SUCCESS',
+          status: 'SUCCESS',
+          payment_gateway_response: {
+            ...((order.payment_gateway_response as any) || {}),
+            sepayTransactionId: transactionId,
+            webhookData: webhookData,
+            processedAt: new Date().toISOString(),
+          } as any,
           updated_date: new Date(),
         },
       });
 
-      // Log the payment in payment_logs
-      await this.prisma.payment_logs.create({
+      this.logger.log(`✅ Order ${orderCode} payment confirmed successfully`);
+
+      // Success - update webhook log
+      await this.prisma.webhook_log.update({
+        where: { id: webhookLogId },
         data: {
-          order_id: order.id,
-          event_type: 'PAYMENT_SUCCESS',
-          event_data: {
-            transactionId: transactionId,
-            amount: amount,
-            gateway: webhookData.gateway,
-            orderCode: orderCode,
-          },
-          sepay_response: webhookData as any,
-          created_date: new Date(),
+          processed: true,
         },
       });
 
-      this.logger.log(
-        `✅ Order ${orderCode} marked as paid. Transaction ID: ${transactionId}`,
-      );
-
       return {
         success: true,
-        message: 'Payment processed successfully',
+        message: `Payment confirmed for order ${orderCode}`,
       };
     } catch (error) {
       this.logger.error('Failed to process SePay webhook:', error.message);
+
+      // Log the error in webhook log
+      if (webhookLogId) {
+        await this.prisma.webhook_log.update({
+          where: { id: webhookLogId },
+          data: {
+            processed: false,
+            error_message: error.message,
+          },
+        });
+      }
+
       return {
         success: false,
-        message: `Webhook processing failed: ${error.message}`,
+        message: error.message,
       };
     }
   }
