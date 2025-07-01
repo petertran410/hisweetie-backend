@@ -3,12 +3,17 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { CategoryService } from './category.service';
 import { CategoryController } from './category.controller';
-import { KiotVietService } from '../product/kiotviet.service';
+import { KiotVietService } from '../product/kiotviet.service'; // Import from product module
 
 @Module({
-  imports: [ConfigModule], // Import ConfigModule for KiotVietService
+  imports: [
+    ConfigModule, // For KiotVietService credentials
+  ],
   controllers: [CategoryController],
-  providers: [CategoryService, KiotVietService], // Add KiotVietService as provider
-  exports: [CategoryService, KiotVietService], // Export for use in other modules
+  providers: [
+    CategoryService,
+    KiotVietService, // Provide KiotVietService locally
+  ],
+  exports: [CategoryService], // Export CategoryService
 })
 export class CategoryModule {}

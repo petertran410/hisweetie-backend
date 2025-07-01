@@ -1,4 +1,3 @@
-// src/product/dto/create-product.dto.ts - ENHANCED
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsString,
@@ -27,15 +26,6 @@ export class CreateProductDto {
   description?: string;
 
   @ApiProperty({
-    description: 'Price',
-    example: '123456.0',
-    required: false,
-  })
-  @IsOptional()
-  @IsString()
-  kiotviet_price?: number;
-
-  @ApiProperty({
     description: 'General description',
     required: false,
   })
@@ -50,6 +40,15 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   instruction?: string;
+
+  @ApiProperty({
+    description: 'Product type',
+    example: 'SAN_PHAM',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  type?: string;
 
   @ApiProperty({
     description: 'Custom category ID',
@@ -69,7 +68,7 @@ export class CreateProductDto {
     required: false,
   })
   @IsOptional()
-  kiotviet_images?: string | string[];
+  images_url?: string | string[];
 
   @ApiProperty({
     description: 'Featured thumbnail URL',
@@ -104,4 +103,24 @@ export class CreateProductDto {
   @IsOptional()
   @IsBoolean()
   is_visible?: boolean;
+
+  // FIXED: Add KiotViet fields for manual entry if needed
+  @ApiProperty({
+    description: 'KiotViet price (if creating KiotViet-compatible product)',
+    example: 35000,
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  kiotviet_price?: number;
+
+  @ApiProperty({
+    description: 'Product rating (1-5)',
+    example: 4.5,
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber()
+  rate?: number;
 }

@@ -1,4 +1,3 @@
-// src/product/dto/product-search.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsOptional,

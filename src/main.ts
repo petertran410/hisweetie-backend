@@ -1,29 +1,49 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import * as express from 'express';
+import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { BigIntInterceptor } from './interceptors/bigint-interceptor';
-import { join } from 'path';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { cors: true });
+  const app = await NestFactory.create(AppModule);
 
-  const fs = require('fs');
-  const uploadDir = join(process.cwd(), 'public', 'img');
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-  }
+  // Enable CORS
+  app.enableCors({
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
 
-  app.use(express.static('.'));
+  // Global validation pipe
+  app.useGlobalPipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    }),
+  );
 
-  app.useGlobalInterceptors(new BigIntInterceptor());
+  // Swagger documentation
+  const config = new DocumentBuilder()
+    .setTitle('DiepTra API')
+    .setDescription('DiepTra API with KiotViet Integration')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .build();
 
-  const config = new DocumentBuilder().setTitle('Swagger-APIs-dieptra').build();
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('/swagger', app, document);
+  SwaggerModule.setup('api/docs', app, document);
 
-  app.setGlobalPrefix('api');
+  const port = process.env.PORT || 8084;
+  await app.listen(port);
 
-  await app.listen(process.env.PORT ?? 8084);
+  console.log(`🚀 Server running on http://localhost:${port}`);
+  console.log(`📚 API Docs available at http://localhost:${port}/api/docs`);
+  console.log(
+    `🔧 KiotViet Integration: ${process.env.KIOTVIET_CLIENT_ID ? 'Configured' : 'Not Configured'}`,
+  );
 }
-bootstrap();
+
+bootstrap().catch((error) => {
+  console.error('❌ Failed to start server:', error);
+  process.exit(1);
+});

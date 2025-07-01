@@ -1,4 +1,4 @@
-// src/product/product.module.ts - ENHANCED WITH KIOTVIET
+// src/product/product.module.ts - FINAL VERSION
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ProductService } from './product.service';

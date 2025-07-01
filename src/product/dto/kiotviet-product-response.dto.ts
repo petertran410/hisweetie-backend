@@ -1,9 +1,8 @@
-// src/product/dto/kiotviet-product-response.dto.ts
 export interface KiotVietProductResponseDto {
   id: string;
   title: string;
   description?: string;
-  price: number | null;
+  price: number | null; // FIXED: This will be kiotviet_price
   imagesUrl: string[];
   type?: string;
   isFromKiotViet: boolean;

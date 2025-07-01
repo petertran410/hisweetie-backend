@@ -1,5 +1,4 @@
-import { kiotviet_category } from './../../node_modules/.prisma/client/index.d';
-// src/product/product.service.ts - ENHANCED FOR KIOTVIET INTEGRATION
+// src/product/product.service.ts - FIXED FOR CURRENT SCHEMA
 import {
   Injectable,
   NotFoundException,
@@ -18,7 +17,7 @@ export class ProductService {
   constructor() {}
 
   // ================================
-  // ENHANCED SEARCH WITH KIOTVIET SUPPORT
+  // ENHANCED SEARCH WITH KIOTVIET SUPPORT (FIXED)
   // ================================
 
   async search(params: {
@@ -75,13 +74,12 @@ export class ProductService {
         where.is_from_kiotviet = isFromKiotViet;
       }
 
-      // Build orderBy
+      // Build orderBy - FIXED to use only existing fields
       const orderByClause: Prisma.productOrderByWithRelationInput = {};
       if (orderBy === 'title') {
-        // Order by title, fallback to kiotviet_name for KiotViet products
         orderByClause.title = isDesc ? 'desc' : 'asc';
       } else if (orderBy === 'price') {
-        // Order by price, fallback to kiotviet_price for KiotViet products
+        // FIXED: Use kiotviet_price since price field doesn't exist
         orderByClause.kiotviet_price = isDesc ? 'desc' : 'asc';
       } else {
         orderByClause[orderBy] = isDesc ? 'desc' : 'asc';
@@ -130,7 +128,7 @@ export class ProductService {
   }
 
   // ================================
-  // ENHANCED FIND BY ID
+  // ENHANCED FIND BY ID (FIXED)
   // ================================
 
   async findById(id: number) {
@@ -173,7 +171,7 @@ export class ProductService {
   }
 
   // ================================
-  // GET PRODUCTS BY CATEGORIES (Enhanced)
+  // GET PRODUCTS BY CATEGORIES (FIXED)
   // ================================
 
   async getProductsByCategories(params: {
@@ -224,11 +222,12 @@ export class ProductService {
         ];
       }
 
-      // Build orderBy
+      // Build orderBy - FIXED
       const orderByClause: Prisma.productOrderByWithRelationInput = {};
       if (orderBy === 'title') {
         orderByClause.title = isDesc ? 'desc' : 'asc';
       } else if (orderBy === 'price') {
+        // FIXED: Use kiotviet_price
         orderByClause.kiotviet_price = isDesc ? 'desc' : 'asc';
       } else {
         orderByClause[orderBy] = isDesc ? 'desc' : 'asc';
@@ -277,18 +276,16 @@ export class ProductService {
   }
 
   // ================================
-  // TRANSFORM PRODUCT (Unify KiotViet and Custom fields)
+  // TRANSFORM PRODUCT (FIXED FOR CURRENT SCHEMA)
   // ================================
 
   private transformProduct(product: any) {
-    // Determine which fields to use (prioritize custom fields, fallback to KiotViet)
+    // FIXED: Only use fields that exist in current schema
     const displayName =
       product.title || product.kiotviet_name || 'Unnamed Product';
-    const displayPrice = product.price
-      ? Number(product.price)
-      : product.kiotviet_price
-        ? Number(product.kiotviet_price)
-        : null;
+    const displayPrice = product.kiotviet_price
+      ? Number(product.kiotviet_price)
+      : null;
 
     // Process images - handle both custom and KiotViet images
     let displayImages = [];
@@ -308,14 +305,13 @@ export class ProductService {
     }
 
     return {
-      // Basic fields
+      // Basic fields - FIXED to match current schema
       id: product.id.toString(),
       title: displayName,
       description: product.description,
       general_description: product.general_description,
       instruction: product.instruction,
-      price: displayPrice,
-      quantity: product.quantity ? Number(product.quantity) : null,
+      price: displayPrice, // FIXED: Use kiotviet_price as main price
       rate: product.rate,
       type: product.type,
       is_featured: product.is_featured,
@@ -352,7 +348,7 @@ export class ProductService {
   }
 
   // ================================
-  // CRUD OPERATIONS
+  // CRUD OPERATIONS (FIXED)
   // ================================
 
   async create(createProductDto: CreateProductDto) {
@@ -401,15 +397,13 @@ export class ProductService {
         );
       }
 
-      // Prepare update data (exclude KiotViet fields from updates)
+      // FIXED: Prepare update data without non-existent fields
       const updateData: any = {
         ...updateProductDto,
         category_id: updateProductDto.category_id
           ? BigInt(updateProductDto.category_id)
           : undefined,
-        price: updateProductDto.kiotviet_price
-          ? BigInt(updateProductDto.kiotviet_price)
-          : undefined,
+        // FIXED: Remove price/quantity handling since they don't exist
       };
 
       // Remove undefined values
@@ -481,7 +475,7 @@ export class ProductService {
   }
 
   // ================================
-  // UTILITY METHODS
+  // UTILITY METHODS (FIXED)
   // ================================
 
   async getStatistics() {
