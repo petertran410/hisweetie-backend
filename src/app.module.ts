@@ -14,6 +14,7 @@ import { PaymentModule } from './payment/payment.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: '.env',
     }),
     AuthModule,
     UserModule,

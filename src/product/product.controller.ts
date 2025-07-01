@@ -1,3 +1,4 @@
+// src/product/product.controller.ts - UPDATED FOR KIOTVIET SYNC
 import {
   Controller,
   Get,
@@ -15,10 +16,7 @@ import {
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import {
-  KiotVietSyncDto,
-  HierarchicalProductSearchDto,
-} from './dto/kiotviet-sync.dto';
+import { KiotVietService } from './kiotviet.service';
 import {
   ApiOperation,
   ApiResponse,
@@ -26,231 +24,227 @@ import {
   ApiQuery,
   ApiParam,
 } from '@nestjs/swagger';
-import { PrismaClient } from '@prisma/client';
-import { KiotVietUtils } from '../common/utils/kiotviet.utils';
-import { OrderSearchDto } from './dto/order-search.dto';
 
 @ApiTags('product')
 @Controller('product')
 export class ProductController {
   private readonly logger = new Logger(ProductController.name);
-  prisma = new PrismaClient();
 
-  constructor(private readonly productService: ProductService) {}
+  constructor(
+    private readonly productService: ProductService,
+    private readonly kiotVietService: KiotVietService,
+  ) {}
 
-  // Order Management Endpoints
-  @Get('order/admin-search')
+  // ================================
+  // KIOTVIET SYNC ENDPOINTS
+  // ================================
+
+  @Post('kiotviet/sync/full')
   @ApiOperation({
-    summary: 'Search orders for admin with pagination and filters',
+    summary: 'Full sync from KiotViet',
     description:
-      'Returns paginated orders with various filter options for admin dashboard',
+      'Syncs all trademarks, categories, and products from KiotViet (minimal fields only)',
   })
   @ApiResponse({
     status: 200,
-    description: 'Returns paginated order list with filters applied',
+    description: 'Full synchronization completed',
   })
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async searchOrders(@Query() searchDto: OrderSearchDto) {
+  async fullSyncFromKiotViet() {
     try {
-      this.logger.log('Searching orders with filters:', searchDto);
+      this.logger.log('Starting full KiotViet synchronization');
 
-      const result = await this.productService.searchOrders(searchDto);
+      const result = await this.kiotVietService.fullSync();
 
-      this.logger.log(`Found ${result.totalElements} orders matching criteria`);
-      return result;
-    } catch (error) {
-      this.logger.error('Failed to search orders:', error.message);
-      throw new BadRequestException(
-        `Failed to search orders: ${error.message}`,
-      );
-    }
-  }
-
-  @Patch('order/:id/status/:status')
-  @ApiOperation({
-    summary: 'Change order status',
-    description: 'Updates the status of a specific order',
-  })
-  @ApiParam({ name: 'id', description: 'Order ID' })
-  @ApiParam({ name: 'status', description: 'New status for the order' })
-  @ApiResponse({
-    status: 200,
-    description: 'Order status updated successfully',
-  })
-  async changeOrderStatus(
-    @Param('id') id: string,
-    @Param('status') status: string,
-  ) {
-    try {
-      this.logger.log(`Changing order ${id} status to: ${status}`);
-
-      const result = await this.productService.changeOrderStatus(id, status);
-
-      this.logger.log(`Successfully updated order ${id} status to ${status}`);
-      return result;
-    } catch (error) {
-      this.logger.error(`Failed to change order ${id} status:`, error.message);
-      throw new BadRequestException(
-        `Failed to change order status: ${error.message}`,
-      );
-    }
-  }
-
-  // KiotViet Sync Endpoints
-  @Post('sync/full')
-  @ApiOperation({
-    summary: 'Full product synchronization from KiotViet',
-    description:
-      'Syncs all products from KiotViet or specific categories. Use with caution on large datasets.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Product synchronization completed',
-  })
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async fullSync(@Body() syncDto: KiotVietSyncDto = {}) {
-    try {
-      const syncId = KiotVietUtils.generateSyncId('full_sync');
-      this.logger.log(`Starting full sync operation: ${syncId}`);
-
-      let categoryNames: string[] | undefined;
-      if (syncDto.categories) {
-        categoryNames = KiotVietUtils.parseCategoryNames(syncDto.categories);
-      }
-
-      if (syncDto.cleanFirst) {
-        this.logger.warn(
-          'Clean-first option enabled - this will delete all existing products',
-        );
-      }
-
-      const result = syncDto.cleanFirst
-        ? await this.productService.cleanAndSyncCategories(categoryNames || [])
-        : await this.productService.forceFullSync(categoryNames);
-
-      const formattedResult = KiotVietUtils.formatSyncResult(
-        result,
-        'full_sync',
-      );
-      formattedResult.syncId = syncId;
-
-      return {
+      const response = {
+        success: result.success,
         message: result.success
-          ? 'Product synchronization completed successfully'
-          : 'Product synchronization completed with errors',
-        ...formattedResult,
+          ? 'Full synchronization completed successfully'
+          : `Full synchronization completed with ${result.errors.length} errors`,
+        summary: {
+          trademarks: {
+            synced: result.trademarks.totalSynced,
+            updated: result.trademarks.totalUpdated,
+            total: result.trademarks.summary.afterSync,
+          },
+          categories: {
+            synced: result.categories.totalSynced,
+            updated: result.categories.totalUpdated,
+            total: result.categories.summary.afterSync,
+          },
+          products: {
+            synced: result.products.totalSynced,
+            updated: result.products.totalUpdated,
+            total: result.products.summary.afterSync,
+            syncedFields: [
+              'kiotviet_id',
+              'code',
+              'name',
+              'image',
+              'price',
+              'type',
+              'category',
+            ],
+          },
+        },
+        errors: result.errors,
+        timestamp: new Date().toISOString(),
       };
+
+      if (result.success) {
+        this.logger.log(
+          'Full KiotViet sync completed successfully',
+          response.summary,
+        );
+      } else {
+        this.logger.warn('Full KiotViet sync completed with errors', {
+          errorCount: result.errors.length,
+          summary: response.summary,
+        });
+      }
+
+      return response;
     } catch (error) {
-      this.logger.error('Full sync failed:', error.message);
+      this.logger.error('Full KiotViet sync failed:', error.message);
       throw new BadRequestException(`Full sync failed: ${error.message}`);
     }
   }
 
-  @Post('sync/incremental')
+  @Post('kiotviet/sync/products')
   @ApiOperation({
-    summary: 'Incremental product synchronization',
-    description: 'Syncs only products modified since the specified date',
-  })
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async incrementalSync(@Body() syncDto: KiotVietSyncDto = {}) {
-    try {
-      const syncId = KiotVietUtils.generateSyncId('incremental_sync');
-      this.logger.log(`Starting incremental sync operation: ${syncId}`);
-
-      // Validate sync date if provided
-      if (syncDto.since) {
-        const dateValidation = KiotVietUtils.validateSyncDate(syncDto.since);
-        if (!dateValidation.isValid) {
-          throw new BadRequestException(
-            `Invalid sync date: ${dateValidation.error}`,
-          );
-        }
-      }
-
-      let categoryNames: string[] | undefined;
-      if (syncDto.categories) {
-        categoryNames = KiotVietUtils.parseCategoryNames(syncDto.categories);
-      }
-
-      const result = await this.productService.incrementalSync(
-        syncDto.since,
-        categoryNames,
-      );
-      const formattedResult = KiotVietUtils.formatSyncResult(
-        result,
-        'incremental_sync',
-      );
-      formattedResult.syncId = syncId;
-
-      return {
-        message: result.success
-          ? 'Incremental synchronization completed successfully'
-          : 'Incremental synchronization completed with errors',
-        ...formattedResult,
-      };
-    } catch (error) {
-      this.logger.error('Incremental sync failed:', error.message);
-      throw new BadRequestException(
-        `Incremental sync failed: ${error.message}`,
-      );
-    }
-  }
-
-  @Post('sync/target-categories')
-  @ApiOperation({
-    summary: 'Sync products from Lermao and Trà Phượng Hoàng categories',
+    summary: 'Sync products only from KiotViet',
     description:
-      'Syncs products from Lermao (2205381) and Trà Phượng Hoàng (2205374) and all their children using hierarchical filtering',
+      'Syncs only products (minimal fields: kiotviet_id, code, name, image, price, type, category)',
   })
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async syncTargetCategories(@Body() syncDto: KiotVietSyncDto = {}) {
+  @ApiQuery({
+    name: 'since',
+    required: false,
+    description:
+      'Only sync products modified since this date (YYYY-MM-DD format)',
+    example: '2024-01-01',
+  })
+  async syncProductsFromKiotViet(@Query('since') since?: string) {
     try {
-      const syncId = KiotVietUtils.generateSyncId('target_categories_sync');
-      this.logger.log(`Starting target categories sync operation: ${syncId}`);
+      this.logger.log(
+        `Starting KiotViet product sync${since ? ` since ${since}` : ''}`,
+      );
 
-      // Validate sync date if provided
-      if (syncDto.since) {
-        const dateValidation = KiotVietUtils.validateSyncDate(syncDto.since);
-        if (!dateValidation.isValid) {
-          throw new BadRequestException(
-            `Invalid sync date: ${dateValidation.error}`,
-          );
-        }
+      // Validate date format if provided
+      if (since && !/^\d{4}-\d{2}-\d{2}$/.test(since)) {
+        throw new BadRequestException(
+          'Invalid date format. Use YYYY-MM-DD format.',
+        );
       }
 
-      const result = await this.productService.syncProductsFromTargetCategories(
-        syncDto.since,
-      );
-      const formattedResult = KiotVietUtils.formatSyncResult(
-        result,
-        'target_categories_sync',
-      );
-      formattedResult.syncId = syncId;
+      const result = await this.kiotVietService.syncProducts(since);
 
-      return {
+      const response = {
+        success: result.success,
         message: result.success
-          ? `Successfully synced ${result.totalSynced} products from Lermao and Trà Phượng Hoàng categories`
-          : `Target category sync completed with ${result.errors.length} errors`,
-        targetCategories: ['Lermao (2205381)', 'Trà Phượng Hoàng (2205374)'],
-        ...formattedResult,
+          ? `Successfully synced ${result.totalSynced + result.totalUpdated} products from KiotViet`
+          : `Product sync completed with ${result.errors.length} errors`,
+        summary: {
+          ...result.summary,
+          syncedFields: [
+            'kiotviet_id',
+            'code',
+            'name',
+            'image',
+            'price',
+            'type',
+            'category',
+          ],
+          incrementalSync: !!since,
+          sinceDate: since,
+        },
+        errors: result.errors,
+        timestamp: new Date().toISOString(),
       };
+
+      if (result.success) {
+        this.logger.log(
+          'KiotViet product sync completed successfully',
+          response.summary,
+        );
+      } else {
+        this.logger.warn('KiotViet product sync completed with errors', {
+          errorCount: result.errors.length,
+          summary: response.summary,
+        });
+      }
+
+      return response;
     } catch (error) {
-      this.logger.error('Target category sync failed:', error.message);
-      throw new BadRequestException(
-        `Target category sync failed: ${error.message}`,
-      );
+      this.logger.error('KiotViet product sync failed:', error.message);
+      throw new BadRequestException(`Product sync failed: ${error.message}`);
     }
   }
 
-  @Get('sync/test-connection')
+  @Post('kiotviet/sync/categories')
   @ApiOperation({
-    summary: 'Test KiotViet connection',
-    description: 'Test the connection to KiotViet API',
+    summary: 'Sync categories from KiotViet',
+    description:
+      'Syncs KiotViet categories to separate kiotviet_categories table',
   })
-  async testConnection() {
+  async syncCategoriesFromKiotViet() {
     try {
-      const result =
-        await this.productService['kiotVietService'].testConnection();
+      this.logger.log('Starting KiotViet category sync');
+
+      const result = await this.kiotVietService.syncCategories();
+
+      const response = {
+        success: result.success,
+        message: result.success
+          ? `Successfully synced ${result.totalSynced + result.totalUpdated} categories from KiotViet`
+          : `Category sync completed with ${result.errors.length} errors`,
+        summary: result.summary,
+        errors: result.errors,
+        timestamp: new Date().toISOString(),
+      };
+
+      return response;
+    } catch (error) {
+      this.logger.error('KiotViet category sync failed:', error.message);
+      throw new BadRequestException(`Category sync failed: ${error.message}`);
+    }
+  }
+
+  @Post('kiotviet/sync/trademarks')
+  @ApiOperation({
+    summary: 'Sync trademarks from KiotViet',
+    description:
+      'Syncs KiotViet trademarks to separate kiotviet_trademarks table',
+  })
+  async syncTrademarksFromKiotViet() {
+    try {
+      this.logger.log('Starting KiotViet trademark sync');
+
+      const result = await this.kiotVietService.syncTrademarks();
+
+      const response = {
+        success: result.success,
+        message: result.success
+          ? `Successfully synced ${result.totalSynced + result.totalUpdated} trademarks from KiotViet`
+          : `Trademark sync completed with ${result.errors.length} errors`,
+        summary: result.summary,
+        errors: result.errors,
+        timestamp: new Date().toISOString(),
+      };
+
+      return response;
+    } catch (error) {
+      this.logger.error('KiotViet trademark sync failed:', error.message);
+      throw new BadRequestException(`Trademark sync failed: ${error.message}`);
+    }
+  }
+
+  @Get('kiotviet/test-connection')
+  @ApiOperation({
+    summary: 'Test KiotViet API connection',
+    description: 'Test the connection to KiotViet API and authentication',
+  })
+  async testKiotVietConnection() {
+    try {
+      const result = await this.kiotVietService.testConnection();
 
       if (result.success) {
         this.logger.log('KiotViet connection test successful');
@@ -258,64 +252,101 @@ export class ProductController {
         this.logger.warn('KiotViet connection test failed:', result.message);
       }
 
-      return result;
+      return {
+        ...result,
+        timestamp: new Date().toISOString(),
+      };
     } catch (error) {
-      this.logger.error('Connection test error:', error.message);
+      this.logger.error('KiotViet connection test error:', error.message);
       throw new BadRequestException(`Connection test failed: ${error.message}`);
     }
   }
 
-  @Get('sync/status')
+  @Get('kiotviet/sync/status')
   @ApiOperation({
-    summary: 'Get sync status',
+    summary: 'Get KiotViet sync status',
     description: 'Get current synchronization status and statistics',
   })
-  async getSyncStatus() {
+  async getKiotVietSyncStatus() {
     try {
-      const totalProducts = await this.productService
-        .search({
-          pageSize: 1,
-          pageNumber: 0,
-        })
-        .then((result) => result.totalElements);
+      // Get counts from database
+      const [
+        totalProducts,
+        kiotVietProducts,
+        customProducts,
+        kiotVietCategories,
+        kiotVietTrademarks,
+        customCategories,
+      ] = await Promise.all([
+        this.productService.prisma.product.count(),
+        this.productService.prisma.product.count({
+          where: { is_from_kiotviet: true },
+        }),
+        this.productService.prisma.product.count({
+          where: { is_from_kiotviet: false },
+        }),
+        this.productService.prisma.kiotviet_category.count(),
+        this.productService.prisma.kiotviet_trademark.count(),
+        this.productService.prisma.category.count(),
+      ]);
 
-      let kiotVietConfigured = false;
-      let configMessage = '';
-
+      // Test connection
+      let connectionStatus = { success: false, message: 'Not tested' };
       try {
-        const connectionTest =
-          await this.productService['kiotVietService'].testConnection();
-        kiotVietConfigured = connectionTest.success;
-        configMessage = connectionTest.message;
+        connectionStatus = await this.kiotVietService.testConnection();
       } catch (error) {
-        this.logger.warn('KiotViet not configured:', error.message);
-        configMessage = `KiotViet configuration error: ${error.message}`;
+        connectionStatus = { success: false, message: error.message };
       }
 
       return {
-        totalProducts,
-        lastSyncAttempt: null,
-        syncEnabled: true,
-        kiotVietConfigured,
-        message: configMessage,
-        targetCategories: {
-          lermao: 2205381,
-          traPhuongHoang: 2205374,
+        connected: connectionStatus.success,
+        connectionMessage: connectionStatus.message,
+        statistics: {
+          products: {
+            total: totalProducts,
+            fromKiotViet: kiotVietProducts,
+            custom: customProducts,
+          },
+          categories: {
+            kiotViet: kiotVietCategories,
+            custom: customCategories,
+          },
+          trademarks: {
+            kiotViet: kiotVietTrademarks,
+          },
         },
+        syncConfig: {
+          syncedFields: [
+            'kiotviet_id',
+            'code',
+            'name',
+            'image',
+            'price',
+            'type',
+            'category',
+          ],
+          separateTables: ['kiotviet_categories', 'kiotviet_trademarks'],
+          productTable: 'product (enhanced with KiotViet fields)',
+        },
+        timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      this.logger.error('Failed to get sync status:', error.message);
+      this.logger.error('Failed to get KiotViet sync status:', error.message);
       throw new BadRequestException(
         `Failed to get sync status: ${error.message}`,
       );
     }
   }
 
-  // Product CRUD Endpoints
+  // ================================
+  // PRODUCT CRUD ENDPOINTS (Existing)
+  // ================================
+
   @Get('get-by-id/:id')
   @ApiOperation({
     summary: 'Get product by ID',
-    description: 'Retrieve a specific product by its ID',
+    description:
+      'Retrieve a specific product by its ID (includes KiotViet data if available)',
   })
   @ApiParam({ name: 'id', description: 'Product ID' })
   findById(@Param('id') id: string) {
@@ -325,27 +356,66 @@ export class ProductController {
   @Get('search')
   @ApiOperation({
     summary: 'Search products',
-    description: 'Search products with pagination and filters',
+    description:
+      'Search products with pagination and filters (includes KiotViet products)',
   })
   search(
     @Query('pageSize') pageSize: string = '10',
     @Query('pageNumber') pageNumber: string = '0',
     @Query('title') title?: string,
     @Query('type') type?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('isFromKiotViet') isFromKiotViet?: string,
   ) {
+    const filters: any = {};
+
+    if (title) filters.title = title;
+    if (type) filters.type = type;
+    if (categoryId) filters.categoryId = +categoryId;
+    if (isFromKiotViet !== undefined) {
+      filters.isFromKiotViet = isFromKiotViet === 'true';
+    }
+
     return this.productService.search({
-      pageSize: parseInt(pageSize),
-      pageNumber: parseInt(pageNumber),
-      title,
-      type,
+      pageSize: +pageSize,
+      pageNumber: +pageNumber,
+      ...filters,
     });
+  }
+
+  @Get('by-categories')
+  @ApiOperation({
+    summary: 'Get products by categories',
+    description:
+      'Get products filtered by custom categories or KiotViet categories',
+  })
+  getProductsByCategories(
+    @Query('pageSize') pageSize: string = '12',
+    @Query('pageNumber') pageNumber: string = '0',
+    @Query('categoryId') categoryId?: string,
+    @Query('kiotVietCategoryId') kiotVietCategoryId?: string,
+    @Query('orderBy') orderBy?: string,
+    @Query('isDesc') isDesc?: string,
+  ) {
+    const filters: any = {
+      pageSize: +pageSize,
+      pageNumber: +pageNumber,
+    };
+
+    if (categoryId) filters.categoryId = +categoryId;
+    if (kiotVietCategoryId) filters.kiotVietCategoryId = +kiotVietCategoryId;
+    if (orderBy) filters.orderBy = orderBy;
+    if (isDesc !== undefined) filters.isDesc = isDesc === 'true';
+
+    return this.productService.getProductsByCategories(filters);
   }
 
   @Post()
   @ApiOperation({
     summary: 'Create product',
-    description: 'Create a new product',
+    description: 'Create a new custom product (not from KiotViet)',
   })
+  @UsePipes(new ValidationPipe({ transform: true }))
   create(@Body() createProductDto: CreateProductDto) {
     return this.productService.create(createProductDto);
   }
@@ -353,9 +423,10 @@ export class ProductController {
   @Patch(':id')
   @ApiOperation({
     summary: 'Update product',
-    description: 'Update an existing product',
+    description:
+      'Update a product (custom fields only, KiotViet fields are read-only)',
   })
-  @ApiParam({ name: 'id', description: 'Product ID' })
+  @UsePipes(new ValidationPipe({ transform: true }))
   update(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto) {
     return this.productService.update(+id, updateProductDto);
   }
@@ -363,265 +434,97 @@ export class ProductController {
   @Delete(':id')
   @ApiOperation({
     summary: 'Delete product',
-    description: 'Delete a product by ID',
+    description:
+      'Delete a product (WARNING: KiotViet products will be re-synced)',
   })
-  @ApiParam({ name: 'id', description: 'Product ID' })
   remove(@Param('id') id: string) {
     return this.productService.remove(+id);
   }
 
-  // Main Product Listing Endpoint (Used by Frontend)
-  @Get('by-categories')
-  async getProductsByCategories(
-    @Query('pageSize') pageSize: string = '10',
+  // ================================
+  // KIOTVIET DATA QUERIES
+  // ================================
+
+  @Get('kiotviet/categories')
+  @ApiOperation({
+    summary: 'Get KiotViet categories',
+    description: 'Get list of categories synced from KiotViet',
+  })
+  async getKiotVietCategories(
+    @Query('pageSize') pageSize: string = '50',
     @Query('pageNumber') pageNumber: string = '0',
-    @Query('title') title?: string,
-    @Query('categoryId') categoryId?: string, // Main category (Lermao or Trà Phượng Hoàng)
-    @Query('subCategoryId') subCategoryId?: string, // Specific subcategory
   ) {
     try {
-      this.logger.log(
-        `Fetching products - pageSize: ${pageSize}, pageNumber: ${pageNumber}, title: ${title || 'none'}, categoryId: ${categoryId || 'none'}, subCategoryId: ${subCategoryId || 'none'}`,
-      );
+      const skip = +pageNumber * +pageSize;
+      const take = +pageSize;
 
-      let parentCategoryIds: number[];
-      let specificSubCategoryId: number | undefined;
-
-      // Handle subcategory filtering (works for both Lermao and Trà Phượng Hoàng)
-      if (subCategoryId) {
-        const subCatId = parseInt(subCategoryId);
-        if (!isNaN(subCatId)) {
-          specificSubCategoryId = subCatId;
-          this.logger.log(
-            `Filtering by specific subcategory: ${specificSubCategoryId}`,
-          );
-        }
-      }
-
-      // Handle main category filtering
-      if (categoryId) {
-        const categoryIdNum = parseInt(categoryId);
-        if (categoryIdNum === 2205381 || categoryIdNum === 2205374) {
-          // Only show products from the selected category
-          parentCategoryIds = [categoryIdNum];
-          this.logger.log(`Filtering by specific category: ${categoryIdNum}`);
-        } else {
-          // Default to both categories
-          parentCategoryIds = [2205381, 2205374];
-        }
-      } else {
-        // CRITICAL FIX: Default behavior - show products from BOTH categories
-        parentCategoryIds = [2205381, 2205374];
-        this.logger.log(
-          'No category filter specified - showing all products from both Lermao and Trà Phượng Hoàng',
-        );
-      }
-
-      const result = await this.productService.getProductsBySpecificCategories({
-        pageSize: parseInt(pageSize),
-        pageNumber: parseInt(pageNumber),
-        title,
-        parentCategoryIds: parentCategoryIds,
-        specificSubCategoryId: specificSubCategoryId, // Pass subcategory filter for both categories
-      });
-
-      this.logger.log(
-        `Successfully found ${result.totalElements} products from target categories`,
-      );
-
-      return {
-        ...result,
-        searchCriteria: {
-          pageSize: parseInt(pageSize),
-          pageNumber: parseInt(pageNumber),
-          title,
-          categoryFilter: categoryId,
-          subCategoryFilter: subCategoryId,
-          isDefaultView: !categoryId && !subCategoryId, // Flag for default view
-          targetCategories: parentCategoryIds.map((id) => ({
-            id: id,
-            name: id === 2205381 ? 'Lermao' : 'Trà Phượng Hoàng',
-          })),
-        },
-      };
-    } catch (error) {
-      this.logger.error('Failed to get products by categories:', error.message);
-      throw new BadRequestException(`Failed to get products: ${error.message}`);
-    }
-  }
-
-  @Get('cache-list-products')
-  @ApiOperation({
-    summary: 'Get products by IDs for cart',
-    description:
-      'Retrieve multiple products by their IDs (used for cart functionality)',
-  })
-  @ApiQuery({
-    name: 'productIds',
-    description: 'Comma-separated list of product IDs',
-    example: '54313288,54313289,54313290',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns array of products matching the provided IDs',
-  })
-  async getProductsByIds(@Query('productIds') productIds: string) {
-    try {
-      if (!productIds || productIds.trim() === '') {
-        this.logger.warn('Empty productIds parameter provided');
-        return [];
-      }
-
-      this.logger.log(`Fetching products for IDs: ${productIds}`);
-
-      const products = await this.productService.getProductsByIds(productIds);
-
-      this.logger.log(
-        `Successfully retrieved ${products.length} products for cart`,
-      );
-      return products;
-    } catch (error) {
-      this.logger.error('Failed to get products by IDs:', error.message);
-      throw new BadRequestException(`Failed to get products: ${error.message}`);
-    }
-  }
-
-  @Get('by-hierarchical-categories')
-  @ApiOperation({
-    summary: 'Get products from hierarchical categories (Advanced)',
-    description:
-      'Advanced endpoint for getting products from hierarchical categories with custom parent category IDs',
-  })
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async getProductsByHierarchicalCategories(
-    @Query() searchDto: HierarchicalProductSearchDto,
-  ) {
-    try {
-      let parentCategoryIds: number[] = [2205381, 2205374]; // Default: Lermao and Trà Phượng Hoàng
-
-      if (searchDto.parentCategoryIds) {
-        parentCategoryIds = KiotVietUtils.parseCategoryIds(
-          searchDto.parentCategoryIds,
-        );
-        if (parentCategoryIds.length === 0) {
-          throw new BadRequestException('Invalid parent category IDs provided');
-        }
-      }
-
-      this.logger.log(
-        `Fetching products for parent categories: ${parentCategoryIds.join(', ')}`,
-      );
-
-      const result = await this.productService.getProductsBySpecificCategories({
-        pageSize: searchDto.pageSize || 10,
-        pageNumber: searchDto.pageNumber || 0,
-        title: searchDto.title,
-        parentCategoryIds: parentCategoryIds,
-      });
-
-      return {
-        ...result,
-        searchCriteria: {
-          pageSize: searchDto.pageSize || 10,
-          pageNumber: searchDto.pageNumber || 0,
-          title: searchDto.title,
-          includeChildren: searchDto.includeChildren !== false,
-          targetParentIds: parentCategoryIds,
-        },
-      };
-    } catch (error) {
-      this.logger.error(
-        'Failed to get products by hierarchical categories:',
-        error.message,
-      );
-      throw new BadRequestException(`Failed to get products: ${error.message}`);
-    }
-  }
-
-  @Get('categories/hierarchy-info')
-  @ApiOperation({
-    summary: 'Get category hierarchy information',
-    description:
-      'Returns detailed information about Lermao and Trà Phượng Hoàng category hierarchies',
-  })
-  async getCategoryHierarchyInfo(@Query('categoryIds') categoryIds?: string) {
-    try {
-      let targetParentIds = [2205381, 2205374]; // Default: Lermao and Trà Phượng Hoàng
-
-      if (categoryIds) {
-        const parsedIds = KiotVietUtils.parseCategoryIds(categoryIds);
-        if (parsedIds.length > 0) {
-          targetParentIds = parsedIds;
-        }
-      }
-
-      // Get all descendant category IDs
-      const allDescendantIds =
-        await this.productService['kiotVietService'].findDescendantCategoryIds(
-          targetParentIds,
-        );
-
-      // Get hierarchical structure
-      const hierarchyPreview =
-        await this.productService[
-          'kiotVietService'
-        ].fetchHierarchicalCategories();
-
-      // Find the target categories in the hierarchy
-      const targetCategories = hierarchyPreview.filter((cat) =>
-        targetParentIds.includes(cat.categoryId),
-      );
-
-      // Count products in each category
-      const productCounts = await Promise.all(
-        allDescendantIds.map(async (categoryId) => {
-          const count = await this.prisma.category.count({
-            where: { id: BigInt(categoryId) },
-          });
-          return { categoryId, productCount: count };
+      const [categories, total] = await Promise.all([
+        this.productService.prisma.kiotviet_category.findMany({
+          skip,
+          take,
+          orderBy: { name: 'asc' },
+          include: {
+            _count: {
+              select: { products: true },
+            },
+          },
         }),
-      );
+        this.productService.prisma.kiotviet_category.count(),
+      ]);
 
       return {
-        targetParentIds,
-        targetCategories: targetCategories.map((cat) => ({
-          id: cat.categoryId,
-          name: cat.categoryName,
-          hasChildren: cat.hasChild,
-          childrenCount: cat.children ? cat.children.length : 0,
-          children:
-            cat.children?.map((child) => ({
-              id: child.categoryId,
-              name: child.categoryName,
-              hasChildren: child.hasChild,
-              productCount:
-                productCounts.find((pc) => pc.categoryId === child.categoryId)
-                  ?.productCount || 0,
-            })) || [],
-          productCount:
-            productCounts.find((pc) => pc.categoryId === cat.categoryId)
-              ?.productCount || 0,
-        })),
-        allDescendantIds,
-        productCounts,
-        summary: {
-          totalParentCategories: targetParentIds.length,
-          totalDescendantCategories: allDescendantIds.length,
-          additionalChildCategories:
-            allDescendantIds.length - targetParentIds.length,
-          totalProductsInHierarchy: productCounts.reduce(
-            (sum, pc) => sum + pc.productCount,
-            0,
-          ),
-        },
+        content: categories,
+        totalElements: total,
+        totalPages: Math.ceil(total / +pageSize),
+        pageNumber: +pageNumber,
+        pageSize: +pageSize,
       };
     } catch (error) {
-      this.logger.error(
-        'Failed to get category hierarchy info:',
-        error.message,
-      );
+      this.logger.error('Failed to get KiotViet categories:', error.message);
       throw new BadRequestException(
-        `Failed to get hierarchy info: ${error.message}`,
+        `Failed to get KiotViet categories: ${error.message}`,
+      );
+    }
+  }
+
+  @Get('kiotviet/trademarks')
+  @ApiOperation({
+    summary: 'Get KiotViet trademarks',
+    description: 'Get list of trademarks synced from KiotViet',
+  })
+  async getKiotVietTrademarks(
+    @Query('pageSize') pageSize: string = '50',
+    @Query('pageNumber') pageNumber: string = '0',
+  ) {
+    try {
+      const skip = +pageNumber * +pageSize;
+      const take = +pageSize;
+
+      const [trademarks, total] = await Promise.all([
+        this.productService.prisma.kiotviet_trademark.findMany({
+          skip,
+          take,
+          orderBy: { name: 'asc' },
+          include: {
+            _count: {
+              select: { products: true },
+            },
+          },
+        }),
+        this.productService.prisma.kiotviet_trademark.count(),
+      ]);
+
+      return {
+        content: trademarks,
+        totalElements: total,
+        totalPages: Math.ceil(total / +pageSize),
+        pageNumber: +pageNumber,
+        pageSize: +pageSize,
+      };
+    } catch (error) {
+      this.logger.error('Failed to get KiotViet trademarks:', error.message);
+      throw new BadRequestException(
+        `Failed to get KiotViet trademarks: ${error.message}`,
       );
     }
   }

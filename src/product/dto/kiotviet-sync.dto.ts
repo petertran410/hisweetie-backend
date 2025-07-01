@@ -1,133 +1,70 @@
-// Create this file: src/product/dto/kiotviet-sync.dto.ts
+// src/product/dto/kiotviet-sync.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsOptional,
   IsString,
-  IsDateString,
-  IsEnum,
   IsBoolean,
-  IsNumber,
+  IsDateString,
+  IsArray,
 } from 'class-validator';
-import { Type } from 'class-transformer';
-
-export enum SyncMode {
-  FULL = 'FULL',
-  INCREMENTAL = 'INCREMENTAL',
-  TARGET_CATEGORIES = 'TARGET_CATEGORIES',
-}
 
 export class KiotVietSyncDto {
   @ApiProperty({
-    description: 'Sync mode',
-    enum: SyncMode,
-    default: SyncMode.INCREMENTAL,
+    description:
+      'Only sync products modified since this date (YYYY-MM-DD format)',
+    example: '2024-01-01',
     required: false,
   })
-  @IsEnum(SyncMode)
   @IsOptional()
-  mode?: SyncMode = SyncMode.INCREMENTAL;
+  @IsDateString()
+  since?: string;
 
   @ApiProperty({
-    description: 'Last modified date for incremental sync (ISO string)',
-    example: '2024-01-01T00:00:00Z',
+    description: 'Force clean database before sync',
+    default: false,
     required: false,
   })
-  @IsDateString()
   @IsOptional()
-  since?: string;
+  @IsBoolean()
+  cleanFirst?: boolean;
 
   @ApiProperty({
     description: 'Specific category names to sync (comma-separated)',
     example: 'Lermao,Trà Phượng Hoàng',
     required: false,
   })
-  @IsString()
   @IsOptional()
+  @IsString()
   categories?: string;
-
-  @ApiProperty({
-    description: 'Force clean database before sync',
-    default: false,
-    required: false,
-  })
-  @IsBoolean()
-  @IsOptional()
-  cleanFirst?: boolean = false;
 }
 
-export class HierarchicalProductSearchDto {
+export class BulkVisibilityUpdateDto {
   @ApiProperty({
-    description: 'Page size for pagination',
-    default: 10,
-    required: false,
+    description: 'Array of product IDs to update',
+    example: [1, 2, 3, 4, 5],
   })
-  @IsNumber()
-  @IsOptional()
-  @Type(() => Number)
-  pageSize?: number = 10;
+  @IsArray()
+  productIds: number[];
 
   @ApiProperty({
-    description: 'Page number for pagination',
-    default: 0,
-    required: false,
-  })
-  @IsNumber()
-  @IsOptional()
-  @Type(() => Number)
-  pageNumber?: number = 0;
-
-  @ApiProperty({
-    description: 'Search by product title',
-    required: false,
-  })
-  @IsString()
-  @IsOptional()
-  title?: string;
-
-  @ApiProperty({
-    description: 'Filter by product type',
-    required: false,
-  })
-  @IsString()
-  @IsOptional()
-  type?: string;
-
-  @ApiProperty({
-    description: 'Parent category IDs to include (comma-separated)',
-    example: '2205381,2205374',
-    required: false,
-  })
-  @IsString()
-  @IsOptional()
-  parentCategoryIds?: string;
-
-  @ApiProperty({
-    description: 'Include products from child categories',
-    default: true,
-    required: false,
+    description: 'New visibility status',
+    example: true,
   })
   @IsBoolean()
-  @IsOptional()
-  includeChildren?: boolean = true;
+  isVisible: boolean;
 }
 
-// Create this file: src/category/dto/category-sync.dto.ts
-export class CategorySyncDto {
+export class TrademarkStatusUpdateDto {
   @ApiProperty({
-    description: 'Force clean database before sync',
-    default: false,
-    required: false,
+    description: 'KiotViet trademark ID',
+    example: 123,
   })
-  @IsBoolean()
-  @IsOptional()
-  cleanFirst?: boolean = false;
+  trademarkId: number;
 
   @ApiProperty({
-    description: 'Preview only - do not actually sync',
-    default: false,
-    required: false,
+    description: 'Active status for the trademark',
+    example: true,
   })
   @IsBoolean()
-  @IsOptional()
-  previewOnly?: boolean = false;
+  isActive: boolean;
 }
