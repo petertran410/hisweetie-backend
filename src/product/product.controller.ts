@@ -575,8 +575,8 @@ export class ProductController {
       // Count products in each category
       const productCounts = await Promise.all(
         allDescendantIds.map(async (categoryId) => {
-          const count = await this.prisma.product_categories.count({
-            where: { categories_id: BigInt(categoryId) },
+          const count = await this.prisma.category.count({
+            where: { id: BigInt(categoryId) },
           });
           return { categoryId, productCount: count };
         }),

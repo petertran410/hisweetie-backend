@@ -266,7 +266,7 @@ export class CategoryService {
 
     try {
       const beforeCleanupCount = await this.prisma.category.count();
-      const beforeRelationsCount = await this.prisma.product_categories.count();
+      const beforeRelationsCount = await this.prisma.category.count();
 
       this.logger.log(
         `Current categories before cleanup: ${beforeCleanupCount}, product relations: ${beforeRelationsCount}`,
@@ -277,7 +277,7 @@ export class CategoryService {
         this.logger.log('Starting database cleanup transaction...');
 
         // Delete product-category relationships first
-        const deletedRelations = await prisma.product_categories.deleteMany({});
+        const deletedRelations = await prisma.category.deleteMany({});
         this.logger.log(
           `Deleted ${deletedRelations.count} product-category relationships`,
         );
@@ -644,8 +644,8 @@ export class CategoryService {
       throw new Error('Cannot delete category that has child categories');
     }
 
-    await this.prisma.product_categories.deleteMany({
-      where: { categories_id: BigInt(id) },
+    await this.prisma.category.deleteMany({
+      where: { id: BigInt(id) },
     });
 
     await this.prisma.category.delete({

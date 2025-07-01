@@ -410,8 +410,8 @@ export class ProductService {
                   where: { product_id: { in: validDeletedIds } },
                 });
 
-                await transactionClient.product_categories.deleteMany({
-                  where: { product_id: { in: validDeletedIds } },
+                await transactionClient.category.deleteMany({
+                  where: { id: { in: validDeletedIds } },
                 });
 
                 const deleteResult = await transactionClient.product.deleteMany(
@@ -508,8 +508,8 @@ export class ProductService {
                     // CRITICAL FIX: Delete old category relationships and create new ones with ACTUAL categoryId
                     if (kiotVietProduct.categoryId) {
                       // Delete existing relationships for this product
-                      await transactionClient.product_categories.deleteMany({
-                        where: { product_id: BigInt(kiotVietProduct.id) },
+                      await transactionClient.category.deleteMany({
+                        where: { id: BigInt(kiotVietProduct.id) },
                       });
 
                       // Create new relationship with ACTUAL category from KiotViet
@@ -825,12 +825,11 @@ export class ProductService {
   private async getLastSyncTimestamp(): Promise<string> {
     try {
       const latestProduct = await this.prisma.product.findFirst({
-        orderBy: { updated_date: 'desc' },
-        select: { updated_date: true },
+        orderBy: { id: 'desc' },
       });
 
       return (
-        latestProduct?.updated_date?.toISOString() ||
+        latestProduct?.id?.toString() ||
         new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
       );
     } catch (error) {
@@ -866,7 +865,7 @@ export class ProductService {
 
         const deletedOrders = await prisma.orders.deleteMany({});
         const deletedReviews = await prisma.review.deleteMany({});
-        const deletedRelations = await prisma.product_categories.deleteMany({});
+        const deletedRelations = await prisma.category.deleteMany({});
         const deletedProducts = await prisma.product.deleteMany({});
 
         return {
@@ -1019,15 +1018,15 @@ export class ProductService {
       take: pageSize,
       orderBy: { id: 'desc' },
       include: {
-        product_categories: {
+        category: {
           include: {
-            category: true,
+            product: true,
           },
         },
       },
     });
 
-    const content = products.map((product) => {
+    const content = products.map((product: any) => {
       let imagesUrl = [];
       try {
         imagesUrl = product.images_url ? JSON.parse(product.images_url) : [];
@@ -1045,7 +1044,7 @@ export class ProductService {
         quantity: product.quantity ? Number(product.quantity) : null,
         imagesUrl,
         isFeatured: product.is_featured,
-        ofCategories: product.product_categories.map((pc) => ({
+        ofCategories: product.category_id.map((pc) => ({
           id: pc.categories_id.toString(),
           name: pc.category?.name || '',
         })),
@@ -1129,25 +1128,23 @@ export class ProductService {
       const categoryIdsBigInt = allCategoryIds.map((id) => BigInt(id));
 
       // Get all product IDs that belong to the specified categories
-      const productCategoryRelations =
-        await this.prisma.product_categories.findMany({
-          where: {
-            categories_id: {
-              in: categoryIdsBigInt,
-            },
+      const productCategoryRelations = await this.prisma.category.findMany({
+        where: {
+          id: {
+            in: categoryIdsBigInt,
           },
-          select: {
-            product_id: true,
-            categories_id: true,
-          },
-        });
+        },
+        select: {
+          name: true,
+        },
+      });
 
       this.logger.log(
         `Found ${productCategoryRelations.length} product-category relationships${specificSubCategoryId ? ' for subcategory' : ''}`,
       );
 
       const productIds = [
-        ...new Set(productCategoryRelations.map((rel) => rel.product_id)),
+        ...new Set(productCategoryRelations.map((rel) => rel.name)),
       ];
 
       this.logger.log(`Unique products in categories: ${productIds.length}`);
@@ -1192,17 +1189,17 @@ export class ProductService {
         where,
         skip: pageNumber * pageSize,
         take: pageSize,
-        orderBy: { created_date: 'desc' },
+        orderBy: { id: 'desc' },
         include: {
-          product_categories: {
+          category: {
             include: {
-              category: true,
+              product: true,
             },
           },
         },
       });
 
-      const content = products.map((product) => {
+      const content = products.map((product: any) => {
         let imagesUrl = [];
         try {
           imagesUrl = product.images_url ? JSON.parse(product.images_url) : [];
@@ -1214,7 +1211,7 @@ export class ProductService {
         }
 
         // Simple category mapping
-        const ofCategories = product.product_categories
+        const ofCategories = product.category_id
           .filter((pc) => allCategoryIds.includes(Number(pc.categories_id)))
           .map((pc) => ({
             id: pc.categories_id.toString(),
@@ -1234,8 +1231,6 @@ export class ProductService {
           featuredThumbnail: product.featured_thumbnail,
           recipeThumbnail: product.recipe_thumbnail,
           type: product.type,
-          createdDate: product.created_date,
-          updatedDate: product.updated_date,
           ofCategories: ofCategories,
         };
       });
@@ -1269,12 +1264,12 @@ export class ProductService {
 
   // Standard CRUD Operations
   async findById(id: number) {
-    const product = await this.prisma.product.findUnique({
+    const product: any = await this.prisma.product.findUnique({
       where: { id: BigInt(id) },
       include: {
-        product_categories: {
+        category: {
           include: {
-            category: true,
+            product: true,
           },
         },
       },
@@ -1301,7 +1296,7 @@ export class ProductService {
       quantity: product.quantity ? Number(product.quantity) : null,
       imagesUrl,
       generalDescription: product.general_description || '',
-      ofCategories: product.product_categories.map((pc) => ({
+      ofCategories: product.category_id.map((pc) => ({
         id: pc.categories_id.toString(),
         name: pc.category?.name || '',
       })),
@@ -1337,16 +1332,14 @@ export class ProductService {
         featured_thumbnail: featuredThumbnail,
         recipe_thumbnail: recipeThumbnail,
         type,
-        created_date: new Date(),
       },
     });
 
     if (categoryIds && categoryIds.length > 0) {
       for (const categoryId of categoryIds) {
-        await this.prisma.product_categories.create({
+        await this.prisma.category.create({
           data: {
-            product_id: product.id,
-            categories_id: BigInt(categoryId),
+            id: BigInt(categoryId),
           },
         });
       }
@@ -1395,20 +1388,18 @@ export class ProductService {
         featured_thumbnail: featuredThumbnail,
         recipe_thumbnail: recipeThumbnail,
         type,
-        updated_date: new Date(),
       },
     });
 
     if (categoryIds && categoryIds.length > 0) {
-      await this.prisma.product_categories.deleteMany({
-        where: { product_id: productId },
+      await this.prisma.category.deleteMany({
+        where: { id: productId },
       });
 
       for (const categoryId of categoryIds) {
-        await this.prisma.product_categories.create({
+        await this.prisma.category.create({
           data: {
-            product_id: productId,
-            categories_id: BigInt(categoryId),
+            id: BigInt(categoryId),
           },
         });
       }
@@ -1428,8 +1419,8 @@ export class ProductService {
       throw new NotFoundException(`Product with ID ${id} not found`);
     }
 
-    await this.prisma.product_categories.deleteMany({
-      where: { product_id: productId },
+    await this.prisma.category.deleteMany({
+      where: { id: productId },
     });
 
     await this.prisma.product.delete({
@@ -1669,15 +1660,15 @@ export class ProductService {
         },
       },
       include: {
-        product_categories: {
+        category: {
           include: {
-            category: true,
+            product: true,
           },
         },
       },
     });
 
-    return products.map((product) => {
+    return products.map((product: any) => {
       let imagesUrl = [];
       try {
         imagesUrl = product.images_url ? JSON.parse(product.images_url) : [];
@@ -1695,7 +1686,7 @@ export class ProductService {
         quantity: product.quantity ? Number(product.quantity) : null,
         imagesUrl,
         isFeatured: product.is_featured,
-        ofCategories: product.product_categories.map((pc) => ({
+        ofCategories: product.category.map((pc) => ({
           id: pc.categories_id.toString(),
           name: pc.category?.name || '',
         })),

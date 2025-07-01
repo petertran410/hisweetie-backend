@@ -175,7 +175,7 @@ export class CategoryController {
       const totalLocalCategories =
         await this.categoryService['prisma'].category.count();
       const totalProductRelations =
-        await this.categoryService['prisma'].product_categories.count();
+        await this.categoryService['prisma'].category.count();
 
       let kiotVietConfigured = false;
       let kiotVietCategoryCount = 0;

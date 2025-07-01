@@ -44,16 +44,16 @@ model authority {
 
 model category {
   id                 BigInt               @id @default(autoincrement())
+  name               String?              @db.VarChar(255)
   created_by         String?              @db.VarChar(255)
   created_date       DateTime?            @db.DateTime(6)
   updated_by         String?              @db.VarChar(255)
   updated_date       DateTime?            @db.DateTime(6)
   description        String?              @db.LongText
   images_url         String?              @db.LongText
-  name               String?              @db.VarChar(255)
   parent_id          BigInt?
   priority           Int?
-  product_categories product_categories[]
+  product            product[]
 }
 
 model code_forgot_pass {
@@ -120,10 +120,7 @@ model orders {
 
 model product {
   id                  BigInt               @id @default(autoincrement())
-  created_by          String?              @db.VarChar(255)
-  created_date        DateTime?            @db.DateTime(6)
-  updated_by          String?              @db.VarChar(255)
-  updated_date        DateTime?            @db.DateTime(6)
+  category_id         BigInt?
   description         String?              @db.LongText
   general_description String?              @db.LongText
   images_url          String?              @db.LongText
@@ -138,21 +135,10 @@ model product {
   featured_thumbnail  String?              @db.VarChar(255)
   recipe_thumbnail    String?              @db.VarChar(255)
   orders              orders[]
-  product_categories  product_categories[]
   review              review[]
+  category            category?            @relation(fields: [category_id], references: [id])
 
-  @@index([updated_date])
-  @@index([is_visible])
-}
-
-model product_categories {
-  product_id    BigInt
-  categories_id BigInt
-  category      category @relation(fields: [categories_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  product       product  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@id([product_id, categories_id])
-  @@index([categories_id])
+  @@index([category_id])
 }
 
 model product_order {

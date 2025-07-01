@@ -66,78 +66,78 @@ export class SepayService {
   private readonly logger = new Logger(SepayService.name);
   private readonly config: SepayConfig;
 
-  constructor(private readonly configService: ConfigService) {
-    // Get SePay configuration
-    const apiToken = this.configService.get('SEPAY_API_TOKEN') as string;
-    const bankAccount = this.configService.get('SEPAY_BANK_ACCOUNT') as string;
-    const bankName = this.configService.get('SEPAY_BANK_NAME') as string;
-    const accountHolder = this.configService.get(
-      'SEPAY_ACCOUNT_HOLDER',
-    ) as string;
-    const webhookUrl = this.configService.get('SEPAY_WEBHOOK_URL') as string;
+  // constructor(private readonly configService: ConfigService) {
+  //   // Get SePay configuration
+  //   const apiToken = this.configService.get('SEPAY_API_TOKEN') as string;
+  //   const bankAccount = this.configService.get('SEPAY_BANK_ACCOUNT') as string;
+  //   const bankName = this.configService.get('SEPAY_BANK_NAME') as string;
+  //   const accountHolder = this.configService.get(
+  //     'SEPAY_ACCOUNT_HOLDER',
+  //   ) as string;
+  //   const webhookUrl = this.configService.get('SEPAY_WEBHOOK_URL') as string;
 
-    if (!apiToken) {
-      this.logger.warn(
-        'SEPAY_API_TOKEN is not configured. SePay webhook authentication will fail.',
-      );
-    }
+  //   if (!apiToken) {
+  //     this.logger.warn(
+  //       'SEPAY_API_TOKEN is not configured. SePay webhook authentication will fail.',
+  //     );
+  //   }
 
-    if (!bankAccount || !bankName || !accountHolder) {
-      this.logger.warn(
-        'SePay bank information is incomplete. Payment QR codes cannot be generated.',
-      );
-    }
+  //   if (!bankAccount || !bankName || !accountHolder) {
+  //     this.logger.warn(
+  //       'SePay bank information is incomplete. Payment QR codes cannot be generated.',
+  //     );
+  //   }
 
-    if (!webhookUrl) {
-      this.logger.warn(
-        'SEPAY_WEBHOOK_URL is not configured. Please set this to your webhook endpoint.',
-      );
-    }
+  //   if (!webhookUrl) {
+  //     this.logger.warn(
+  //       'SEPAY_WEBHOOK_URL is not configured. Please set this to your webhook endpoint.',
+  //     );
+  //   }
 
-    this.config = {
-      apiToken: apiToken || '',
-      bankAccount: bankAccount || '',
-      bankName: bankName || '',
-      accountHolder: accountHolder || '',
-      webhookUrl: webhookUrl || '',
-    };
+  //   this.config = {
+  //     apiToken: apiToken || '',
+  //     bankAccount: bankAccount || '',
+  //     bankName: bankName || '',
+  //     accountHolder: accountHolder || '',
+  //     webhookUrl: webhookUrl || '',
+  //   };
 
-    this.logger.log(
-      `SePay service initialized. API Token: ${!!this.config.apiToken}, Bank: ${this.config.bankName} (${this.config.bankAccount}), Webhook: ${this.config.webhookUrl}`,
-    );
+  //   this.logger.log(
+  //     `SePay service initialized. API Token: ${!!this.config.apiToken}, Bank: ${this.config.bankName} (${this.config.bankAccount}), Webhook: ${this.config.webhookUrl}`,
+  //   );
 
-    // Register webhook with SePay if configured
-    if (this.config.apiToken && this.config.webhookUrl) {
-      this.registerWebhook();
-    }
-  }
+  //   // Register webhook with SePay if configured
+  //   if (this.config.apiToken && this.config.webhookUrl) {
+  //     this.registerWebhook();
+  //   }
+  // }
 
   /**
    * Register webhook with SePay
    */
-  private async registerWebhook(): Promise<void> {
-    try {
-      this.logger.log('Registering webhook with SePay...');
+  // private async registerWebhook(): Promise<void> {
+  //   try {
+  //     this.logger.log('Registering webhook with SePay...');
 
-      const response = await axios.post(
-        'https://my.sepay.vn/userapi/webhooks/register',
-        {
-          url: this.config.webhookUrl,
-          secret: this.config.apiToken,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${this.config.apiToken}`,
-            'Content-Type': 'application/json',
-          },
-        },
-      );
+  //     const response = await axios.post(
+  //       'https://my.sepay.vn/userapi/webhooks/register',
+  //       {
+  //         url: this.config.webhookUrl,
+  //         secret: this.config.apiToken,
+  //       },
+  //       {
+  //         headers: {
+  //           Authorization: `Bearer ${this.config.apiToken}`,
+  //           'Content-Type': 'application/json',
+  //         },
+  //       },
+  //     );
 
-      this.logger.log('Webhook registration response:', response.data);
-    } catch (error) {
-      this.logger.error('Failed to register webhook:', error.message);
-    }
-  }
+  //     this.logger.log('Webhook registration response:', response.data);
+  //   } catch (error) {
+  //     this.logger.error('Failed to register webhook:', error.message);
+  //   }
+  // }
 
   /**
    * Check if SePay is properly configured
