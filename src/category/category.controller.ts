@@ -229,8 +229,11 @@ export class CategoryController {
   @ApiOperation({ summary: 'Update category priorities/sorting order' })
   @ApiBody({ type: UpdateCategoryDto })
   @Patch()
-  updatePriorities(@Body() updateCategoryPrioritiesDto: any) {
-    return this.categoryService.updatePriorities(updateCategoryPrioritiesDto);
+  updatePriorities(@Body() updateCategoryPrioritiesDto: UpdateCategoryDto) {
+    // FIXED: Use correct type
+    return this.categoryService.updatePriorities(
+      updateCategoryPrioritiesDto.items,
+    ); // FIXED: Pass .items
   }
 
   @Get('v2/get-all')
@@ -263,7 +266,7 @@ export class CategoryController {
   @ApiParam({ name: 'id', description: 'Category ID' })
   update(
     @Param('id') id: string,
-    @Body() updateCategoryDto: UpdateCategoryDto,
+    @Body() updateCategoryDto: Partial<CreateCategoryDto>, // FIXED: Use Partial<CreateCategoryDto>
   ) {
     return this.categoryService.update(+id, updateCategoryDto);
   }

@@ -75,7 +75,6 @@ export class CategoryService {
       // FIXED: Process the synchronization with explicit typing
       const syncResults = await this.prisma.$transaction(
         async (tx) => {
-          // FIXED: Use 'tx' as parameter name for clarity
           let newCategories = 0;
           let updatedCategories = 0;
 
@@ -319,7 +318,7 @@ export class CategoryService {
 
   async postCategory(createCategoryDto: CreateCategoryDto) {
     try {
-      // FIXED: Explicit typing for create data
+      // FIXED: Explicit typing for create data to avoid "never" type
       const categoryData: Prisma.categoryCreateInput = {
         name: createCategoryDto.name,
         description: createCategoryDto.description,
@@ -354,7 +353,7 @@ export class CategoryService {
       const results = [];
 
       for (const item of updateItems) {
-        // FIXED: Explicit typing for update data
+        // FIXED: Explicit typing for update data to avoid "never" type
         const updateData: Prisma.categoryUpdateInput = {
           priority: item.priority,
           updated_date: new Date(),
@@ -442,6 +441,7 @@ export class CategoryService {
 
   // FIXED: Single category update method with proper typing
   async update(id: number, updateData: Partial<CreateCategoryDto>) {
+    // FIXED: Use Partial<CreateCategoryDto>
     try {
       const existingCategory = await this.prisma.category.findUnique({
         where: { id: BigInt(id) },
@@ -512,6 +512,35 @@ export class CategoryService {
       this.logger.error(`Failed to delete category ${id}:`, error.message);
       throw new BadRequestException(
         `Failed to delete category: ${error.message}`,
+      );
+    }
+  }
+
+  async getCategoryCount(): Promise<number> {
+    try {
+      return await this.prisma.category.count();
+    } catch (error) {
+      this.logger.error('Failed to get category count:', error.message);
+      throw new BadRequestException(
+        `Failed to get category count: ${error.message}`,
+      );
+    }
+  }
+
+  async getProductCategoryRelationsCount(): Promise<number> {
+    try {
+      return await this.prisma.product.count({
+        where: {
+          category_id: { not: null },
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        'Failed to get product category relations count:',
+        error.message,
+      );
+      throw new BadRequestException(
+        `Failed to get relations count: ${error.message}`,
       );
     }
   }
