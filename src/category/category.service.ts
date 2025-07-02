@@ -387,30 +387,51 @@ export class CategoryService {
       const skip = pageNumber * pageSize;
       const take = pageSize;
 
-      const where: Prisma.categoryWhereInput = {};
+      // FIXED: Query kiotviet_category table with correct field types
+      const where: Prisma.kiotviet_categoryWhereInput = {};
       if (parentId) {
-        where.parent_id = BigInt(parentId);
+        // FIXED: parent_id is Int in kiotviet_category, not BigInt
+        where.parent_id = parseInt(parentId);
       }
 
+      // FIXED: Query the correct kiotviet_category table
       const [categories, total] = await Promise.all([
         this.prisma.kiotviet_category.findMany({
+          where,
           skip,
           take,
+          orderBy: [
+            { rank: 'asc' }, // Order by rank first (KiotViet's order)
+            { name: 'asc' }, // Then by name
+          ],
+          include: {
+            _count: {
+              select: { products: true }, // Count how many products in each category
+            },
+          },
         }),
-        this.prisma.category.count({ where }),
+        this.prisma.kiotviet_category.count({ where }),
       ]);
 
+      // FIXED: Transform only the BigInt field (id) to string
+      const transformedCategories = categories.map((category) => ({
+        ...category,
+        id: category.id.toString(), // Only this field is BigInt, needs transformation
+        // parent_id, kiotviet_id are already Int, no need to transform
+        productCount: category._count.products, // Add product count for convenience
+      }));
+
       return {
-        content: categories,
+        content: transformedCategories,
         totalElements: total,
         totalPages: Math.ceil(total / pageSize),
         pageNumber,
         pageSize,
       };
     } catch (error) {
-      this.logger.error('Failed to get categories:', error.message);
+      this.logger.error('Failed to get KiotViet categories:', error.message);
       throw new BadRequestException(
-        `Failed to get categories: ${error.message}`,
+        `Failed to get KiotViet categories: ${error.message}`,
       );
     }
   }

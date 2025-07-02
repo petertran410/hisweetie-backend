@@ -237,16 +237,22 @@ export class CategoryController {
   }
 
   @Get('v2/get-all')
-  @ApiOperation({ summary: 'Get all categories with pagination and hierarchy' })
+  @ApiOperation({
+    summary: 'Get all custom categories (manual)',
+    description:
+      'Get manually created categories with pagination and hierarchy',
+  })
   @ApiResponse({
     status: 200,
-    description: 'Returns paginated categories with parent-child relationships',
+    description: 'Returns paginated custom categories',
   })
-  getAllCategories(
+  getAllCustomCategories(
     @Query('pageSize') pageSize: string = '1000',
     @Query('pageNumber') pageNumber: string = '0',
     @Query('parentId') parentId?: string,
   ) {
+    // This would need a separate method for custom categories
+    // For now, redirect to KiotViet categories or implement separate logic
     return this.categoryService.getAllCategories({
       pageSize: parseInt(pageSize),
       pageNumber: parseInt(pageNumber),
