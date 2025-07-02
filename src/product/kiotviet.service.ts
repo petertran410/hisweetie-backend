@@ -236,21 +236,37 @@ export class KiotVietService {
     await this.setupAuthHeaders();
 
     try {
+      // FIXED: Use simpler parameters based on KiotViet API documentation
       const response = await this.axiosInstance.get('/trademark', {
         params: {
           pageSize: 100,
           currentItem: 0,
-          orderBy: 'tradeMarkName',
-          orderDirection: 'Asc',
+          // FIXED: Remove orderBy and orderDirection that might be causing 500 error
+          // orderBy: 'tradeMarkName',
+          // orderDirection: 'Asc',
         },
       });
 
       this.requestCount++;
       this.logger.log(
-        `Fetched ${response.data.data.length} trademarks from KiotViet`,
+        `Successfully fetched ${response.data.data.length} trademarks from KiotViet`,
       );
       return response.data.data;
     } catch (error) {
+      // FIXED: Better error logging with response details
+      if (error.response) {
+        this.logger.error('KiotViet API Error Response:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data,
+          headers: error.response.headers,
+        });
+      } else if (error.request) {
+        this.logger.error('KiotViet API Request Error:', error.request);
+      } else {
+        this.logger.error('KiotViet API Error:', error.message);
+      }
+
       this.logger.error('Failed to fetch trademarks:', error.message);
       throw new BadRequestException(
         `Failed to fetch trademarks from KiotViet: ${error.message}`,
@@ -265,20 +281,35 @@ export class KiotVietService {
     await this.setupAuthHeaders();
 
     try {
+      // FIXED: Correct parameter name - should be "hierarchicalData" not "hierachicalData"
       const response = await this.axiosInstance.get('/categories', {
         params: {
           pageSize: 100,
           currentItem: 0,
-          hierachicalData: true, // Get hierarchical structure
+          hierarchicalData: true, // FIXED: Correct spelling
         },
       });
 
       this.requestCount++;
       this.logger.log(
-        `Fetched ${response.data.data.length} categories from KiotViet`,
+        `Successfully fetched ${response.data.data.length} categories from KiotViet`,
       );
       return response.data.data;
     } catch (error) {
+      // FIXED: Better error logging with response details
+      if (error.response) {
+        this.logger.error('KiotViet API Error Response:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data,
+          headers: error.response.headers,
+        });
+      } else if (error.request) {
+        this.logger.error('KiotViet API Request Error:', error.request);
+      } else {
+        this.logger.error('KiotViet API Error:', error.message);
+      }
+
       this.logger.error('Failed to fetch categories:', error.message);
       throw new BadRequestException(
         `Failed to fetch categories from KiotViet: ${error.message}`,
@@ -290,55 +321,66 @@ export class KiotVietService {
     products: KiotVietProduct[];
     totalFetched: number;
   }> {
-    this.logger.log('Fetching all products from KiotViet');
+    this.logger.log('Starting to fetch all products from KiotViet');
 
     const allProducts: KiotVietProduct[] = [];
     let currentItem = 0;
-    const batchSize = 100;
-    let totalProducts = 0;
+    const pageSize = 100;
+    let hasMoreData = true;
+    let batchNumber = 1;
 
-    // Fetch first batch to get total count
-    const firstBatch = await this.fetchProductBatch(
-      currentItem,
-      batchSize,
-      lastModifiedFrom,
-    );
-    totalProducts = firstBatch.total;
-    allProducts.push(...firstBatch.data);
+    try {
+      while (hasMoreData) {
+        this.logger.log(
+          `Fetching batch ${batchNumber}, starting from item ${currentItem}`,
+        );
 
-    this.logger.log(`Total products in KiotViet: ${totalProducts}`);
+        const batchResult = await this.fetchProductBatch(
+          currentItem,
+          pageSize,
+          lastModifiedFrom,
+        );
 
-    if (totalProducts === 0) {
-      return { products: [], totalFetched: 0 };
-    }
+        if (batchResult.data && batchResult.data.length > 0) {
+          allProducts.push(...batchResult.data);
+          currentItem += batchResult.data.length;
 
-    // Fetch remaining batches
-    currentItem = batchSize;
-    while (currentItem < totalProducts) {
+          this.logger.log(
+            `Batch ${batchNumber} completed: fetched ${batchResult.data.length} products. Total so far: ${allProducts.length}`,
+          );
+
+          // Check if we have more data
+          hasMoreData =
+            batchResult.data.length === pageSize &&
+            allProducts.length < batchResult.total;
+          batchNumber++;
+        } else {
+          hasMoreData = false;
+        }
+
+        // Safety check to avoid infinite loops
+        if (batchNumber > 500) {
+          // Maximum 50,000 products
+          this.logger.warn('Reached maximum batch limit (500), stopping fetch');
+          break;
+        }
+      }
+
       this.logger.log(
-        `Fetching batch: ${currentItem}-${Math.min(currentItem + batchSize - 1, totalProducts - 1)}`,
+        `Completed fetching all products: total ${allProducts.length} products`,
       );
-
-      const batch = await this.fetchProductBatch(
-        currentItem,
-        batchSize,
-        lastModifiedFrom,
+      return { products: allProducts, totalFetched: allProducts.length };
+    } catch (error) {
+      this.logger.error('Failed to fetch all products:', error.message);
+      throw new BadRequestException(
+        `Failed to fetch products from KiotViet: ${error.message}`,
       );
-      allProducts.push(...batch.data);
-
-      currentItem += batchSize;
-      await new Promise((resolve) => setTimeout(resolve, 100)); // Small delay between requests
     }
-
-    this.logger.log(
-      `Successfully fetched ${allProducts.length} products from KiotViet`,
-    );
-    return { products: allProducts, totalFetched: allProducts.length };
   }
 
   private async fetchProductBatch(
-    currentItem: number = 0,
-    pageSize: number = 100,
+    currentItem: number,
+    pageSize: number,
     lastModifiedFrom?: string,
   ): Promise<{ total: number; data: KiotVietProduct[] }> {
     await this.checkRateLimit();
@@ -348,8 +390,9 @@ export class KiotVietService {
       currentItem,
       pageSize,
       includeInventory: false, // We don't need inventory for basic sync
-      orderBy: 'id',
-      orderDirection: 'Asc',
+      // FIXED: Remove orderBy/orderDirection that might cause issues
+      // orderBy: 'id',
+      // orderDirection: 'Asc',
     };
 
     if (lastModifiedFrom) {
@@ -365,6 +408,16 @@ export class KiotVietService {
       );
       return response.data;
     } catch (error) {
+      // FIXED: Better error handling with response details
+      if (error.response) {
+        this.logger.error('KiotViet Products API Error Response:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data,
+          params: params,
+        });
+      }
+
       if (error.response?.status === 401 && this.currentToken) {
         this.logger.warn(
           'Received 401 error, clearing cached token and retrying once',
@@ -636,9 +689,6 @@ export class KiotVietService {
 
                 // Also populate basic fields for consistency
                 title: kiotProduct.name,
-                price: kiotProduct.basePrice
-                  ? BigInt(Math.round(Number(kiotProduct.basePrice)))
-                  : null,
                 is_visible: kiotProduct.allowsSale !== false,
               };
 
@@ -775,36 +825,57 @@ export class KiotVietService {
   async testConnection(): Promise<{
     success: boolean;
     message: string;
-    tokenInfo?: { expiresAt: string; tokenType: string };
+    details?: any;
   }> {
     try {
-      this.logger.log('Testing KiotViet connection and authentication');
+      this.logger.log('Testing KiotViet API connection');
 
-      const credentials = this.getCredentials();
-      await this.getValidAccessToken();
+      // First test if we can get authentication token
       await this.setupAuthHeaders();
 
-      const testResponse = await this.axiosInstance.get('/products', {
-        params: { currentItem: 0, pageSize: 1 },
+      // Then test a simple API call (categories is usually the lightest)
+      const response = await this.axiosInstance.get('/categories', {
+        params: {
+          pageSize: 1,
+          currentItem: 0,
+        },
       });
 
       this.requestCount++;
 
       return {
         success: true,
-        message: `Successfully connected to KiotViet for retailer: ${credentials.retailerName}. Found ${testResponse.data.total} total products.`,
-        tokenInfo: this.currentToken
-          ? {
-              expiresAt: this.currentToken.expiresAt.toISOString(),
-              tokenType: this.currentToken.tokenType,
-            }
-          : undefined,
+        message: 'KiotViet API connection successful',
+        details: {
+          endpoint: '/categories',
+          responseStatus: response.status,
+          dataCount: response.data?.data?.length || 0,
+        },
       };
     } catch (error) {
-      this.logger.error('Connection test failed:', error.message);
+      this.logger.error('KiotViet connection test failed:', error.message);
+
+      let errorMessage = 'Connection test failed';
+      let details: any = {};
+
+      if (error.response) {
+        errorMessage = `API returned ${error.response.status}: ${error.response.statusText}`;
+        details = {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data,
+        };
+      } else if (error.request) {
+        errorMessage = 'No response received from KiotViet API';
+        details = { request: 'Timeout or network error' };
+      } else {
+        errorMessage = error.message;
+      }
+
       return {
         success: false,
-        message: `Connection test failed: ${error.message}`,
+        message: errorMessage,
+        details,
       };
     }
   }
