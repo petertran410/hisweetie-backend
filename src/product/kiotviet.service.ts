@@ -684,9 +684,8 @@ export class KiotVietService {
       );
 
       // STEP 3: Fetch all products from KiotViet
-      // FIXED: Extract products array from the returned object
       const fetchResult = await this.fetchAllProducts(lastModifiedFrom);
-      const kiotVietProducts = fetchResult.products; // FIXED: Use .products property
+      const kiotVietProducts = fetchResult.products;
       this.logger.log(
         `Fetched ${fetchResult.totalFetched} products from KiotViet`,
       );
@@ -697,7 +696,6 @@ export class KiotVietService {
           let updatedRecords = 0;
           let skippedRecords = 0;
 
-          // FIXED: Now iterate over the actual products array
           for (const kiotProduct of kiotVietProducts) {
             try {
               // FIXED: Validate category reference before creating/updating
@@ -728,34 +726,56 @@ export class KiotVietService {
                 where: { kiotviet_id: BigInt(kiotProduct.id) },
               });
 
-              // FIXED: Handle images properly
-              let processedImages: any = null;
-              if (kiotProduct.images && Array.isArray(kiotProduct.images)) {
-                if (kiotProduct.images.length > 0) {
-                  // Handle both formats: [{Image: "url"}] and ["url"]
-                  const imageUrls = kiotProduct.images
-                    .map((img) =>
-                      typeof img === 'object' && img.Image ? img.Image : img,
-                    )
-                    .filter((url) => url && typeof url === 'string');
+              // FIXED: Handle images properly - use undefined instead of null for Prisma Json field
+              let processedImages: string[] | undefined = undefined;
 
-                  if (imageUrls.length > 0) {
-                    processedImages = imageUrls;
-                  }
+              if (
+                kiotProduct.images &&
+                Array.isArray(kiotProduct.images) &&
+                kiotProduct.images.length > 0
+              ) {
+                // Handle both formats from KiotViet API:
+                // Format 1: [{Image: "url"}] (object with Image property)
+                // Format 2: ["url"] (direct string array)
+                const imageUrls = kiotProduct.images
+                  .map((img) => {
+                    if (
+                      typeof img === 'object' &&
+                      img !== null &&
+                      'Image' in img
+                    ) {
+                      return img.Image; // Format 1: Extract from object
+                    } else if (typeof img === 'string') {
+                      return img; // Format 2: Direct string
+                    }
+                    return null; // Invalid format
+                  })
+                  .filter(
+                    (url): url is string =>
+                      url !== null &&
+                      typeof url === 'string' &&
+                      url.trim().length > 0 &&
+                      url.startsWith('http'), // Only valid URLs
+                  );
+
+                // FIXED: Only set processedImages if we have valid image URLs
+                if (imageUrls.length > 0) {
+                  processedImages = imageUrls;
                 }
+                // If no valid images, leave as undefined (not null)
               }
 
-              const productData = {
+              // FIXED: Build productData object with clean fields
+              const productData: any = {
                 kiotviet_id: BigInt(kiotProduct.id),
                 kiotviet_code: kiotProduct.code,
                 kiotviet_name: kiotProduct.name,
-                kiotviet_images: processedImages,
                 kiotviet_price: kiotProduct.basePrice
                   ? new Prisma.Decimal(kiotProduct.basePrice)
                   : null,
                 kiotviet_type: kiotProduct.type,
-                kiotviet_category_id: categoryId, // FIXED: Use validated categoryId
-                kiotviet_trademark_id: trademarkId, // FIXED: Use validated trademarkId
+                kiotviet_category_id: categoryId,
+                kiotviet_trademark_id: trademarkId,
                 is_from_kiotviet: true,
                 kiotviet_synced_at: new Date(),
 
@@ -763,6 +783,18 @@ export class KiotVietService {
                 title: kiotProduct.name,
                 is_visible: kiotProduct.allowsSale !== false,
               };
+
+              // FIXED: Only add kiotviet_images if we have processed images (avoid null)
+              if (processedImages !== undefined) {
+                productData.kiotviet_images = processedImages;
+              }
+
+              // FIXED: Remove any undefined fields before sending to Prisma
+              Object.keys(productData).forEach((key) => {
+                if (productData[key] === undefined) {
+                  delete productData[key];
+                }
+              });
 
               if (existingProduct) {
                 // Update existing product

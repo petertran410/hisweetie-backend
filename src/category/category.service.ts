@@ -380,7 +380,7 @@ export class CategoryService {
   async getAllCategories(params: {
     pageSize: number;
     pageNumber: number;
-    parentId?: string;
+    parentId?: bigint;
   }) {
     try {
       const { pageSize, pageNumber, parentId } = params;
@@ -393,11 +393,9 @@ export class CategoryService {
       }
 
       const [categories, total] = await Promise.all([
-        this.prisma.category.findMany({
-          where,
+        this.prisma.kiotviet_category.findMany({
           skip,
           take,
-          orderBy: [{ priority: 'asc' }, { name: 'asc' }],
         }),
         this.prisma.category.count({ where }),
       ]);
