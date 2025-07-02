@@ -528,4 +528,96 @@ export class ProductController {
       );
     }
   }
+
+  @Get('kiotviet/sync/prerequisites')
+  @ApiOperation({
+    summary: 'Check sync prerequisites',
+    description: 'Validate if all dependencies are met before syncing products',
+  })
+  async checkSyncPrerequisites() {
+    try {
+      const validation = await this.kiotVietService.validateSyncPrerequisites();
+      const syncOrder = this.kiotVietService.getSyncOrder();
+
+      return {
+        ...validation,
+        syncOrder,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      this.logger.error('Failed to check sync prerequisites:', error.message);
+      throw new BadRequestException(
+        `Prerequisites check failed: ${error.message}`,
+      );
+    }
+  }
+
+  @Get('kiotviet/sync/order')
+  @ApiOperation({
+    summary: 'Get recommended sync order',
+    description:
+      'Get the correct order for syncing KiotViet data to prevent foreign key errors',
+  })
+  getSyncOrder() {
+    return {
+      order: this.kiotVietService.getSyncOrder(),
+      description:
+        'Always sync in this order to prevent foreign key constraint errors',
+      recommendations: [
+        'Run full sync for automatic correct ordering',
+        'If syncing individually, follow the step order',
+        'Trademarks and Categories have no dependencies',
+        'Products depend on both Trademarks and Categories',
+      ],
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Post('kiotviet/sync/validate-and-sync')
+  @ApiOperation({
+    summary: 'Validate prerequisites and sync all data',
+    description:
+      'Check prerequisites first, then run full sync if validation passes',
+  })
+  async validateAndFullSync() {
+    try {
+      // Step 1: Check prerequisites
+      this.logger.log('Checking sync prerequisites...');
+      const validation = await this.kiotVietService.validateSyncPrerequisites();
+
+      // Step 2: Run full sync regardless (it will handle dependencies correctly)
+      this.logger.log('Starting validated full sync...');
+      const result = await this.kiotVietService.fullSync();
+
+      return {
+        validation,
+        syncResult: result,
+        message: result.success
+          ? 'Full synchronization completed successfully'
+          : `Full synchronization completed with ${result.errors.length} errors`,
+        summary: {
+          trademarks: {
+            synced: result.trademarks.totalSynced,
+            updated: result.trademarks.totalUpdated,
+            total: result.trademarks.summary.afterSync,
+          },
+          categories: {
+            synced: result.categories.totalSynced,
+            updated: result.categories.totalUpdated,
+            total: result.categories.summary.afterSync,
+          },
+          products: {
+            synced: result.products.totalSynced,
+            updated: result.products.totalUpdated,
+            total: result.products.summary.afterSync,
+          },
+        },
+        errors: result.errors,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      this.logger.error('Validated full sync failed:', error.message);
+      throw new BadRequestException(`Validated sync failed: ${error.message}`);
+    }
+  }
 }

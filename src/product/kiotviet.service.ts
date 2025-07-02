@@ -1,7 +1,7 @@
 // src/product/kiotviet.service.ts - STREAMLINED FOR MINIMAL SYNC
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 
 // ================================
@@ -632,21 +632,43 @@ export class KiotVietService {
     }
   }
 
+  // FIXED: syncProducts with category validation to prevent foreign key errors
   async syncProducts(lastModifiedFrom?: string): Promise<SyncResult> {
-    this.logger.log('Starting product synchronization - MINIMAL FIELDS ONLY');
-    this.logger.log(
-      'Syncing: kiotviet_id, code, name, image, price, type, category',
-    );
+    this.logger.log('Starting product synchronization from KiotViet');
 
     const errors: string[] = [];
+    let totalSynced = 0;
+    let totalUpdated = 0;
 
     try {
       const beforeSync = await this.prisma.product.count({
         where: { is_from_kiotviet: true },
       });
-      const { products } = await this.fetchAllProducts(lastModifiedFrom);
 
-      this.logger.log(`Fetched ${products.length} products from KiotViet`);
+      // STEP 1: Get all existing category IDs to validate references
+      const existingCategories = await this.prisma.kiotviet_category.findMany({
+        select: { kiotviet_id: true },
+      });
+      const validCategoryIds = new Set(
+        existingCategories.map((cat) => cat.kiotviet_id),
+      );
+      this.logger.log(
+        `Found ${validCategoryIds.size} existing categories for validation`,
+      );
+
+      // STEP 2: Get all existing trademark IDs to validate references
+      const existingTrademarks = await this.prisma.kiotviet_trademark.findMany({
+        select: { kiotviet_id: true },
+      });
+      const validTrademarkIds = new Set(
+        existingTrademarks.map((tm) => tm.kiotviet_id),
+      );
+      this.logger.log(
+        `Found ${validTrademarkIds.size} existing trademarks for validation`,
+      );
+
+      // STEP 3: Fetch all products from KiotViet
+      const kiotVietProducts = await this.fetchAllProducts(lastModifiedFrom);
 
       const results = await this.prisma.$transaction(
         async (prisma) => {
@@ -654,36 +676,64 @@ export class KiotVietService {
           let updatedRecords = 0;
           let skippedRecords = 0;
 
-          for (const kiotProduct of products) {
+          for (const kiotProduct of kiotVietProducts) {
             try {
-              // Process images - extract URLs from KiotViet format
-              let processedImages: any[] = [];
-              if (kiotProduct.images && Array.isArray(kiotProduct.images)) {
-                const imageUrls = kiotProduct.images
-                  .map((img) => (typeof img === 'string' ? img : img.Image))
-                  .filter((url) => url && url.trim() !== '');
-
-                if (imageUrls.length > 0) {
-                  processedImages = imageUrls;
+              // FIXED: Validate category reference before creating/updating
+              let categoryId: number | null = null;
+              if (kiotProduct.categoryId) {
+                if (validCategoryIds.has(kiotProduct.categoryId)) {
+                  categoryId = kiotProduct.categoryId;
+                } else {
+                  this.logger.warn(
+                    `Product ${kiotProduct.id}: Category ${kiotProduct.categoryId} not found, setting to null`,
+                  );
                 }
               }
 
-              // Check if product exists
+              // FIXED: Validate trademark reference before creating/updating
+              let trademarkId: number | null = null;
+              if (kiotProduct.tradeMarkId) {
+                if (validTrademarkIds.has(kiotProduct.tradeMarkId)) {
+                  trademarkId = kiotProduct.tradeMarkId;
+                } else {
+                  this.logger.warn(
+                    `Product ${kiotProduct.id}: Trademark ${kiotProduct.tradeMarkId} not found, setting to null`,
+                  );
+                }
+              }
+
               const existingProduct = await prisma.product.findUnique({
                 where: { kiotviet_id: BigInt(kiotProduct.id) },
               });
+
+              // FIXED: Handle images properly
+              let processedImages: any = null;
+              if (kiotProduct.images && Array.isArray(kiotProduct.images)) {
+                if (kiotProduct.images.length > 0) {
+                  // Handle both formats: [{Image: "url"}] and ["url"]
+                  const imageUrls = kiotProduct.images
+                    .map((img) =>
+                      typeof img === 'object' && img.Image ? img.Image : img,
+                    )
+                    .filter((url) => url && typeof url === 'string');
+
+                  if (imageUrls.length > 0) {
+                    processedImages = imageUrls;
+                  }
+                }
+              }
 
               const productData = {
                 kiotviet_id: BigInt(kiotProduct.id),
                 kiotviet_code: kiotProduct.code,
                 kiotviet_name: kiotProduct.name,
-                kiotviet_images: processedImages,
+                kiotviet_images: processedImages, // Store as JSON array
                 kiotviet_price: kiotProduct.basePrice
-                  ? Number(kiotProduct.basePrice)
+                  ? new Prisma.Decimal(kiotProduct.basePrice)
                   : null,
                 kiotviet_type: kiotProduct.type,
-                kiotviet_category_id: kiotProduct.categoryId,
-                kiotviet_trademark_id: kiotProduct.tradeMarkId,
+                kiotviet_category_id: categoryId, // FIXED: Use validated categoryId
+                kiotviet_trademark_id: trademarkId, // FIXED: Use validated trademarkId
                 is_from_kiotviet: true,
                 kiotviet_synced_at: new Date(),
 
@@ -765,52 +815,74 @@ export class KiotVietService {
 
   async fullSync(): Promise<{
     success: boolean;
+    errors: string[];
     trademarks: SyncResult;
     categories: SyncResult;
     products: SyncResult;
-    errors: string[];
   }> {
-    this.logger.log('Starting FULL SYNC of all KiotViet data');
+    this.logger.log('Starting full KiotViet synchronization');
 
-    const errors: string[] = [];
+    const allErrors: string[] = [];
 
     try {
-      // Step 1: Sync trademarks
-      this.logger.log('Step 1: Syncing trademarks...');
+      // STEP 1: Sync Trademarks first (no dependencies)
+      this.logger.log('🔄 Step 1/3: Syncing trademarks...');
       const trademarksResult = await this.syncTrademarks();
-      if (!trademarksResult.success) {
-        errors.push(...trademarksResult.errors);
+      allErrors.push(...trademarksResult.errors);
+
+      if (trademarksResult.success) {
+        this.logger.log(
+          `✅ Trademarks synced: ${trademarksResult.totalSynced} new, ${trademarksResult.totalUpdated} updated`,
+        );
+      } else {
+        this.logger.warn(
+          `⚠️ Trademarks sync had ${trademarksResult.errors.length} errors`,
+        );
       }
 
-      // Step 2: Sync categories
-      this.logger.log('Step 2: Syncing categories...');
+      // STEP 2: Sync Categories second (no dependencies)
+      this.logger.log('🔄 Step 2/3: Syncing categories...');
       const categoriesResult = await this.syncCategories();
-      if (!categoriesResult.success) {
-        errors.push(...categoriesResult.errors);
+      allErrors.push(...categoriesResult.errors);
+
+      if (categoriesResult.success) {
+        this.logger.log(
+          `✅ Categories synced: ${categoriesResult.totalSynced} new, ${categoriesResult.totalUpdated} updated`,
+        );
+      } else {
+        this.logger.warn(
+          `⚠️ Categories sync had ${categoriesResult.errors.length} errors`,
+        );
       }
 
-      // Step 3: Sync products
-      this.logger.log('Step 3: Syncing products...');
+      // STEP 3: Sync Products last (depends on categories and trademarks)
+      this.logger.log('🔄 Step 3/3: Syncing products...');
       const productsResult = await this.syncProducts();
-      if (!productsResult.success) {
-        errors.push(...productsResult.errors);
+      allErrors.push(...productsResult.errors);
+
+      if (productsResult.success) {
+        this.logger.log(
+          `✅ Products synced: ${productsResult.totalSynced} new, ${productsResult.totalUpdated} updated`,
+        );
+      } else {
+        this.logger.warn(
+          `⚠️ Products sync had ${productsResult.errors.length} errors`,
+        );
       }
 
-      const overallSuccess = errors.length === 0;
+      const overallSuccess = allErrors.length === 0;
 
       this.logger.log(
-        `Full sync completed. Overall success: ${overallSuccess}`,
+        `🎯 Full sync completed ${overallSuccess ? 'successfully' : 'with errors'}. ` +
+          `Total: ${trademarksResult.totalSynced + categoriesResult.totalSynced + productsResult.totalSynced} new items`,
       );
-      if (errors.length > 0) {
-        this.logger.warn(`Full sync completed with ${errors.length} errors`);
-      }
 
       return {
         success: overallSuccess,
+        errors: allErrors,
         trademarks: trademarksResult,
         categories: categoriesResult,
         products: productsResult,
-        errors,
       };
     } catch (error) {
       this.logger.error('Full sync failed:', error.message);
@@ -878,5 +950,47 @@ export class KiotVietService {
         details,
       };
     }
+  }
+
+  getSyncOrder(): { step: number; name: string; dependencies: string[] }[] {
+    return [
+      { step: 1, name: 'Trademarks', dependencies: [] },
+      { step: 2, name: 'Categories', dependencies: [] },
+      { step: 3, name: 'Products', dependencies: ['Trademarks', 'Categories'] },
+    ];
+  }
+
+  async validateSyncPrerequisites(): Promise<{
+    canSyncProducts: boolean;
+    categoriesCount: number;
+    trademarksCount: number;
+    recommendations: string[];
+  }> {
+    const categoriesCount = await this.prisma.kiotviet_category.count();
+    const trademarksCount = await this.prisma.kiotviet_trademark.count();
+
+    const recommendations: string[] = [];
+    let canSyncProducts = true;
+
+    if (categoriesCount === 0) {
+      recommendations.push('Sync categories first before syncing products');
+      canSyncProducts = false;
+    }
+
+    if (trademarksCount === 0) {
+      recommendations.push('Sync trademarks first before syncing products');
+      canSyncProducts = false;
+    }
+
+    if (canSyncProducts) {
+      recommendations.push('All prerequisites met - ready to sync products');
+    }
+
+    return {
+      canSyncProducts,
+      categoriesCount,
+      trademarksCount,
+      recommendations,
+    };
   }
 }
