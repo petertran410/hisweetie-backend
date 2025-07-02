@@ -245,7 +245,7 @@ export class CategoryController {
   getAllCategories(
     @Query('pageSize') pageSize: string = '1000',
     @Query('pageNumber') pageNumber: string = '0',
-    @Query('parentId') parentId?: bigint,
+    @Query('parentId') parentId?: string,
   ) {
     return this.categoryService.getAllCategories({
       pageSize: parseInt(pageSize),

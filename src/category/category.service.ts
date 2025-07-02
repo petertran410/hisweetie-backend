@@ -380,7 +380,7 @@ export class CategoryService {
   async getAllCategories(params: {
     pageSize: number;
     pageNumber: number;
-    parentId?: bigint;
+    parentId?: string;
   }) {
     try {
       const { pageSize, pageNumber, parentId } = params;
