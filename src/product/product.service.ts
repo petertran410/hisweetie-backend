@@ -353,15 +353,42 @@ export class ProductService {
 
   async create(createProductDto: CreateProductDto) {
     try {
+      // FIXED: Convert images array to string for database
+      let imagesUrlString: string | null = null;
+      if (createProductDto.images_url) {
+        if (Array.isArray(createProductDto.images_url)) {
+          imagesUrlString = createProductDto.images_url.join(',');
+        } else {
+          imagesUrlString = createProductDto.images_url;
+        }
+      }
+
+      const productData: Prisma.productCreateInput = {
+        title: createProductDto.title,
+        description: createProductDto.description,
+        general_description: createProductDto.general_description,
+        instruction: createProductDto.instruction,
+        kiotviet_type: createProductDto.type,
+        is_featured: createProductDto.is_featured,
+        is_visible: createProductDto.is_visible,
+        rate: createProductDto.rate,
+        featured_thumbnail: createProductDto.featured_thumbnail,
+        recipe_thumbnail: createProductDto.recipe_thumbnail,
+        images_url: imagesUrlString, // FIXED: Pass as string
+        is_from_kiotviet: false, // Mark as custom product
+        kiotviet_price: createProductDto.kiotviet_price
+          ? new Prisma.Decimal(createProductDto.kiotviet_price)
+          : null,
+        // Handle category relationship
+        category: createProductDto.category_id
+          ? {
+              connect: { id: BigInt(createProductDto.category_id) },
+            }
+          : undefined,
+      };
+
       const product = await this.prisma.product.create({
-        data: {
-          ...createProductDto,
-          is_from_kiotviet: false, // Mark as custom product
-          category_id: createProductDto.category_id
-            ? BigInt(createProductDto.category_id)
-            : null,
-          kiotviet_price: createProductDto.kiotviet_price || null,
-        },
+        data: productData,
         include: {
           category: true,
         },
@@ -397,13 +424,40 @@ export class ProductService {
         );
       }
 
+      // FIXED: Handle images_url conversion
+      let imagesUrlString: string | null | undefined = undefined;
+      if (updateProductDto.images_url !== undefined) {
+        if (updateProductDto.images_url === null) {
+          imagesUrlString = null;
+        } else if (Array.isArray(updateProductDto.images_url)) {
+          imagesUrlString = updateProductDto.images_url.join(',');
+        } else {
+          imagesUrlString = updateProductDto.images_url;
+        }
+      }
+
       // FIXED: Prepare update data without non-existent fields
-      const updateData: any = {
-        ...updateProductDto,
-        category_id: updateProductDto.category_id
-          ? BigInt(updateProductDto.category_id)
+      const updateData: Prisma.productUpdateInput = {
+        title: updateProductDto.title,
+        description: updateProductDto.description,
+        general_description: updateProductDto.general_description,
+        instruction: updateProductDto.instruction,
+        kiotviet_type: updateProductDto.type,
+        is_featured: updateProductDto.is_featured,
+        is_visible: updateProductDto.is_visible,
+        rate: updateProductDto.rate,
+        featured_thumbnail: updateProductDto.featured_thumbnail,
+        recipe_thumbnail: updateProductDto.recipe_thumbnail,
+        images_url: imagesUrlString, // FIXED: Pass as string
+        kiotviet_price: updateProductDto.kiotviet_price
+          ? new Prisma.Decimal(updateProductDto.kiotviet_price)
           : undefined,
-        // FIXED: Remove price/quantity handling since they don't exist
+        // Handle category relationship
+        category: updateProductDto.category_id
+          ? {
+              connect: { id: BigInt(updateProductDto.category_id) },
+            }
+          : undefined,
       };
 
       // Remove undefined values

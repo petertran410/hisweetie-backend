@@ -7,15 +7,15 @@ import {
 } from '@nestjs/common';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma, category } from '@prisma/client';
 import { KiotVietService } from '../product/kiotviet.service';
 
 interface KiotVietCategory {
   categoryId: number;
   categoryName: string;
   parentId?: number;
-  retailerId: number;
-  createdDate: string;
+  // retailerId?: string;
+  // createdDate: string;
   hasChild?: boolean;
   children?: KiotVietCategory[];
   rank?: number;
@@ -48,7 +48,7 @@ export class CategoryService {
   constructor(private readonly kiotVietService: KiotVietService) {}
 
   /**
-   * FIXED: Sync categories from KiotViet using correct method
+   * FIXED: Sync categories from KiotViet using correct method and types
    */
   async syncCategoriesFromKiotViet(): Promise<CategorySyncResult> {
     this.logger.log('Starting category synchronization from KiotViet');
@@ -71,23 +71,24 @@ export class CategoryService {
         `Fetched ${kiotVietCategories.length} categories from KiotViet`,
       );
 
-      // Process the synchronization with improved transaction handling
+      // FIXED: Process the synchronization with proper typing
       const syncResults = await this.prisma.$transaction(
-        async (transactionClient) => {
+        async (prisma) => {
+          // FIXED: Use generic prisma parameter
           let newCategories = 0;
           let updatedCategories = 0;
 
           // Process categories
           for (const category of kiotVietCategories) {
             try {
-              const existingCategory =
-                await transactionClient.category.findFirst({
-                  where: { name: category.categoryName },
-                });
+              // FIXED: Explicit typing for category operations
+              const existingCategory = (await prisma.category.findFirst({
+                where: { name: category.categoryName },
+              })) as any; // FIXED: Type assertion to avoid never type
 
               if (existingCategory) {
                 // Update existing category
-                await transactionClient.category.update({
+                await prisma.category.update({
                   where: { id: existingCategory.id },
                   data: {
                     name: category.categoryName,
@@ -99,7 +100,7 @@ export class CategoryService {
                 this.logger.debug(`Updated category: ${category.categoryName}`);
               } else {
                 // Create new category
-                await transactionClient.category.create({
+                await prisma.category.create({
                   data: {
                     name: category.categoryName,
                     description: `Synced from KiotViet (ID: ${category.categoryId})`,
@@ -247,8 +248,9 @@ export class CategoryService {
     };
   }> {
     try {
-      // FIXED: Use the actual method that exists
-      const categories = await this.kiotVietService.fetchAllCategories();
+      // FIXED: Use the actual method that exists and proper type
+      const categories: KiotVietCategory[] =
+        await this.kiotVietService.fetchAllCategories();
 
       const stats = {
         totalCategories: categories.length,
@@ -309,12 +311,21 @@ export class CategoryService {
 
   async postCategory(createCategoryDto: CreateCategoryDto) {
     try {
+      const categoryData: Prisma.categoryCreateInput = {
+        name: createCategoryDto.name,
+        description: createCategoryDto.description,
+        images_url: createCategoryDto.images_url,
+        priority: createCategoryDto.priority,
+        created_date: new Date(),
+        created_by: 'Manual',
+        // Handle parent relationship
+        parent_id: createCategoryDto.parent_id
+          ? BigInt(createCategoryDto.parent_id)
+          : null,
+      };
+
       const category = await this.prisma.category.create({
-        data: {
-          ...createCategoryDto,
-          created_date: new Date(),
-          created_by: 'Manual',
-        },
+        data: categoryData,
       });
 
       this.logger.log(

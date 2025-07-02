@@ -4,7 +4,6 @@ import {
   IsOptional,
   IsNumber,
   IsBoolean,
-  IsArray,
   Min,
 } from 'class-validator';
 
@@ -47,8 +46,8 @@ export class CreateProductDto {
     required: false,
   })
   @IsOptional()
-  @IsString()
-  type?: string;
+  @IsNumber()
+  type?: number;
 
   @ApiProperty({
     description: 'Custom category ID',
@@ -60,15 +59,12 @@ export class CreateProductDto {
   category_id?: number;
 
   @ApiProperty({
-    description: 'Image URLs (comma-separated or array)',
-    example: [
-      'https://example.com/image1.jpg',
-      'https://example.com/image2.jpg',
-    ],
+    description: 'Image URLs (will be converted to comma-separated string)',
+    example: 'https://example.com/image1.jpg,https://example.com/image2.jpg',
     required: false,
   })
   @IsOptional()
-  images_url?: string | string[];
+  images_url?: string | string[]; // Will be converted to string in service
 
   @ApiProperty({
     description: 'Featured thumbnail URL',
@@ -104,9 +100,8 @@ export class CreateProductDto {
   @IsBoolean()
   is_visible?: boolean;
 
-  // FIXED: Add KiotViet fields for manual entry if needed
   @ApiProperty({
-    description: 'KiotViet price (if creating KiotViet-compatible product)',
+    description: 'KiotViet price (for manual products)',
     example: 35000,
     required: false,
   })

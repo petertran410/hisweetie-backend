@@ -5,11 +5,19 @@ export interface KiotVietCategory {
   categoryId: number;
   categoryName: string;
   parentId?: number;
-  retailerId: number;
-  createdDate: string;
+  retailerId?: number; // FIXED: Make optional to match API
+  createdDate?: string;
+  modifiedDate?: string;
   hasChild?: boolean;
   children?: KiotVietCategory[];
   rank?: number;
+}
+
+export interface KiotVietTrademark {
+  tradeMarkId: number;
+  tradeMarkName: string;
+  createdDate?: string;
+  modifiedDate?: string;
 }
 
 export interface KiotVietProduct {
@@ -18,21 +26,14 @@ export interface KiotVietProduct {
   name: string;
   categoryId?: number;
   categoryName?: string;
-  fullName?: string;
+  tradeMarkId?: number;
+  tradeMarkName?: string;
   basePrice?: number;
-  description?: string;
-  images?: Array<string | { Image: string }>;
-  unit?: string;
+  images?: Array<{ Image: string }> | string[];
+  type?: number; // 1=combo, 2=normal, 3=service
   modifiedDate?: string;
   createdDate?: string;
   allowsSale?: boolean;
-  hasVariants?: boolean;
-  weight?: number;
-  isActive?: boolean;
-  inventories?: Array<{
-    productId: number;
-    onHand: number;
-  }>;
 }
 
 export interface KiotVietCategoryResponse {
