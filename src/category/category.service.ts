@@ -350,7 +350,7 @@ export class CategoryService {
   // FIXED: Separate method for bulk priority updates
   async updatePriorities(updateItems: Array<{ id: string; priority: number }>) {
     try {
-      const results = [];
+      const results: any[] = [];
 
       for (const item of updateItems) {
         // FIXED: Explicit typing for update data to avoid "never" type
