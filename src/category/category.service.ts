@@ -1,4 +1,4 @@
-// src/category/category.service.ts - FIXED VERSION
+// src/category/category.service.ts - FIXED FOR "NEVER" TYPE ERROR
 import {
   Injectable,
   NotFoundException,
@@ -7,15 +7,16 @@ import {
 } from '@nestjs/common';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-import { PrismaClient, Prisma, category } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { KiotVietService } from '../product/kiotviet.service';
 
 interface KiotVietCategory {
   categoryId: number;
   categoryName: string;
   parentId?: number;
-  // retailerId?: string;
-  // createdDate: string;
+  retailerId?: number; // Made optional to match API
+  createdDate?: string;
+  modifiedDate?: string;
   hasChild?: boolean;
   children?: KiotVietCategory[];
   rank?: number;
@@ -62,7 +63,7 @@ export class CategoryService {
       const beforeSyncCount = await this.prisma.category.count();
       this.logger.log(`Current categories in database: ${beforeSyncCount}`);
 
-      // FIXED: Use the correct method from KiotVietService
+      // Use the correct method from KiotVietService
       this.logger.log('Fetching categories from KiotViet...');
       const kiotVietCategories =
         await this.kiotVietService.fetchAllCategories();
@@ -71,53 +72,61 @@ export class CategoryService {
         `Fetched ${kiotVietCategories.length} categories from KiotViet`,
       );
 
-      // FIXED: Process the synchronization with proper typing
+      // FIXED: Process the synchronization with explicit typing
       const syncResults = await this.prisma.$transaction(
-        async (prisma) => {
-          // FIXED: Use generic prisma parameter
+        async (tx) => {
+          // FIXED: Use 'tx' as parameter name for clarity
           let newCategories = 0;
           let updatedCategories = 0;
 
           // Process categories
-          for (const category of kiotVietCategories) {
+          for (const categoryData of kiotVietCategories) {
             try {
-              // FIXED: Explicit typing for category operations
-              const existingCategory = (await prisma.category.findFirst({
-                where: { name: category.categoryName },
-              })) as any; // FIXED: Type assertion to avoid never type
+              // FIXED: Explicit typing to avoid "never" type
+              const existingCategory = await tx.category.findFirst({
+                where: { name: categoryData.categoryName },
+              });
 
               if (existingCategory) {
-                // Update existing category
-                await prisma.category.update({
+                // Update existing category - FIXED: Explicit data typing
+                const updateData: Prisma.categoryUpdateInput = {
+                  name: categoryData.categoryName,
+                  updated_date: new Date(),
+                  updated_by: 'KiotViet_Sync',
+                };
+
+                await tx.category.update({
                   where: { id: existingCategory.id },
-                  data: {
-                    name: category.categoryName,
-                    updated_date: new Date(),
-                    updated_by: 'KiotViet_Sync',
-                  },
+                  data: updateData,
                 });
                 updatedCategories++;
-                this.logger.debug(`Updated category: ${category.categoryName}`);
+                this.logger.debug(
+                  `Updated category: ${categoryData.categoryName}`,
+                );
               } else {
-                // Create new category
-                await prisma.category.create({
-                  data: {
-                    name: category.categoryName,
-                    description: `Synced from KiotViet (ID: ${category.categoryId})`,
-                    created_date: new Date(),
-                    created_by: 'KiotViet_Sync',
-                    priority: category.rank || 0,
-                  },
+                // Create new category - FIXED: Explicit data typing
+                const createData: Prisma.categoryCreateInput = {
+                  name: categoryData.categoryName,
+                  description: `Synced from KiotViet (ID: ${categoryData.categoryId})`,
+                  created_date: new Date(),
+                  created_by: 'KiotViet_Sync',
+                  priority: categoryData.rank || 0,
+                };
+
+                await tx.category.create({
+                  data: createData,
                 });
                 newCategories++;
-                this.logger.debug(`Created category: ${category.categoryName}`);
+                this.logger.debug(
+                  `Created category: ${categoryData.categoryName}`,
+                );
               }
             } catch (error) {
               errors.push(
-                `Failed to sync category ${category.categoryName}: ${error.message}`,
+                `Failed to sync category ${categoryData.categoryName}: ${error.message}`,
               );
               this.logger.error(
-                `Error syncing category ${category.categoryName}:`,
+                `Error syncing category ${categoryData.categoryName}:`,
                 error.message,
               );
             }
@@ -164,7 +173,7 @@ export class CategoryService {
   }
 
   /**
-   * FIXED: Clean and sync using correct method
+   * FIXED: Clean and sync using correct types
    */
   async cleanAndSyncCategories(): Promise<
     CategorySyncResult & {
@@ -182,17 +191,17 @@ export class CategoryService {
         `Current categories before cleanup: ${beforeCleanupCount}`,
       );
 
-      // Clear all categories and related data from database
-      const cleanupResults = await this.prisma.$transaction(async (prisma) => {
+      // Clear all categories from database
+      const cleanupResults = await this.prisma.$transaction(async (tx) => {
         this.logger.log('Starting database cleanup transaction...');
 
         // Delete all categories
-        const deletedCategories = await prisma.category.deleteMany({});
+        const deletedCategories = await tx.category.deleteMany({});
         this.logger.log(`Deleted ${deletedCategories.count} categories`);
 
         return {
           deletedCategories: deletedCategories.count,
-          deletedRelations: 0, // Since we don't have separate relations table
+          deletedRelations: 0,
         };
       });
 
@@ -236,7 +245,7 @@ export class CategoryService {
   }
 
   /**
-   * FIXED: Get KiotViet category hierarchy using correct method
+   * Get KiotViet category hierarchy using correct types
    */
   async getKiotVietCategoryHierarchy(): Promise<{
     categories: KiotVietCategory[];
@@ -248,7 +257,6 @@ export class CategoryService {
     };
   }> {
     try {
-      // FIXED: Use the actual method that exists and proper type
       const categories: KiotVietCategory[] =
         await this.kiotVietService.fetchAllCategories();
 
@@ -306,11 +314,12 @@ export class CategoryService {
   }
 
   // ================================
-  // EXISTING METHODS (Keep unchanged)
+  // EXISTING METHODS (FIXED FOR TYPE SAFETY)
   // ================================
 
   async postCategory(createCategoryDto: CreateCategoryDto) {
     try {
+      // FIXED: Explicit typing for create data
       const categoryData: Prisma.categoryCreateInput = {
         name: createCategoryDto.name,
         description: createCategoryDto.description,
@@ -318,7 +327,6 @@ export class CategoryService {
         priority: createCategoryDto.priority,
         created_date: new Date(),
         created_by: 'Manual',
-        // Handle parent relationship
         parent_id: createCategoryDto.parent_id
           ? BigInt(createCategoryDto.parent_id)
           : null,
@@ -340,18 +348,22 @@ export class CategoryService {
     }
   }
 
-  async updatePriorities(updateCategoryPrioritiesDto: any) {
+  // FIXED: Separate method for bulk priority updates
+  async updatePriorities(updateItems: Array<{ id: string; priority: number }>) {
     try {
       const results = [];
 
-      for (const update of updateCategoryPrioritiesDto) {
+      for (const item of updateItems) {
+        // FIXED: Explicit typing for update data
+        const updateData: Prisma.categoryUpdateInput = {
+          priority: item.priority,
+          updated_date: new Date(),
+          updated_by: 'Priority_Update',
+        };
+
         const category = await this.prisma.category.update({
-          where: { id: BigInt(update.id) },
-          data: {
-            priority: update.priority,
-            updated_date: new Date(),
-            updated_by: 'Priority_Update',
-          },
+          where: { id: BigInt(item.id) },
+          data: updateData,
         });
         results.push(category);
       }
@@ -376,7 +388,7 @@ export class CategoryService {
       const skip = pageNumber * pageSize;
       const take = pageSize;
 
-      const where: any = {};
+      const where: Prisma.categoryWhereInput = {};
       if (parentId) {
         where.parent_id = BigInt(parentId);
       }
@@ -428,7 +440,8 @@ export class CategoryService {
     }
   }
 
-  async update(id: number, updateCategoryDto: UpdateCategoryDto) {
+  // FIXED: Single category update method with proper typing
+  async update(id: number, updateData: Partial<CreateCategoryDto>) {
     try {
       const existingCategory = await this.prisma.category.findUnique({
         where: { id: BigInt(id) },
@@ -438,13 +451,29 @@ export class CategoryService {
         throw new NotFoundException(`Category with ID ${id} not found`);
       }
 
+      // FIXED: Explicit typing for update data
+      const updateInput: Prisma.categoryUpdateInput = {
+        name: updateData.name,
+        description: updateData.description,
+        images_url: updateData.images_url,
+        priority: updateData.priority,
+        parent_id: updateData.parent_id
+          ? BigInt(updateData.parent_id)
+          : undefined,
+        updated_date: new Date(),
+        updated_by: 'Manual_Update',
+      };
+
+      // Remove undefined values
+      Object.keys(updateInput).forEach((key) => {
+        if (updateInput[key] === undefined) {
+          delete updateInput[key];
+        }
+      });
+
       const category = await this.prisma.category.update({
         where: { id: BigInt(id) },
-        data: {
-          ...updateCategoryDto,
-          updated_date: new Date(),
-          updated_by: 'Manual_Update',
-        },
+        data: updateInput,
       });
 
       this.logger.log(`Updated category: ${category.name} (ID: ${id})`);
