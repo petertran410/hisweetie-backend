@@ -4,76 +4,90 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma, PrismaClient } from '@prisma/client';
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 
+import {
+  SyncResult,
+  FullSyncResult,
+  ValidationResult,
+  SyncOrderStep,
+  ProductFetchResult,
+  KiotVietProduct,
+  KiotVietCategory,
+  KiotVietTrademark,
+  KiotVietCredentials,
+  KiotVietTokenResponse,
+  StoredToken,
+} from './types/sync.types';
+
 // ================================
 // INTERFACES
 // ================================
 
-interface KiotVietCredentials {
-  retailerName: string;
-  clientId: string;
-  clientSecret: string;
-}
+// interface KiotVietCredentials {
+//   retailerName: string;
+//   clientId: string;
+//   clientSecret: string;
+// }
 
-interface KiotVietTokenResponse {
-  access_token: string;
-  expires_in: number;
-  token_type: string;
-}
+// interface KiotVietTokenResponse {
+//   access_token: string;
+//   expires_in: number;
+//   token_type: string;
+// }
 
-interface StoredToken {
-  accessToken: string;
-  expiresAt: Date;
-  tokenType: string;
-}
+// interface StoredToken {
+//   accessToken: string;
+//   expiresAt: Date;
+//   tokenType: string;
+// }
 
-interface KiotVietProduct {
-  id: number;
-  code: string;
-  name: string;
-  categoryId?: number;
-  categoryName?: string;
-  tradeMarkId?: number;
-  tradeMarkName?: string;
-  basePrice?: number;
-  images?: Array<{ Image: string }> | string[];
-  type?: number; // 1=combo, 2=normal, 3=service
-  modifiedDate?: string;
-  createdDate?: string;
-  allowsSale?: boolean;
-}
+// interface KiotVietProduct {
+//   id: number;
+//   code: string;
+//   name: string;
+//   categoryId?: number;
+//   categoryName?: string;
+//   tradeMarkId?: number;
+//   tradeMarkName?: string;
+//   basePrice?: number;
+//   images?: Array<{ Image: string }> | string[];
+//   type?: number; // 1=combo, 2=normal, 3=service
+//   modifiedDate?: string;
+//   createdDate?: string;
+//   allowsSale?: boolean;
+// }
 
-interface KiotVietCategory {
-  categoryId: number;
-  categoryName: string;
-  parentId?: number;
-  hasChild?: boolean;
-  rank?: number;
-  retailerId?: number;
-  createdDate?: string;
-  modifiedDate?: string;
-}
+// interface KiotVietCategory {
+//   categoryId: number;
+//   categoryName: string;
+//   parentId?: number;
+//   hasChild?: boolean;
+//   rank?: number;
+//   retailerId?: number;
+//   createdDate?: string;
+//   modifiedDate?: string;
+// }
 
-interface KiotVietTrademark {
-  tradeMarkId: number;
-  tradeMarkName: string;
-  createdDate?: string;
-  modifiedDate?: string;
-}
+// interface KiotVietTrademark {
+//   tradeMarkId: number;
+//   tradeMarkName: string;
+//   createdDate?: string;
+//   modifiedDate?: string;
+// }
 
-interface SyncResult {
-  success: boolean;
-  totalSynced: number;
-  totalUpdated: number;
-  totalDeleted: number;
-  errors: string[];
-  summary: {
-    beforeSync: number;
-    afterSync: number;
-    newRecords: number;
-    updatedRecords: number;
-    skippedRecords: number;
-  };
-}
+// interface SyncResult {
+//   success: boolean;
+//   totalSynced: number;
+//   totalUpdated: number;
+//   totalDeleted: number;
+//   errors: string[];
+//   summary: {
+//     beforeSync: number;
+//     afterSync: number;
+//     newRecords: number;
+//     updatedRecords: number;
+//     skippedRecords: number;
+//   };
+// }
 
 @Injectable()
 export class KiotVietService {
@@ -317,10 +331,9 @@ export class KiotVietService {
     }
   }
 
-  async fetchAllProducts(lastModifiedFrom?: string): Promise<{
-    products: KiotVietProduct[];
-    totalFetched: number;
-  }> {
+  async fetchAllProducts(
+    lastModifiedFrom?: string,
+  ): Promise<ProductFetchResult> {
     this.logger.log('Starting to fetch all products from KiotViet');
 
     const allProducts: KiotVietProduct[] = [];
@@ -369,7 +382,12 @@ export class KiotVietService {
       this.logger.log(
         `Completed fetching all products: total ${allProducts.length} products`,
       );
-      return { products: allProducts, totalFetched: allProducts.length };
+
+      // FIXED: Return object with correct structure
+      return {
+        products: allProducts,
+        totalFetched: allProducts.length,
+      };
     } catch (error) {
       this.logger.error('Failed to fetch all products:', error.message);
       throw new BadRequestException(
@@ -449,8 +467,6 @@ export class KiotVietService {
     this.logger.log('Starting trademark synchronization');
 
     const errors: string[] = [];
-    let totalSynced = 0;
-    let totalUpdated = 0;
 
     try {
       const beforeSync = await this.prisma.kiotviet_trademark.count();
@@ -507,7 +523,7 @@ export class KiotVietService {
           }
         }
 
-        return { newRecords, updatedRecords };
+        return { newRecords, updatedRecords, skippedRecords: 0 };
       });
 
       const afterSync = await this.prisma.kiotviet_trademark.count();
@@ -527,7 +543,7 @@ export class KiotVietService {
           afterSync,
           newRecords: results.newRecords,
           updatedRecords: results.updatedRecords,
-          skippedRecords: 0,
+          skippedRecords: results.skippedRecords,
         },
       };
     } catch (error) {
@@ -603,7 +619,7 @@ export class KiotVietService {
           }
         }
 
-        return { newRecords, updatedRecords };
+        return { newRecords, updatedRecords, skippedRecords: 0 };
       });
 
       const afterSync = await this.prisma.kiotviet_category.count();
@@ -623,7 +639,7 @@ export class KiotVietService {
           afterSync,
           newRecords: results.newRecords,
           updatedRecords: results.updatedRecords,
-          skippedRecords: 0,
+          skippedRecords: results.skippedRecords,
         },
       };
     } catch (error) {
@@ -668,7 +684,12 @@ export class KiotVietService {
       );
 
       // STEP 3: Fetch all products from KiotViet
-      const kiotVietProducts = await this.fetchAllProducts(lastModifiedFrom);
+      // FIXED: Extract products array from the returned object
+      const fetchResult = await this.fetchAllProducts(lastModifiedFrom);
+      const kiotVietProducts = fetchResult.products; // FIXED: Use .products property
+      this.logger.log(
+        `Fetched ${fetchResult.totalFetched} products from KiotViet`,
+      );
 
       const results = await this.prisma.$transaction(
         async (prisma) => {
@@ -676,6 +697,7 @@ export class KiotVietService {
           let updatedRecords = 0;
           let skippedRecords = 0;
 
+          // FIXED: Now iterate over the actual products array
           for (const kiotProduct of kiotVietProducts) {
             try {
               // FIXED: Validate category reference before creating/updating
@@ -727,7 +749,7 @@ export class KiotVietService {
                 kiotviet_id: BigInt(kiotProduct.id),
                 kiotviet_code: kiotProduct.code,
                 kiotviet_name: kiotProduct.name,
-                kiotviet_images: processedImages, // Store as JSON array
+                kiotviet_images: processedImages,
                 kiotviet_price: kiotProduct.basePrice
                   ? new Prisma.Decimal(kiotProduct.basePrice)
                   : null,
@@ -813,13 +835,7 @@ export class KiotVietService {
   // FULL SYNC
   // ================================
 
-  async fullSync(): Promise<{
-    success: boolean;
-    errors: string[];
-    trademarks: SyncResult;
-    categories: SyncResult;
-    products: SyncResult;
-  }> {
+  async fullSync(): Promise<FullSyncResult> {
     this.logger.log('Starting full KiotViet synchronization');
 
     const allErrors: string[] = [];
@@ -952,7 +968,7 @@ export class KiotVietService {
     }
   }
 
-  getSyncOrder(): { step: number; name: string; dependencies: string[] }[] {
+  getSyncOrder(): SyncOrderStep[] {
     return [
       { step: 1, name: 'Trademarks', dependencies: [] },
       { step: 2, name: 'Categories', dependencies: [] },
@@ -960,12 +976,7 @@ export class KiotVietService {
     ];
   }
 
-  async validateSyncPrerequisites(): Promise<{
-    canSyncProducts: boolean;
-    categoriesCount: number;
-    trademarksCount: number;
-    recommendations: string[];
-  }> {
+  async validateSyncPrerequisites(): Promise<ValidationResult> {
     const categoriesCount = await this.prisma.kiotviet_category.count();
     const trademarksCount = await this.prisma.kiotviet_trademark.count();
 

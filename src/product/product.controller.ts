@@ -25,6 +25,13 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 
+import {
+  SyncResult,
+  FullSyncResult,
+  ValidationResult,
+  SyncOrderStep,
+} from './types/sync.types';
+
 @ApiTags('product')
 @Controller('product')
 export class ProductController {
@@ -534,13 +541,17 @@ export class ProductController {
     summary: 'Check sync prerequisites',
     description: 'Validate if all dependencies are met before syncing products',
   })
-  async checkSyncPrerequisites() {
+  async checkSyncPrerequisites(): Promise<{
+    validation: ValidationResult;
+    syncOrder: SyncOrderStep[];
+    timestamp: string;
+  }> {
     try {
       const validation = await this.kiotVietService.validateSyncPrerequisites();
       const syncOrder = this.kiotVietService.getSyncOrder();
 
       return {
-        ...validation,
+        validation,
         syncOrder,
         timestamp: new Date().toISOString(),
       };
@@ -558,7 +569,12 @@ export class ProductController {
     description:
       'Get the correct order for syncing KiotViet data to prevent foreign key errors',
   })
-  getSyncOrder() {
+  getSyncOrder(): {
+    order: SyncOrderStep[];
+    description: string;
+    recommendations: string[];
+    timestamp: string;
+  } {
     return {
       order: this.kiotVietService.getSyncOrder(),
       description:
@@ -579,7 +595,18 @@ export class ProductController {
     description:
       'Check prerequisites first, then run full sync if validation passes',
   })
-  async validateAndFullSync() {
+  async validateAndFullSync(): Promise<{
+    validation: ValidationResult;
+    syncResult: FullSyncResult;
+    message: string;
+    summary: {
+      trademarks: { synced: number; updated: number; total: number };
+      categories: { synced: number; updated: number; total: number };
+      products: { synced: number; updated: number; total: number };
+    };
+    errors: string[];
+    timestamp: string;
+  }> {
     try {
       // Step 1: Check prerequisites
       this.logger.log('Checking sync prerequisites...');
