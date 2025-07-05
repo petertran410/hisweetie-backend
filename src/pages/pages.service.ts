@@ -1,4 +1,4 @@
-// src/pages/pages.service.ts - FIXED
+// src/pages/pages.service.ts - FIXED TypeScript Issues
 import {
   Injectable,
   NotFoundException,
@@ -93,7 +93,7 @@ export class PagesService {
 
   async findOne(id: number) {
     const page = await this.prisma.pages.findUnique({
-      where: { id },
+      where: { id: BigInt(id) }, // Convert to BigInt for Prisma
       include: {
         parent: true,
         children: {
@@ -147,7 +147,7 @@ export class PagesService {
     }
 
     return this.prisma.pages.update({
-      where: { id },
+      where: { id: BigInt(id) }, // Convert to BigInt for Prisma
       data: {
         ...updatePagesDto,
         updated_date: new Date(),
@@ -165,7 +165,7 @@ export class PagesService {
 
     // Check if page has children
     const childrenCount = await this.prisma.pages.count({
-      where: { parent_id: id },
+      where: { parent_id: BigInt(id) }, // Convert to BigInt for Prisma
     });
 
     if (childrenCount > 0) {
@@ -173,20 +173,20 @@ export class PagesService {
     }
 
     return this.prisma.pages.delete({
-      where: { id },
+      where: { id: BigInt(id) }, // Convert to BigInt for Prisma
     });
   }
 
-  // Get hierarchy for sidebar
+  // Get hierarchy for sidebar - FIXED parentId type
   async getPageHierarchy(parentSlug?: string) {
-    let parentId = null;
+    let parentId: BigInt | undefined = undefined; // FIXED: Use BigInt and undefined
 
     if (parentSlug) {
       const parent = await this.prisma.pages.findUnique({
         where: { slug: parentSlug },
       });
       if (parent) {
-        parentId = parent.id;
+        parentId = parent.id; // This is BigInt from Prisma
       }
     }
 
@@ -210,11 +210,15 @@ export class PagesService {
     return this.findAll(searchDto);
   }
 
-  // Get pages for client (only active)
-  async getForClient(parent_id?: number) {
+  // Get pages for client (only active) - FIXED parameter type
+  async getForClient(parent_id?: number | undefined) {
+    // FIXED: Accept number | undefined
+    const parentIdBigInt =
+      parent_id !== undefined ? BigInt(parent_id) : undefined; // Convert to BigInt
+
     return this.prisma.pages.findMany({
       where: {
-        parent_id,
+        parent_id: parentIdBigInt,
         is_active: true,
       },
       include: {

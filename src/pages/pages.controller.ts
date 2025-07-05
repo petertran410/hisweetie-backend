@@ -128,8 +128,8 @@ export class PagesController {
     required: false,
   })
   @ApiResponse({ status: 200, description: 'Returns child pages' })
-  getChildrenForClient(@Query('parentId') parentId: string | null) {
-    const parent_id: number | null = parentId ? +parentId : null;
+  getChildrenForClient(@Query('parentId') parentId?: string) {
+    const parent_id = parentId ? +parentId : null;
     return this.pagesService.getForClient(parent_id);
   }
 }
