@@ -179,7 +179,7 @@ export class PagesService {
 
   // Get hierarchy for sidebar - FIXED parentId type
   async getPageHierarchy(parentSlug?: string) {
-    let parentId: BigInt | undefined = undefined; // FIXED: Use BigInt and undefined
+    let parentId: bigint | undefined = undefined;
 
     if (parentSlug) {
       const parent = await this.prisma.pages.findUnique({

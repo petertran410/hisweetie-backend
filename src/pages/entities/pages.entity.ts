@@ -1,6 +1,6 @@
-// src/pages/entities/pages.entity.ts
+// src/pages/entities/pages.entity.ts - FIXED
 export class Pages {
-  id: number;
+  id: bigint; // FIXED: Use bigint to match Prisma
   created_by?: string;
   created_date?: Date;
   updated_by?: string;
@@ -11,7 +11,7 @@ export class Pages {
   meta_title?: string;
   meta_description?: string;
   display_order?: number;
-  parent_id?: number;
+  parent_id?: bigint; // FIXED: Use bigint to match Prisma
   is_active?: boolean;
   is_main_page?: boolean;
 
