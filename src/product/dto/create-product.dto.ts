@@ -64,7 +64,7 @@ export class CreateProductDto {
     required: false,
   })
   @IsOptional()
-  images_url?: string | string[]; // Will be converted to string in service
+  images_url?: string | string[];
 
   @ApiProperty({
     description: 'Featured thumbnail URL',

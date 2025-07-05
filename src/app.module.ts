@@ -1,3 +1,4 @@
+// src/app.module.ts - UPDATED
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
@@ -8,6 +9,7 @@ import { ProductModule } from './product/product.module';
 import { NewsModule } from './news/news.module';
 import { JobpostModule } from './jobpost/jobpost.module';
 import { FileModule } from './file/file.module';
+import { PagesModule } from './pages/pages.module'; // THÊM MODULE PAGES
 // import { PaymentModule } from './payment/payment.module';
 
 @Module({
@@ -24,6 +26,7 @@ import { FileModule } from './file/file.module';
     NewsModule,
     JobpostModule,
     FileModule,
+    PagesModule, // THÊM MODULE PAGES VÀO IMPORTS
     // PaymentModule,
   ],
   controllers: [],
