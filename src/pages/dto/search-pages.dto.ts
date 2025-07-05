@@ -12,9 +12,9 @@ export class SearchPagesDto {
 
   @ApiProperty({ description: 'Page number', required: false, default: 0 })
   @IsOptional()
-  @Type(() => Number || null)
+  @Type(() => Number)
   @IsNumber()
-  pageNumber?: number = 0 || null;
+  pageNumber?: number = 0;
 
   @ApiProperty({ description: 'Tìm kiếm theo tiêu đề', required: false })
   @IsOptional()

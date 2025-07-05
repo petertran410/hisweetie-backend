@@ -1,17 +1,19 @@
-// src/pages/pages.service.ts
+// src/pages/pages.service.ts - FIXED
 import {
   Injectable,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaClient } from '@prisma/client';
 import { CreatePagesDto } from './dto/create-pages.dto';
 import { UpdatePagesDto } from './dto/update-pages.dto';
 import { SearchPagesDto } from './dto/search-pages.dto';
 
 @Injectable()
 export class PagesService {
-  constructor(private readonly prisma: PrismaService) {}
+  private prisma = new PrismaClient();
+
+  constructor() {}
 
   async create(createPagesDto: CreatePagesDto) {
     // Check if slug already exists
@@ -39,8 +41,14 @@ export class PagesService {
   }
 
   async findAll(searchDto: SearchPagesDto) {
-    const { pageSize, pageNumber, title, slug, parent_id, is_active } =
-      searchDto;
+    const {
+      pageSize = 10,
+      pageNumber = 0,
+      title,
+      slug,
+      parent_id,
+      is_active,
+    } = searchDto;
 
     const where: any = {};
 
@@ -203,7 +211,7 @@ export class PagesService {
   }
 
   // Get pages for client (only active)
-  async getForClient(parent_id?: number | null) {
+  async getForClient(parent_id?: number) {
     return this.prisma.pages.findMany({
       where: {
         parent_id,
