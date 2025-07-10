@@ -108,34 +108,16 @@ export class NewsService {
               type: true,
             },
             orderBy: { created_date: 'desc' },
-            take: 3, // Lấy 3 bài mới nhất
           });
 
-          // Convert database format to client format
-          const formattedArticles = articles.map((article) => {
-            let imagesUrl = [];
-            try {
-              // FIXED: Handle "[]" string properly
-              if (article.images_url && article.images_url !== '[]') {
-                imagesUrl = JSON.parse(article.images_url);
-              }
-            } catch (error) {
-              console.error(
-                `Failed to parse images_url for article ${article.id}:`,
-                error,
-              );
-              imagesUrl = [];
-            }
-
-            return {
-              id: Number(article.id),
-              title: article.title,
-              description: article.description,
-              imagesUrl: Array.isArray(imagesUrl) ? imagesUrl : [],
-              createdDate: article.created_date,
-              type: article.type,
-            };
-          });
+          const formattedArticles = articles.map((article) => ({
+            id: Number(article.id), // Convert BigInt to Number
+            title: article.title,
+            description: article.description,
+            imagesUrl: article.images_url ? JSON.parse(article.images_url) : [],
+            createdDate: article.created_date,
+            type: article.type,
+          }));
 
           return {
             type,
