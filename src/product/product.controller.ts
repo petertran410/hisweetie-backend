@@ -23,6 +23,7 @@ import {
   ApiTags,
   ApiQuery,
   ApiParam,
+  ApiBody,
 } from '@nestjs/swagger';
 
 import {
@@ -364,7 +365,12 @@ export class ProductController {
   @ApiOperation({
     summary: 'Search products',
     description:
-      'Search products with pagination and filters (includes KiotViet products)',
+      'Search products with pagination and filters (supports visibility filter for CMS)',
+  })
+  @ApiQuery({
+    name: 'includeHidden',
+    required: false,
+    description: 'Include hidden products (for CMS only)',
   })
   search(
     @Query('pageSize') pageSize: string = '10',
@@ -373,6 +379,7 @@ export class ProductController {
     @Query('type') type?: string,
     @Query('categoryId') categoryId?: string,
     @Query('isFromKiotViet') isFromKiotViet?: string,
+    @Query('includeHidden') includeHidden?: string,
   ) {
     const filters: any = {};
 
@@ -381,6 +388,9 @@ export class ProductController {
     if (categoryId) filters.categoryId = +categoryId;
     if (isFromKiotViet !== undefined) {
       filters.isFromKiotViet = isFromKiotViet === 'true';
+    }
+    if (includeHidden !== undefined) {
+      filters.includeHidden = includeHidden === 'true';
     }
 
     return this.productService.search({
@@ -394,27 +404,101 @@ export class ProductController {
   @ApiOperation({
     summary: 'Get products by categories',
     description:
-      'Get products filtered by custom categories or KiotViet categories',
+      'Get products filtered by categories (supports visibility filter for frontend/CMS)',
+  })
+  @ApiQuery({
+    name: 'includeHidden',
+    required: false,
+    description: 'Include hidden products (for CMS only)',
   })
   getProductsByCategories(
     @Query('pageSize') pageSize: string = '12',
     @Query('pageNumber') pageNumber: string = '0',
     @Query('categoryId') categoryId?: string,
     @Query('kiotVietCategoryId') kiotVietCategoryId?: string,
+    @Query('subCategoryId') subCategoryId?: string,
     @Query('orderBy') orderBy?: string,
     @Query('isDesc') isDesc?: string,
+    @Query('title') title?: string,
+    @Query('includeHidden') includeHidden?: string,
   ) {
-    const filters: any = {
+    const params: any = {
       pageSize: +pageSize,
       pageNumber: +pageNumber,
     };
 
-    if (categoryId) filters.categoryId = +categoryId;
-    if (kiotVietCategoryId) filters.kiotVietCategoryId = +kiotVietCategoryId;
-    if (orderBy) filters.orderBy = orderBy;
-    if (isDesc !== undefined) filters.isDesc = isDesc === 'true';
+    if (categoryId) params.categoryId = +categoryId;
+    if (kiotVietCategoryId) params.kiotVietCategoryId = +kiotVietCategoryId;
+    if (subCategoryId) params.subCategoryId = +subCategoryId;
+    if (orderBy) params.orderBy = orderBy;
+    if (isDesc !== undefined) params.isDesc = isDesc === 'true';
+    if (title) params.title = title;
+    if (includeHidden !== undefined) {
+      params.includeHidden = includeHidden === 'true';
+    }
 
-    return this.productService.getProductsByCategories(filters);
+    return this.productService.getProductsByCategories(params);
+  }
+
+  @Get('cms/get-all')
+  @ApiOperation({
+    summary: 'Get all products for CMS management',
+    description:
+      'Get all products including hidden ones for CMS administration',
+  })
+  @ApiQuery({
+    name: 'pageSize',
+    required: false,
+    description: 'Number of items per page',
+  })
+  @ApiQuery({
+    name: 'pageNumber',
+    required: false,
+    description: 'Page number (0-based)',
+  })
+  @ApiQuery({
+    name: 'title',
+    required: false,
+    description: 'Search by product title',
+  })
+  @ApiQuery({
+    name: 'categoryId',
+    required: false,
+    description: 'Filter by category ID',
+  })
+  @ApiQuery({
+    name: 'is_visible',
+    required: false,
+    description: 'Filter by visibility status',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns paginated products for CMS with visibility status',
+  })
+  getCMSProducts(
+    @Query('pageSize') pageSize: string = '10',
+    @Query('pageNumber') pageNumber: string = '0',
+    @Query('title') title?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('is_visible') is_visible?: string,
+  ) {
+    const filters: any = {
+      includeHidden: true, // ✅ CMS luôn include hidden products
+    };
+
+    if (title) filters.title = title;
+    if (categoryId) filters.categoryId = +categoryId;
+
+    // ✅ NEW: Specific visibility filter for CMS
+    if (is_visible !== undefined) {
+      filters.visibilityFilter = is_visible === 'true';
+    }
+
+    return this.productService.searchForCMS({
+      pageSize: +pageSize,
+      pageNumber: +pageNumber,
+      ...filters,
+    });
   }
 
   @Post()
@@ -446,5 +530,74 @@ export class ProductController {
   })
   remove(@Param('id') id: string) {
     return this.productService.remove(+id);
+  }
+
+  @Patch('toggle-visibility/:id')
+  @ApiOperation({
+    summary: 'Toggle product visibility',
+    description:
+      'Toggle the visibility status of a product for frontend display',
+  })
+  @ApiParam({ name: 'id', description: 'Product ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Product visibility toggled successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number' },
+        is_visible: { type: 'boolean' },
+        title: { type: 'string' },
+        message: { type: 'string' },
+      },
+    },
+  })
+  toggleVisibility(@Param('id') id: string) {
+    return this.productService.toggleVisibility(+id);
+  }
+
+  // THÊM VÀO CLASS ProductController (sau existing endpoints):
+  @Patch('bulk-toggle-visibility')
+  @ApiOperation({
+    summary: 'Bulk toggle product visibility',
+    description: 'Toggle visibility for multiple products at once',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        productIds: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'Array of product IDs to toggle',
+        },
+        is_visible: {
+          type: 'boolean',
+          description:
+            'Target visibility state (true = visible, false = hidden)',
+        },
+      },
+      required: ['productIds', 'is_visible'],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Bulk visibility update completed',
+    schema: {
+      type: 'object',
+      properties: {
+        updated: { type: 'number' },
+        failed: { type: 'number' },
+        message: { type: 'string' },
+      },
+    },
+  })
+  bulkToggleVisibility(
+    @Body() bulkToggleDto: { productIds: number[]; is_visible: boolean },
+  ) {
+    return this.productService.bulkToggleVisibility(
+      bulkToggleDto.productIds,
+      bulkToggleDto.is_visible,
+    );
   }
 }

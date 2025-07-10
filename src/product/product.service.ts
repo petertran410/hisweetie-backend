@@ -16,10 +16,6 @@ export class ProductService {
 
   constructor() {}
 
-  // ================================
-  // ENHANCED SEARCH WITH KIOTVIET SUPPORT (FIXED)
-  // ================================
-
   async search(params: {
     pageSize: number;
     pageNumber: number;
@@ -30,6 +26,7 @@ export class ProductService {
     isFromKiotViet?: boolean;
     orderBy?: string;
     isDesc?: boolean;
+    includeHidden?: boolean;
   }) {
     try {
       const {
@@ -42,13 +39,17 @@ export class ProductService {
         isFromKiotViet,
         orderBy = 'id',
         isDesc = false,
+        includeHidden = false,
       } = params;
 
       const skip = pageNumber * pageSize;
       const take = pageSize;
 
-      // Build where conditions
       const where: Prisma.productWhereInput = {};
+
+      if (!includeHidden) {
+        where.is_visible = true;
+      }
 
       // Search in both title and kiotviet_name
       if (title) {
@@ -75,17 +76,9 @@ export class ProductService {
       }
 
       // Build orderBy - FIXED to use only existing fields
-      const orderByClause: Prisma.productOrderByWithRelationInput = {};
-      if (orderBy === 'title') {
-        orderByClause.title = isDesc ? 'desc' : 'asc';
-      } else if (orderBy === 'price') {
-        // FIXED: Use kiotviet_price since price field doesn't exist
-        orderByClause.kiotviet_price = isDesc ? 'desc' : 'asc';
-      } else {
-        orderByClause[orderBy] = isDesc ? 'desc' : 'asc';
-      }
-
-      // Execute queries
+      const orderByClause: Prisma.productOrderByWithRelationInput = {
+        id: 'desc',
+      };
       const [products, total] = await Promise.all([
         this.prisma.product.findMany({
           where,
@@ -93,21 +86,14 @@ export class ProductService {
           take,
           orderBy: orderByClause,
           include: {
-            category: {
-              select: { id: true, name: true },
-            },
-            kiotviet_category: {
-              select: { kiotviet_id: true, name: true },
-            },
-            kiotviet_trademark: {
-              select: { kiotviet_id: true, name: true },
-            },
+            category: { select: { id: true, name: true } },
+            kiotviet_category: { select: { kiotviet_id: true, name: true } },
+            kiotviet_trademark: { select: { kiotviet_id: true, name: true } },
           },
         }),
         this.prisma.product.count({ where }),
       ]);
 
-      // Transform products to include unified fields
       const transformedProducts = products.map((product) =>
         this.transformProduct(product),
       );
@@ -118,6 +104,10 @@ export class ProductService {
         totalPages: Math.ceil(total / pageSize),
         pageNumber,
         pageSize,
+        filters: {
+          includeHidden,
+          visibleCount: includeHidden ? undefined : total,
+        },
       };
     } catch (error) {
       this.logger.error('Failed to search products:', error.message);
@@ -183,6 +173,7 @@ export class ProductService {
     orderBy?: string;
     isDesc?: boolean;
     title?: string;
+    includeHidden?: boolean;
   }) {
     try {
       const {
@@ -194,15 +185,17 @@ export class ProductService {
         orderBy = 'id',
         isDesc = false,
         title,
+        includeHidden = false,
       } = params;
 
       const skip = pageNumber * pageSize;
       const take = pageSize;
 
-      // Build where conditions
-      const where: Prisma.productWhereInput = {
-        is_visible: true, // Only show visible products
-      };
+      const where: Prisma.productWhereInput = {};
+
+      if (!includeHidden) {
+        where.is_visible = true;
+      }
 
       // Filter by custom category
       if (categoryId) {
@@ -222,18 +215,15 @@ export class ProductService {
         ];
       }
 
-      // Build orderBy - FIXED
-      const orderByClause: Prisma.productOrderByWithRelationInput = {};
+      let orderByClause: Prisma.productOrderByWithRelationInput = {};
       if (orderBy === 'title') {
         orderByClause.title = isDesc ? 'desc' : 'asc';
       } else if (orderBy === 'price') {
-        // FIXED: Use kiotviet_price
         orderByClause.kiotviet_price = isDesc ? 'desc' : 'asc';
       } else {
         orderByClause[orderBy] = isDesc ? 'desc' : 'asc';
       }
 
-      // Execute queries
       const [products, total] = await Promise.all([
         this.prisma.product.findMany({
           where,
@@ -241,21 +231,14 @@ export class ProductService {
           take,
           orderBy: orderByClause,
           include: {
-            category: {
-              select: { id: true, name: true },
-            },
-            kiotviet_category: {
-              select: { kiotviet_id: true, name: true },
-            },
-            kiotviet_trademark: {
-              select: { kiotviet_id: true, name: true },
-            },
+            category: { select: { id: true, name: true } },
+            kiotviet_category: { select: { kiotviet_id: true, name: true } },
+            kiotviet_trademark: { select: { kiotviet_id: true, name: true } },
           },
         }),
         this.prisma.product.count({ where }),
       ]);
 
-      // Transform products
       const transformedProducts = products.map((product) =>
         this.transformProduct(product),
       );
@@ -266,12 +249,15 @@ export class ProductService {
         totalPages: Math.ceil(total / pageSize),
         pageNumber,
         pageSize,
+        filters: {
+          includeHidden,
+          visibleCount: includeHidden ? undefined : total,
+          totalCount: includeHidden ? total : undefined,
+        },
       };
     } catch (error) {
       this.logger.error('Failed to get products by categories:', error.message);
-      throw new BadRequestException(
-        `Failed to get products by categories: ${error.message}`,
-      );
+      throw new BadRequestException(`Failed to get products: ${error.message}`);
     }
   }
 
@@ -611,6 +597,226 @@ export class ProductService {
       this.logger.error('Failed to bulk update visibility:', error.message);
       throw new BadRequestException(
         `Failed to bulk update visibility: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Toggle visibility status của một product
+   */
+  async toggleVisibility(id: number) {
+    try {
+      // Tìm product hiện tại
+      const existingProduct = await this.prisma.product.findUnique({
+        where: { id: BigInt(id) },
+        select: { id: true, title: true, is_visible: true },
+      });
+
+      if (!existingProduct) {
+        throw new NotFoundException(`Product with ID ${id} not found`);
+      }
+
+      // Toggle visibility
+      const newVisibility = !existingProduct.is_visible;
+
+      const updatedProduct = await this.prisma.product.update({
+        where: { id: BigInt(id) },
+        data: { is_visible: newVisibility },
+        select: {
+          id: true,
+          title: true,
+          is_visible: true,
+        },
+      });
+
+      this.logger.log(`Product ${id} visibility toggled to: ${newVisibility}`);
+
+      return {
+        id: Number(updatedProduct.id),
+        title: updatedProduct.title,
+        is_visible: updatedProduct.is_visible,
+        message: `Sản phẩm "${updatedProduct.title}" đã được ${newVisibility ? 'hiển thị' : 'ẩn'}`,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(
+        `Failed to toggle visibility for product ${id}:`,
+        error.message,
+      );
+      throw new BadRequestException(
+        `Failed to toggle visibility: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Bulk toggle visibility cho nhiều products
+   */
+  async bulkToggleVisibility(productIds: number[], targetVisibility: boolean) {
+    try {
+      const bigIntIds = productIds.map((id) => BigInt(id));
+
+      // Kiểm tra products tồn tại
+      const existingProducts = await this.prisma.product.findMany({
+        where: { id: { in: bigIntIds } },
+        select: { id: true, title: true },
+      });
+
+      const foundIds = existingProducts.map((p) => Number(p.id));
+      const notFoundIds = productIds.filter((id) => !foundIds.includes(id));
+
+      // Update visibility cho các products tồn tại
+      const updateResult = await this.prisma.product.updateMany({
+        where: { id: { in: bigIntIds } },
+        data: { is_visible: targetVisibility },
+      });
+
+      this.logger.log(
+        `Bulk updated ${updateResult.count} products visibility to: ${targetVisibility}`,
+      );
+
+      return {
+        updated: updateResult.count,
+        failed: notFoundIds.length,
+        notFoundIds: notFoundIds,
+        message: `Đã cập nhật ${updateResult.count} sản phẩm ${targetVisibility ? 'hiển thị' : 'ẩn'}${notFoundIds.length > 0 ? `, ${notFoundIds.length} sản phẩm không tìm thấy` : ''}`,
+      };
+    } catch (error) {
+      this.logger.error('Failed to bulk toggle visibility:', error.message);
+      throw new BadRequestException(
+        `Failed to bulk toggle visibility: ${error.message}`,
+      );
+    }
+  }
+
+  async searchForCMS(params: {
+    pageSize: number;
+    pageNumber: number;
+    title?: string;
+    categoryId?: number;
+    visibilityFilter?: boolean; // true = chỉ visible, false = chỉ hidden, undefined = tất cả
+  }) {
+    try {
+      const { pageSize, pageNumber, title, categoryId, visibilityFilter } =
+        params;
+
+      const skip = pageNumber * pageSize;
+      const take = pageSize;
+
+      const where: Prisma.productWhereInput = {};
+
+      // CMS-specific visibility filter
+      if (visibilityFilter !== undefined) {
+        where.is_visible = visibilityFilter;
+      }
+      // Nếu visibilityFilter = undefined, lấy tất cả (visible + hidden)
+
+      if (title) {
+        where.OR = [
+          { title: { contains: title } },
+          { kiotviet_name: { contains: title } },
+        ];
+      }
+
+      if (categoryId) {
+        where.category_id = BigInt(categoryId);
+      }
+
+      // Default order by latest for CMS
+      const orderByClause: Prisma.productOrderByWithRelationInput = {
+        id: 'desc',
+      };
+
+      const [products, total, visibleCount, hiddenCount] = await Promise.all([
+        this.prisma.product.findMany({
+          where,
+          skip,
+          take,
+          orderBy: orderByClause,
+          include: {
+            category: { select: { id: true, name: true } },
+            kiotviet_category: { select: { kiotviet_id: true, name: true } },
+            kiotviet_trademark: { select: { kiotviet_id: true, name: true } },
+          },
+        }),
+        this.prisma.product.count({ where }),
+        // Count visible products (for CMS stats)
+        this.prisma.product.count({
+          where: {
+            ...where,
+            is_visible: true,
+          },
+        }),
+        // Count hidden products (for CMS stats)
+        this.prisma.product.count({
+          where: {
+            ...where,
+            is_visible: false,
+          },
+        }),
+      ]);
+
+      const transformedProducts = products.map((product) => {
+        const transformed = this.transformProduct(product);
+        // ✅ Ensure is_visible is included for CMS
+        return {
+          ...transformed,
+          isVisible: product.is_visible, // Add explicit field for CMS
+        };
+      });
+
+      return {
+        content: transformedProducts,
+        totalElements: total,
+        totalPages: Math.ceil(total / pageSize),
+        pageNumber,
+        pageSize,
+        // ✅ CMS-specific statistics
+        statistics: {
+          total,
+          visible: visibilityFilter === false ? 0 : visibleCount,
+          hidden: visibilityFilter === true ? 0 : hiddenCount,
+          visibilityFilter,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Failed to search products for CMS:', error.message);
+      throw new BadRequestException(
+        `Failed to search products for CMS: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * CMS-specific: Get visibility statistics
+   */
+  async getVisibilityStatistics() {
+    try {
+      const [total, visible, hidden, featured, kiotVietProducts] =
+        await Promise.all([
+          this.prisma.product.count(),
+          this.prisma.product.count({ where: { is_visible: true } }),
+          this.prisma.product.count({ where: { is_visible: false } }),
+          this.prisma.product.count({ where: { is_featured: true } }),
+          this.prisma.product.count({ where: { is_from_kiotviet: true } }),
+        ]);
+
+      return {
+        total,
+        visible,
+        hidden,
+        featured,
+        kiotVietProducts,
+        customProducts: total - kiotVietProducts,
+        visibilityRate: total > 0 ? ((visible / total) * 100).toFixed(1) : '0',
+        hiddenRate: total > 0 ? ((hidden / total) * 100).toFixed(1) : '0',
+      };
+    } catch (error) {
+      this.logger.error('Failed to get visibility statistics:', error.message);
+      throw new BadRequestException(
+        `Failed to get statistics: ${error.message}`,
       );
     }
   }
