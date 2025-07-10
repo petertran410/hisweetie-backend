@@ -1,3 +1,4 @@
+// src/news/news.controller.ts - UPDATED với endpoint mới
 import {
   Controller,
   Get,
@@ -48,6 +49,21 @@ export class NewsController {
   @UsePipes(new ValidationPipe({ transform: true }))
   findAllForClient(@Query() searchDto: ClientNewsSearchDto) {
     return this.newsService.findAllForClient(searchDto);
+  }
+
+  // THÊM MỚI: Endpoint cho trang "Bài Viết" chính với 6 sections
+  @Get('client/article-sections')
+  @ApiOperation({
+    summary: 'Get article sections for main "Bài Viết" page',
+    description:
+      'Returns 6 sections with 3 latest articles each for the main article page',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns structured sections data for main article page',
+  })
+  getArticleSections() {
+    return this.newsService.getArticleSections();
   }
 
   @Get('client/featured')

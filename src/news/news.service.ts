@@ -1,12 +1,47 @@
+// src/news/news.service.ts - UPDATED với method getArticleSections()
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateNewsDto } from './dto/create-news.dto';
 import { UpdateNewsDto } from './dto/update-news.dto';
 import { ClientNewsSearchDto } from './dto/client-news-search.dto';
 import { PrismaClient } from '@prisma/client';
+import { ARTICLE_SECTIONS, NEWS_TYPES } from './constants/news-types.constants';
 
 @Injectable()
 export class NewsService {
   prisma = new PrismaClient();
+
+  // THÊM MỚI: Method cho trang "Bài Viết" chính
+  async getArticleSections() {
+    const sections = await Promise.all(
+      ARTICLE_SECTIONS.map(async (section) => {
+        const articles = await this.prisma.news.findMany({
+          where: { type: section.type },
+          take: 3,
+          orderBy: { created_date: 'desc' },
+        });
+
+        const formattedArticles = articles.map(this.formatNewsForResponse);
+
+        return {
+          type: section.type,
+          label: section.label,
+          slug: section.slug,
+          articles: formattedArticles,
+          totalCount: await this.prisma.news.count({
+            where: { type: section.type },
+          }),
+        };
+      }),
+    );
+
+    return {
+      sections,
+      meta: {
+        totalSections: sections.length,
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  }
 
   async findAllForClient(searchDto: ClientNewsSearchDto) {
     const { pageSize = 10, pageNumber = 0, title, type, featured } = searchDto;
@@ -140,6 +175,8 @@ export class NewsService {
       isFeatured: Boolean(news.is_featured),
     };
   }
+
+  // Existing methods remain the same...
   async create(createNewsDto: CreateNewsDto) {
     const { title, description, htmlContent, imagesUrl, type } = createNewsDto;
 
