@@ -1,47 +1,19 @@
 // src/news/news.service.ts - UPDATED với method getArticleSections()
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateNewsDto } from './dto/create-news.dto';
 import { UpdateNewsDto } from './dto/update-news.dto';
 import { ClientNewsSearchDto } from './dto/client-news-search.dto';
 import { PrismaClient } from '@prisma/client';
 import { ARTICLE_SECTIONS, NEWS_TYPES } from './constants/news-types.constants';
+import { convertToSlug } from 'src/utils/helper';
 
 @Injectable()
 export class NewsService {
   prisma = new PrismaClient();
-
-  // THÊM MỚI: Method cho trang "Bài Viết" chính
-  async getArticleSections() {
-    const sections = await Promise.all(
-      ARTICLE_SECTIONS.map(async (section) => {
-        const articles = await this.prisma.news.findMany({
-          where: { type: section.type },
-          take: 3,
-          orderBy: { created_date: 'desc' },
-        });
-
-        const formattedArticles = articles.map(this.formatNewsForResponse);
-
-        return {
-          type: section.type,
-          label: section.label,
-          slug: section.slug,
-          articles: formattedArticles,
-          totalCount: await this.prisma.news.count({
-            where: { type: section.type },
-          }),
-        };
-      }),
-    );
-
-    return {
-      sections,
-      meta: {
-        totalSections: sections.length,
-        updatedAt: new Date().toISOString(),
-      },
-    };
-  }
 
   async findAllForClient(searchDto: ClientNewsSearchDto) {
     const { pageSize = 10, pageNumber = 0, title, type, featured } = searchDto;
@@ -174,6 +146,94 @@ export class NewsService {
       viewCount: news.view || 0,
       isFeatured: Boolean(news.is_featured),
     };
+  }
+
+  async findIdBySlug(slug: string, type: string) {
+    try {
+      // Get all articles of this type
+      const articles = await this.newsRepository.find({
+        where: { type },
+        select: ['id', 'title'],
+        order: { created_date: 'DESC' },
+      });
+
+      // Find article with matching slug
+      const foundArticle = articles.find((article) => {
+        const articleSlug = convertToSlug(article.title);
+        return articleSlug === slug;
+      });
+
+      if (!foundArticle) {
+        throw new NotFoundException(
+          `Không tìm thấy bài viết với slug "${slug}" và type "${type}"`,
+        );
+      }
+
+      return {
+        id: foundArticle.id,
+        title: foundArticle.title,
+        slug: convertToSlug(foundArticle.title),
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        `Lỗi khi tìm bài viết: ${error.message}`,
+      );
+    }
+  }
+
+  async getArticleSections() {
+    try {
+      const articleTypes = [
+        'KIEN_THUC_NGUYEN_LIEU',
+        'KIEN_THUC_TRA',
+        'TREND_PHA_CHE',
+        'REVIEW_SAN_PHAM',
+        'CONG_THUC_PHA_CHE',
+        'NEWS',
+      ];
+
+      const sections = await Promise.all(
+        articleTypes.map(async (type) => {
+          const articles = await this.newsRepository.find({
+            where: { type },
+            select: [
+              'id',
+              'title',
+              'description',
+              'images_url',
+              'created_date',
+              'type',
+            ],
+            order: { created_date: 'DESC' },
+            take: 3, // Lấy 3 bài mới nhất
+          });
+
+          // Convert database format to client format
+          const formattedArticles = articles.map((article) => ({
+            id: article.id,
+            title: article.title,
+            description: article.description,
+            imagesUrl: article.images_url ? JSON.parse(article.images_url) : [],
+            createdDate: article.created_date,
+            type: article.type,
+          }));
+
+          return {
+            type,
+            articles: formattedArticles,
+          };
+        }),
+      );
+
+      return sections;
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Lỗi khi lấy sections: ${error.message}`,
+      );
+    }
   }
 
   // Existing methods remain the same...

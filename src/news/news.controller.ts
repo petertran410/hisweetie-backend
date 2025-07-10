@@ -1,4 +1,4 @@
-// src/news/news.controller.ts - UPDATED với endpoint mới
+// src/news/news.controller.ts - UPDATED với endpoint tìm ID
 import {
   Controller,
   Get,
@@ -16,7 +16,13 @@ import { NewsService } from './news.service';
 import { CreateNewsDto } from './dto/create-news.dto';
 import { UpdateNewsDto } from './dto/update-news.dto';
 import { ClientNewsSearchDto } from './dto/client-news-search.dto';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiParam,
+  ApiQuery,
+} from '@nestjs/swagger';
 
 @ApiTags('news')
 @Controller('news')
@@ -51,7 +57,35 @@ export class NewsController {
     return this.newsService.findAllForClient(searchDto);
   }
 
-  // THÊM MỚI: Endpoint cho trang "Bài Viết" chính với 6 sections
+  // THÊM MỚI: Endpoint tìm ID từ slug và type
+  @Get('client/find-id-by-slug')
+  @ApiOperation({
+    summary: 'Find news ID by slug and type for URL mapping',
+    description: 'Returns news ID to support clean URLs without exposing IDs',
+  })
+  @ApiQuery({ name: 'slug', description: 'Article slug (from title)' })
+  @ApiQuery({
+    name: 'type',
+    description: 'Article type (NEWS, KIEN_THUC_TRA, etc.)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns news ID for the given slug and type',
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number', description: 'News article ID' },
+        title: {
+          type: 'string',
+          description: 'Article title for verification',
+        },
+      },
+    },
+  })
+  findIdBySlug(@Query('slug') slug: string, @Query('type') type: string) {
+    return this.newsService.findIdBySlug(slug, type);
+  }
+
   @Get('client/article-sections')
   @ApiOperation({
     summary: 'Get article sections for main "Bài Viết" page',

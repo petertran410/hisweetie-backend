@@ -79,3 +79,17 @@ export const sanitizeString = (value: any): string => {
 
   return stringValue;
 };
+
+export const convertToSlug = (str: string): string => {
+  if (!str) return '';
+
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remove accents
+    .replace(/[đĐ]/g, 'd') // Replace đ with d
+    .replace(/[^a-z0-9\s-]/g, '') // Remove special characters
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/-+/g, '-') // Replace multiple hyphens with single
+    .replace(/^-|-$/g, ''); // Remove leading/trailing hyphens
+};
