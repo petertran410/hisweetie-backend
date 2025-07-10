@@ -22,11 +22,8 @@ export class ProductService {
     title?: string;
     type?: number;
     categoryId?: number;
-    kiotVietCategoryId?: number;
     isFromKiotViet?: boolean;
-    orderBy?: string;
-    isDesc?: boolean;
-    includeHidden?: boolean;
+    includeHidden?: boolean; // For CMS usage
   }) {
     try {
       const {
@@ -35,11 +32,8 @@ export class ProductService {
         title,
         type,
         categoryId,
-        kiotVietCategoryId,
         isFromKiotViet,
-        orderBy = 'id',
-        isDesc = false,
-        includeHidden = false,
+        includeHidden = false, // Default false for frontend
       } = params;
 
       const skip = pageNumber * pageSize;
@@ -51,7 +45,6 @@ export class ProductService {
         where.is_visible = true;
       }
 
-      // Search in both title and kiotviet_name
       if (title) {
         where.OR = [
           { title: { contains: title } },
@@ -59,7 +52,7 @@ export class ProductService {
         ];
       }
 
-      if (type) {
+      if (type !== undefined) {
         where.kiotviet_type = type;
       }
 
@@ -67,18 +60,15 @@ export class ProductService {
         where.category_id = BigInt(categoryId);
       }
 
-      if (kiotVietCategoryId) {
-        where.kiotviet_category_id = kiotVietCategoryId;
-      }
-
       if (isFromKiotViet !== undefined) {
         where.is_from_kiotviet = isFromKiotViet;
       }
 
-      // Build orderBy - FIXED to use only existing fields
+      // Default order by latest
       const orderByClause: Prisma.productOrderByWithRelationInput = {
         id: 'desc',
       };
+
       const [products, total] = await Promise.all([
         this.prisma.product.findMany({
           where,
@@ -94,9 +84,30 @@ export class ProductService {
         this.prisma.product.count({ where }),
       ]);
 
-      const transformedProducts = products.map((product) =>
-        this.transformProduct(product),
-      );
+      const transformedProducts = products.map((product) => {
+        const transformed = this.transformProduct(product);
+
+        return {
+          ...transformed,
+          isVisible: product.is_visible === true,
+        };
+      });
+
+      let statistics = {};
+      if (includeHidden) {
+        const [visibleCount, hiddenCount, featuredCount] = await Promise.all([
+          this.prisma.product.count({ where: { ...where, is_visible: true } }),
+          this.prisma.product.count({ where: { ...where, is_visible: false } }),
+          this.prisma.product.count({ where: { ...where, is_featured: true } }),
+        ]);
+
+        statistics = {
+          total,
+          visible: visibleCount,
+          hidden: hiddenCount,
+          featured: featuredCount,
+        };
+      }
 
       return {
         content: transformedProducts,
@@ -104,10 +115,7 @@ export class ProductService {
         totalPages: Math.ceil(total / pageSize),
         pageNumber,
         pageSize,
-        filters: {
-          includeHidden,
-          visibleCount: includeHidden ? undefined : total,
-        },
+        ...(includeHidden && { statistics }),
       };
     } catch (error) {
       this.logger.error('Failed to search products:', error.message);
@@ -159,10 +167,6 @@ export class ProductService {
       throw new BadRequestException(`Failed to find product: ${error.message}`);
     }
   }
-
-  // ================================
-  // GET PRODUCTS BY CATEGORIES (FIXED)
-  // ================================
 
   async getProductsByCategories(params: {
     pageSize: number;
@@ -261,56 +265,25 @@ export class ProductService {
     }
   }
 
-  // ================================
-  // TRANSFORM PRODUCT (FIXED FOR CURRENT SCHEMA)
-  // ================================
-
   private transformProduct(product: any) {
-    // FIXED: Only use fields that exist in current schema
-    const displayName =
-      product.title || product.kiotviet_name || 'Unnamed Product';
-    const displayPrice = product.kiotviet_price
-      ? Number(product.kiotviet_price)
-      : null;
-
-    // Process images - handle both custom and KiotViet images
-    let displayImages = [];
-    if (product.images_url) {
-      try {
-        displayImages =
-          typeof product.images_url === 'string'
-            ? product.images_url.split(',').map((url) => url.trim())
-            : product.images_url;
-      } catch (e) {
-        displayImages = [];
-      }
-    } else if (product.kiotviet_images) {
-      displayImages = Array.isArray(product.kiotviet_images)
-        ? product.kiotviet_images
-        : [];
-    }
-
     return {
-      // Basic fields - FIXED to match current schema
-      id: product.id.toString(),
-      title: displayName,
+      id: Number(product.id),
+      title: product.title,
       description: product.description,
-      general_description: product.general_description,
+      generalDescription: product.general_description,
       instruction: product.instruction,
-      price: displayPrice, // FIXED: Use kiotviet_price as main price
       rate: product.rate,
-      type: product.type,
-      is_featured: product.is_featured,
-      is_visible: product.is_visible,
+      isFeatured: product.is_featured === true,
+      isVisible: product.is_visible === true, // 🚨 EXPLICIT field cho CMS
 
-      // Images
-      imagesUrl: displayImages,
-      featured_thumbnail: product.featured_thumbnail,
-      recipe_thumbnail: product.recipe_thumbnail,
+      // Images handling
+      imagesUrl: product.images_url ? JSON.parse(product.images_url) : [],
+      featuredThumbnail: product.featured_thumbnail,
+      recipeThumbnail: product.recipe_thumbnail,
 
-      // Category information
-      category: product.category,
+      // Categories
       categoryId: product.category_id ? product.category_id.toString() : null,
+      category: product.category,
 
       // KiotViet specific data
       kiotViet: {
@@ -326,7 +299,7 @@ export class ProductService {
       },
 
       // Metadata
-      isFromKiotViet: product.is_from_kiotviet,
+      isFromKiotViet: product.is_from_kiotviet === true,
 
       // Relations
       reviews: product.review || [],
@@ -763,7 +736,7 @@ export class ProductService {
         // ✅ Ensure is_visible is included for CMS
         return {
           ...transformed,
-          isVisible: product.is_visible, // Add explicit field for CMS
+          isVisible: product.is_visible,
         };
       });
 
@@ -773,7 +746,6 @@ export class ProductService {
         totalPages: Math.ceil(total / pageSize),
         pageNumber,
         pageSize,
-        // ✅ CMS-specific statistics
         statistics: {
           total,
           visible: visibilityFilter === false ? 0 : visibleCount,
