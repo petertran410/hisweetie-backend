@@ -1,3 +1,5 @@
+// src/main.ts - DISABLE CORS COMPLETELY
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import * as express from 'express';
@@ -6,7 +8,21 @@ import { BigIntInterceptor } from './interceptors/bigint-interceptor';
 import { join } from 'path';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { cors: true });
+  const app = await NestFactory.create(AppModule);
+
+  // ✅ Tắt CORS bằng middleware
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', '*');
+    res.header('Access-Control-Allow-Headers', '*');
+    res.header('Access-Control-Allow-Credentials', 'true');
+
+    if (req.method === 'OPTIONS') {
+      res.sendStatus(200);
+      return;
+    }
+    next();
+  });
 
   const fs = require('fs');
   const uploadDir = join(process.cwd(), 'public', 'img');
