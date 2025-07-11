@@ -1,10 +1,9 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
 import * as express from 'express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { join } from 'path';
 import { BigIntInterceptor } from './interceptors/bigint-interceptor';
+import { join } from 'path';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: true });
@@ -27,8 +26,4 @@ async function bootstrap() {
 
   await app.listen(process.env.PORT ?? 8084);
 }
-
-bootstrap().catch((error) => {
-  console.error('❌ Failed to start server:', error);
-  process.exit(1);
-});
+bootstrap();
