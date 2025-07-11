@@ -17,6 +17,38 @@ async function bootstrap() {
   app.use(express.static('.'));
   app.useGlobalInterceptors(new BigIntInterceptor());
 
+  // CORS Configuration
+  const allowedOrigins = [
+    'https://dieptra.com',
+    'http://localhost:3333',
+    'http://localhost:3210',
+    'http://14.224.212.102:3333',
+  ];
+
+  app.enableCors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, etc.)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        console.log('CORS blocked origin:', origin);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: [
+      'Origin',
+      'X-Requested-With',
+      'Content-Type',
+      'Accept',
+      'Authorization',
+      'X-Force-Signature',
+    ],
+  });
+
   const config = new DocumentBuilder().setTitle('Swagger-APIs-dieptra').build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('/swagger', app, document);
