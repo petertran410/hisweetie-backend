@@ -24,6 +24,7 @@ async function bootstrap() {
     'http://localhost:3333',
     'http://localhost:3210',
     'http://14.224.212.102:3333',
+    'https://cms.gaulermao.com',
   ];
 
   app.enableCors({
