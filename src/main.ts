@@ -17,9 +17,10 @@ async function bootstrap() {
   app.use(express.static('.'));
   app.useGlobalInterceptors(new BigIntInterceptor());
 
-  // CORS Configuration
+  // CORS Configuration - UPDATED
   const allowedOrigins = [
     'https://dieptra.com',
+    'https://www.dieptra.com',
     'http://localhost:3333',
     'http://localhost:3210',
     'http://14.224.212.102:3333',
@@ -27,13 +28,20 @@ async function bootstrap() {
 
   app.enableCors({
     origin: (origin, callback) => {
+      console.log('🔍 CORS Check - Origin:', origin);
+      console.log('🔍 Allowed Origins:', allowedOrigins);
+
       // Allow requests with no origin (mobile apps, curl, etc.)
-      if (!origin) return callback(null, true);
+      if (!origin) {
+        console.log('✅ No origin - allowing request');
+        return callback(null, true);
+      }
 
       if (allowedOrigins.indexOf(origin) !== -1) {
+        console.log('✅ Origin allowed:', origin);
         callback(null, true);
       } else {
-        console.log('CORS blocked origin:', origin);
+        console.log('❌ CORS blocked origin:', origin);
         callback(new Error('Not allowed by CORS'));
       }
     },
