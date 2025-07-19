@@ -151,14 +151,14 @@ export class NewsService {
       description: news.description,
       htmlContent: news.html_content,
       imagesUrl: Array.isArray(imagesUrl) ? imagesUrl : [],
-      embedUrl: news.embed_url || null, // THÊM MỚI
+      embedUrl: news.embed_url || null,
       createdDate: news.created_date
         ? new Date(news.created_date).toISOString()
         : null,
       updatedDate: news.updated_date
         ? new Date(news.updated_date).toISOString()
         : null,
-      viewCount: news.view_count ? Number(news.view_count) : 0,
+      viewCount: news.view ? Number(news.view) : 0,
       type: news.type || 'NEWS',
     };
   };
@@ -275,6 +275,19 @@ export class NewsService {
       where: {
         id: BigInt(id),
       },
+      // THÊM select để đảm bảo lấy embed_url
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        html_content: true,
+        images_url: true,
+        embed_url: true, // ĐẢM BẢO CÓ DÒNG NÀY
+        created_date: true,
+        updated_date: true,
+        view: true,
+        type: true,
+      },
     });
 
     if (!news) {
@@ -288,6 +301,19 @@ export class NewsService {
     const news = await this.prisma.news.findUnique({
       where: {
         id: BigInt(id),
+      },
+      // THÊM select để đảm bảo lấy embed_url
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        html_content: true,
+        images_url: true,
+        embed_url: true, // ĐẢM BẢO CÓ DÒNG NÀY
+        created_date: true,
+        updated_date: true,
+        view: true,
+        type: true,
       },
     });
 
