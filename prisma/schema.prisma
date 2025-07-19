@@ -217,6 +217,7 @@ model news {
   description  String?   @db.LongText
   html_content String?   @db.LongText
   images_url   String?   @db.LongText
+  embed_url    String?   @db.LongText
   title        String?   @db.VarChar(255)
   view         Int?
   user_id      String?   @db.VarChar(255)

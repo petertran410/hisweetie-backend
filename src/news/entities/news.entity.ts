@@ -1,4 +1,3 @@
-// src/news/entities/news.entity.ts
 export class News {
   id: number;
   created_by?: string;
@@ -8,6 +7,7 @@ export class News {
   description?: string;
   html_content?: string;
   images_url?: string;
+  embed_url?: string; // THÊM MỚI
   title?: string;
   view?: number;
   user_id?: string;

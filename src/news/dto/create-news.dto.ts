@@ -5,7 +5,12 @@ import { IsString, IsOptional, IsArray, IsEnum } from 'class-validator';
 export enum ContentType {
   NEWS = 'NEWS',
   VIDEO = 'VIDEO',
-  CULTURE = 'CULTURE', // Make sure CULTURE type is included
+  CULTURE = 'CULTURE',
+  KIEN_THUC_NGUYEN_LIEU = 'KIEN_THUC_NGUYEN_LIEU',
+  KIEN_THUC_TRA = 'KIEN_THUC_TRA',
+  TREND_PHA_CHE = 'TREND_PHA_CHE',
+  REVIEW_SAN_PHAM = 'REVIEW_SAN_PHAM',
+  CONG_THUC_PHA_CHE = 'CONG_THUC_PHA_CHE',
 }
 
 export class CreateNewsDto {
@@ -40,9 +45,18 @@ export class CreateNewsDto {
   imagesUrl?: string[];
 
   @ApiProperty({
+    description: 'Video embed URL for inline video content',
+    required: false,
+    example: 'https://www.youtube.com/embed/4letvWcz-ic?si=vn0hTIJto8GLbiRl',
+  })
+  @IsString()
+  @IsOptional()
+  embedUrl?: string;
+
+  @ApiProperty({
     description: 'Type of content',
     enum: ContentType,
-    example: 'CULTURE', // Update example to use CULTURE
+    example: 'NEWS',
   })
   @IsEnum(ContentType)
   type: ContentType;

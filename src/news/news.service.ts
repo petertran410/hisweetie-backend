@@ -1,4 +1,3 @@
-// src/news/news.service.ts - FIX TypeScript errors và slug conversion
 import {
   Injectable,
   InternalServerErrorException,
@@ -138,7 +137,6 @@ export class NewsService {
   private formatNewsForResponse = (news: any) => {
     let imagesUrl = [];
     try {
-      // FIXED: Handle "[]" string properly
       if (news.images_url && news.images_url !== '[]') {
         imagesUrl = JSON.parse(news.images_url);
       }
@@ -153,11 +151,15 @@ export class NewsService {
       description: news.description,
       htmlContent: news.html_content,
       imagesUrl: Array.isArray(imagesUrl) ? imagesUrl : [],
-      createdDate: news.created_date ? news.created_date.toISOString() : null,
-      updatedDate: news.updated_date,
-      type: news.type,
-      viewCount: news.view || 0,
-      isFeatured: Boolean(news.is_featured),
+      embedUrl: news.embed_url || null, // THÊM MỚI
+      createdDate: news.created_date
+        ? new Date(news.created_date).toISOString()
+        : null,
+      updatedDate: news.updated_date
+        ? new Date(news.updated_date).toISOString()
+        : null,
+      viewCount: news.view_count ? Number(news.view_count) : 0,
+      type: news.type || 'NEWS',
     };
   };
 
@@ -201,28 +203,31 @@ export class NewsService {
   }
 
   async create(createNewsDto: CreateNewsDto) {
-    const { title, description, htmlContent, imagesUrl, type } = createNewsDto;
+    try {
+      const { title, description, htmlContent, imagesUrl, type, embedUrl } =
+        createNewsDto;
 
-    const news = await this.prisma.news.create({
-      data: {
+      const newsData = {
         title,
         description,
         html_content: htmlContent,
-        images_url: imagesUrl ? JSON.stringify(imagesUrl) : '[]', // FIXED: Default to '[]' instead of null
+        images_url: imagesUrl ? JSON.stringify(imagesUrl) : null,
+        embed_url: embedUrl || null, // THÊM MỚI
         type,
         created_date: new Date(),
-      },
-    });
+        updated_date: new Date(),
+      };
 
-    return {
-      id: news.id.toString(),
-      title: news.title,
-      description: news.description,
-      htmlContent: news.html_content,
-      imagesUrl: imagesUrl || [],
-      type: news.type,
-      createdDate: news.created_date ? news.created_date.toISOString() : null,
-    };
+      const newNews = await this.prisma.news.create({
+        data: newsData,
+      });
+
+      return this.formatNewsForResponse(newNews);
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Lỗi khi tạo tin tức: ${error.message}`,
+      );
+    }
   }
 
   async findAll(params?: {
@@ -300,21 +305,44 @@ export class NewsService {
   }
 
   async update(id: number, updateNewsDto: UpdateNewsDto) {
-    const { title, description, htmlContent, imagesUrl, type } = updateNewsDto;
+    try {
+      const existingNews = await this.prisma.news.findUnique({
+        where: { id: BigInt(id) },
+      });
 
-    const news = await this.prisma.news.update({
-      where: { id: BigInt(id) },
-      data: {
-        title,
-        description,
-        html_content: htmlContent,
-        images_url: imagesUrl ? JSON.stringify(imagesUrl) : '[]', // FIXED: Default to '[]'
-        type,
+      if (!existingNews) {
+        throw new NotFoundException(`Không tìm thấy tin tức với ID ${id}`);
+      }
+
+      const { title, description, htmlContent, imagesUrl, type, embedUrl } =
+        updateNewsDto;
+
+      const updateData: any = {
         updated_date: new Date(),
-      },
-    });
+      };
 
-    return this.formatNewsForResponse(news);
+      if (title !== undefined) updateData.title = title;
+      if (description !== undefined) updateData.description = description;
+      if (htmlContent !== undefined) updateData.html_content = htmlContent;
+      if (imagesUrl !== undefined)
+        updateData.images_url = JSON.stringify(imagesUrl);
+      if (embedUrl !== undefined) updateData.embed_url = embedUrl; // THÊM MỚI
+      if (type !== undefined) updateData.type = type;
+
+      const updatedNews = await this.prisma.news.update({
+        where: { id: BigInt(id) },
+        data: updateData,
+      });
+
+      return this.formatNewsForResponse(updatedNews);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        `Lỗi khi cập nhật tin tức: ${error.message}`,
+      );
+    }
   }
 
   async remove(id: number) {
