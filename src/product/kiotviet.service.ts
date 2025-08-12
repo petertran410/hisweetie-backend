@@ -295,12 +295,11 @@ export class KiotVietService {
     await this.setupAuthHeaders();
 
     try {
-      // FIXED: Correct parameter name - should be "hierarchicalData" not "hierachicalData"
       const response = await this.axiosInstance.get('/categories', {
         params: {
           pageSize: 100,
           currentItem: 0,
-          hierarchicalData: true, // FIXED: Correct spelling
+          hierarchicalData: true,
         },
       });
 
@@ -310,7 +309,6 @@ export class KiotVietService {
       );
       return response.data.data;
     } catch (error) {
-      // FIXED: Better error logging with response details
       if (error.response) {
         this.logger.error('KiotViet API Error Response:', {
           status: error.response.status,
@@ -371,9 +369,7 @@ export class KiotVietService {
           hasMoreData = false;
         }
 
-        // Safety check to avoid infinite loops
         if (batchNumber > 500) {
-          // Maximum 50,000 products
           this.logger.warn('Reached maximum batch limit (500), stopping fetch');
           break;
         }

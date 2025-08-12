@@ -48,22 +48,19 @@ export class CategoryService {
 
   constructor(private readonly kiotVietService: KiotVietService) {}
 
-  /**
-   * FIXED: Sync categories from KiotViet using correct method and types
-   */
   async syncCategoriesFromKiotViet(): Promise<CategorySyncResult> {
     this.logger.log('Starting category synchronization from KiotViet');
 
     const errors: string[] = [];
     let totalSynced = 0;
-    let totalDeleted = 0;
+    let totalUpdated = 0;
 
     try {
-      // Get current category count before sync
-      const beforeSyncCount = await this.prisma.category.count();
-      this.logger.log(`Current categories in database: ${beforeSyncCount}`);
+      const beforeSyncCount = await this.prisma.kiotviet_category.count();
+      this.logger.log(
+        `Current KiotViet categories in database: ${beforeSyncCount}`,
+      );
 
-      // Use the correct method from KiotVietService
       this.logger.log('Fetching categories from KiotViet...');
       const kiotVietCategories =
         await this.kiotVietService.fetchAllCategories();
@@ -72,74 +69,65 @@ export class CategoryService {
         `Fetched ${kiotVietCategories.length} categories from KiotViet`,
       );
 
-      // FIXED: Process the synchronization with explicit typing
-      const syncResults = await this.prisma.$transaction(
-        async (tx) => {
-          let newCategories = 0;
-          let updatedCategories = 0;
+      const syncResults = await this.prisma.$transaction(async (tx) => {
+        let newCategories = 0;
+        let updatedCategories = 0;
 
-          // Process categories
-          for (const categoryData of kiotVietCategories) {
-            try {
-              // FIXED: Explicit typing to avoid "never" type
-              const existingCategory = await tx.category.findFirst({
-                where: { name: categoryData.categoryName },
+        for (const category of kiotVietCategories) {
+          try {
+            const existingCategory = await tx.kiotviet_category.findUnique({
+              where: { kiotviet_id: category.categoryId },
+            });
+
+            const categoryData = {
+              kiotviet_id: category.categoryId,
+              name: category.categoryName,
+              parent_id: category.parentId || null,
+              has_child: category.hasChild || false,
+              rank: category.rank || null,
+              retailer_id: category.retailerId,
+              created_date: category.createdDate
+                ? new Date(category.createdDate)
+                : null,
+              modified_date: category.modifiedDate
+                ? new Date(category.modifiedDate)
+                : null,
+              synced_at: new Date(),
+            };
+
+            if (existingCategory) {
+              await tx.kiotviet_category.update({
+                where: { kiotviet_id: category.categoryId },
+                data: categoryData,
               });
-
-              if (existingCategory) {
-                // Update existing category - FIXED: Explicit data typing
-                const updateData: Prisma.categoryUpdateInput = {
-                  name: categoryData.categoryName,
-                  updated_date: new Date(),
-                  updated_by: 'KiotViet_Sync',
-                };
-
-                await tx.category.update({
-                  where: { id: existingCategory.id },
-                  data: updateData,
-                });
-                updatedCategories++;
-                this.logger.debug(
-                  `Updated category: ${categoryData.categoryName}`,
-                );
-              } else {
-                // Create new category - FIXED: Explicit data typing
-                const createData: Prisma.categoryCreateInput = {
-                  name: categoryData.categoryName,
-                  description: `Synced from KiotViet (ID: ${categoryData.categoryId})`,
-                  created_date: new Date(),
-                  created_by: 'KiotViet_Sync',
-                  priority: categoryData.rank || 0,
-                };
-
-                await tx.category.create({
-                  data: createData,
-                });
-                newCategories++;
-                this.logger.debug(
-                  `Created category: ${categoryData.categoryName}`,
-                );
-              }
-            } catch (error) {
-              errors.push(
-                `Failed to sync category ${categoryData.categoryName}: ${error.message}`,
+              updatedCategories++;
+              this.logger.debug(
+                `Updated KiotViet category: ${category.categoryName} (ID: ${category.categoryId})`,
               );
-              this.logger.error(
-                `Error syncing category ${categoryData.categoryName}:`,
-                error.message,
+            } else {
+              await tx.kiotviet_category.create({
+                data: categoryData,
+              });
+              newCategories++;
+              this.logger.debug(
+                `Created KiotViet category: ${category.categoryName} (ID: ${category.categoryId})`,
               );
             }
+          } catch (error) {
+            errors.push(
+              `Failed to sync category ${category.categoryId}: ${error.message}`,
+            );
+            this.logger.error(
+              `Error syncing category ${category.categoryId}:`,
+              error.message,
+            );
           }
+        }
 
-          return { newCategories, updatedCategories };
-        },
-        {
-          timeout: 300000, // 5 minutes timeout
-        },
-      );
+        return { newCategories, updatedCategories };
+      });
 
-      const afterSyncCount = await this.prisma.category.count();
-      totalSynced = syncResults.newCategories;
+      const afterSyncCount = await this.prisma.kiotviet_category.count();
 
       this.logger.log(
         `Category sync completed: ${syncResults.newCategories} new, ${syncResults.updatedCategories} updated`,
@@ -147,7 +135,7 @@ export class CategoryService {
 
       return {
         success: errors.length === 0,
-        totalSynced,
+        totalSynced: syncResults.newCategories,
         totalDeleted: 0,
         errors,
         summary: {
@@ -158,11 +146,13 @@ export class CategoryService {
           deletedCategories: 0,
         },
         hierarchicalStructure: {
-          totalRootCategories: kiotVietCategories.filter((cat) => !cat.parentId)
-            .length,
-          totalChildCategories: kiotVietCategories.filter((cat) => cat.parentId)
-            .length,
-          maxDepth: this.calculateMaxDepth(kiotVietCategories),
+          totalRootCategories: await this.prisma.kiotviet_category.count({
+            where: { parent_id: null },
+          }),
+          totalChildCategories: await this.prisma.kiotviet_category.count({
+            where: { parent_id: { not: null } },
+          }),
+          maxDepth: 3,
         },
       };
     } catch (error) {
@@ -171,9 +161,6 @@ export class CategoryService {
     }
   }
 
-  /**
-   * FIXED: Clean and sync using correct types
-   */
   async cleanAndSyncCategories(): Promise<
     CategorySyncResult & {
       cleanupInfo: {
@@ -387,51 +374,42 @@ export class CategoryService {
       const skip = pageNumber * pageSize;
       const take = pageSize;
 
-      // FIXED: Query kiotviet_category table with correct field types
-      const where: Prisma.kiotviet_categoryWhereInput = {};
+      const where: any = {};
       if (parentId) {
-        // FIXED: parent_id is Int in kiotviet_category, not BigInt
         where.parent_id = parseInt(parentId);
       }
 
-      // FIXED: Query the correct kiotviet_category table
       const [categories, total] = await Promise.all([
         this.prisma.kiotviet_category.findMany({
           where,
           skip,
           take,
-          orderBy: [
-            { rank: 'asc' }, // Order by rank first (KiotViet's order)
-            { name: 'asc' }, // Then by name
-          ],
-          include: {
-            _count: {
-              select: { products: true }, // Count how many products in each category
-            },
-          },
+          orderBy: { rank: 'asc' },
         }),
         this.prisma.kiotviet_category.count({ where }),
       ]);
 
-      // FIXED: Transform only the BigInt field (id) to string
-      const transformedCategories = categories.map((category) => ({
-        ...category,
-        id: category.id.toString(), // Only this field is BigInt, needs transformation
-        // parent_id, kiotviet_id are already Int, no need to transform
-        productCount: category._count.products, // Add product count for convenience
-      }));
-
       return {
-        content: transformedCategories,
+        content: categories.map((cat) => ({
+          id: cat.kiotviet_id,
+          name: cat.name,
+          parentId: cat.parent_id,
+          hasChild: cat.has_child,
+          rank: cat.rank,
+          retailerId: cat.retailer_id,
+          createdDate: cat.created_date,
+          modifiedDate: cat.modified_date,
+          syncedAt: cat.synced_at,
+        })),
         totalElements: total,
         totalPages: Math.ceil(total / pageSize),
         pageNumber,
         pageSize,
       };
     } catch (error) {
-      this.logger.error('Failed to get KiotViet categories:', error.message);
+      this.logger.error('Failed to get categories:', error.message);
       throw new BadRequestException(
-        `Failed to get KiotViet categories: ${error.message}`,
+        `Failed to get categories: ${error.message}`,
       );
     }
   }

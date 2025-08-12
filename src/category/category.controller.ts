@@ -21,7 +21,6 @@ import {
   ApiTags,
   ApiResponse,
 } from '@nestjs/swagger';
-// FIXED: Import types from the shared types file
 import { KiotVietCategory } from '../product/types/kiotviet.types';
 
 @ApiTags('category')
@@ -31,9 +30,7 @@ export class CategoryController {
 
   constructor(private readonly categoryService: CategoryService) {}
 
-  // NEW: KiotViet Category Sync Endpoints
-
-  @Post('sync/full')
+  @Post('kiotviet/sync')
   @ApiOperation({
     summary: 'Sync all categories from KiotViet to local database',
   })

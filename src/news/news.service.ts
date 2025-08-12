@@ -8,54 +8,44 @@ import { UpdateNewsDto } from './dto/update-news.dto';
 import { ClientNewsSearchDto } from './dto/client-news-search.dto';
 import { PrismaClient } from '@prisma/client';
 
-// FIXED: Convert title thành slug - handle Vietnamese characters properly
 const convertToSlug = (str: string): string => {
   if (!str) return '';
 
-  return (
-    str
-      .toLowerCase()
-      // Handle Vietnamese specific characters first
-      .replace(/tri ân/g, 'tri-an')
-      .replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, 'a')
-      .replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, 'e')
-      .replace(/ì|í|ị|ỉ|ĩ/g, 'i')
-      .replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, 'o')
-      .replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, 'u')
-      .replace(/ỳ|ý|ỵ|ỷ|ỹ/g, 'y')
-      .replace(/đ/g, 'd')
-      .replace(/[^a-z0-9\s-]/g, '') // Remove special characters except spaces and hyphens
-      .replace(/\s+/g, '-') // Replace spaces with hyphens
-      .replace(/-+/g, '-') // Replace multiple hyphens with single
-      .replace(/^-|-$/g, '')
-  ); // Remove leading/trailing hyphens
+  return str
+    .toLowerCase()
+    .replace(/tri ân/g, 'tri-an')
+    .replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, 'a')
+    .replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, 'e')
+    .replace(/ì|í|ị|ỉ|ĩ/g, 'i')
+    .replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, 'o')
+    .replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, 'u')
+    .replace(/ỳ|ý|ỵ|ỷ|ỹ/g, 'y')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
 };
 
 @Injectable()
 export class NewsService {
   prisma = new PrismaClient();
 
-  // FIXED: Handle string | null properly
   async findIdBySlug(slug: string, type: string) {
     try {
-      // Get all articles of this type using Prisma
       const articles = await this.prisma.news.findMany({
         where: { type },
         select: { id: true, title: true },
         orderBy: { created_date: 'desc' },
       });
 
-      // Find article with matching slug
       const foundArticle = articles.find((article) => {
-        // FIXED: Handle null title properly
         const title = article.title || '';
         const articleSlug = convertToSlug(title);
-        console.log(`Comparing: "${articleSlug}" with "${slug}"`); // Debug log
         return articleSlug === slug;
       });
 
       if (!foundArticle) {
-        // Log all available slugs for debugging
         const availableSlugs = articles.map((a) => ({
           title: a.title,
           slug: convertToSlug(a.title || ''),
@@ -110,7 +100,7 @@ export class NewsService {
           });
 
           const formattedArticles = articles.map((article) => ({
-            id: Number(article.id), // Convert BigInt to Number
+            id: Number(article.id),
             title: article.title,
             description: article.description,
             imagesUrl: article.images_url ? JSON.parse(article.images_url) : [],

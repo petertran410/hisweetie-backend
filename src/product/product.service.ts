@@ -276,16 +276,13 @@ export class ProductService {
       isFeatured: product.is_featured === true,
       isVisible: product.is_visible === true, // 🚨 EXPLICIT field cho CMS
 
-      // Images handling
       imagesUrl: product.images_url ? JSON.parse(product.images_url) : [],
       featuredThumbnail: product.featured_thumbnail,
       recipeThumbnail: product.recipe_thumbnail,
 
-      // Categories
       categoryId: product.category_id ? product.category_id.toString() : null,
       category: product.category,
 
-      // KiotViet specific data
       kiotViet: {
         id: product.kiotviet_id ? product.kiotviet_id.toString() : null,
         code: product.kiotviet_code,
@@ -298,10 +295,8 @@ export class ProductService {
         syncedAt: product.kiotviet_synced_at,
       },
 
-      // Metadata
       isFromKiotViet: product.is_from_kiotviet === true,
 
-      // Relations
       reviews: product.review || [],
     };
   }

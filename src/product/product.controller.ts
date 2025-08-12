@@ -124,7 +124,6 @@ export class ProductController {
         `Starting KiotViet product sync${since ? ` since ${since}` : ''}`,
       );
 
-      // Validate date format if provided
       if (since && !/^\d{4}-\d{2}-\d{2}$/.test(since)) {
         throw new BadRequestException(
           'Invalid date format. Use YYYY-MM-DD format.',
