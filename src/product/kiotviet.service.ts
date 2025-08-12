@@ -610,7 +610,6 @@ export class KiotVietService {
             });
 
             if (existingCategory) {
-              // Update existing
               await prisma.kiotviet_category.update({
                 where: { kiotviet_id: category.categoryId },
                 data: {

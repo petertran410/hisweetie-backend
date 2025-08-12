@@ -1,4 +1,3 @@
-// src/category/category.controller.ts - FIXED VERSION
 import {
   Controller,
   Get,
