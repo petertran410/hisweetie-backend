@@ -128,7 +128,6 @@ export class CategoryController {
     status: 200,
     description: 'Returns KiotViet category hierarchy preview',
   })
-  // FIXED: Explicit return type to resolve the export issue
   async previewKiotVietCategories(): Promise<{
     message: string;
     preview: boolean;
@@ -215,8 +214,6 @@ export class CategoryController {
     }
   }
 
-  // EXISTING ENDPOINTS (keeping all your original functionality)
-
   @Post()
   @ApiOperation({ summary: 'Create a new category manually' })
   postCategory(@Body() createCategoryDto: CreateCategoryDto) {
@@ -248,8 +245,6 @@ export class CategoryController {
     @Query('pageNumber') pageNumber: string = '0',
     @Query('parentId') parentId?: string,
   ) {
-    // This would need a separate method for custom categories
-    // For now, redirect to KiotViet categories or implement separate logic
     return this.categoryService.getAllCategories({
       pageSize: parseInt(pageSize),
       pageNumber: parseInt(pageNumber),
@@ -269,7 +264,7 @@ export class CategoryController {
   @ApiParam({ name: 'id', description: 'Category ID' })
   update(
     @Param('id') id: string,
-    @Body() updateCategoryDto: Partial<CreateCategoryDto>, // FIXED: Use Partial<CreateCategoryDto>
+    @Body() updateCategoryDto: Partial<CreateCategoryDto>,
   ) {
     return this.categoryService.update(+id, updateCategoryDto);
   }

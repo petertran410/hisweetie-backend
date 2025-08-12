@@ -230,9 +230,6 @@ export class CategoryService {
     }
   }
 
-  /**
-   * Get KiotViet category hierarchy using correct types
-   */
   async getKiotVietCategoryHierarchy(): Promise<{
     categories: KiotVietCategory[];
     stats: {

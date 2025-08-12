@@ -289,40 +289,82 @@ export class KiotVietService {
   }
 
   async fetchAllCategories(): Promise<KiotVietCategory[]> {
-    this.logger.log('Fetching all categories from KiotViet');
+    this.logger.log('Starting to fetch all categories from KiotViet');
+
+    const allCategories: KiotVietCategory[] = [];
+    let currentItem = 0;
+    const requestedPageSize = 100;
+    let hasMoreData = true;
+    let batchNumber = 1;
 
     await this.checkRateLimit();
     await this.setupAuthHeaders();
 
     try {
-      const response = await this.axiosInstance.get('/categories', {
-        params: {
-          pageSize: 100,
-          currentItem: 0,
-          hierarchicalData: true,
-        },
-      });
+      while (hasMoreData) {
+        this.logger.log(
+          `Fetching category batch ${batchNumber}, starting from item ${currentItem}`,
+        );
 
-      this.requestCount++;
+        const response = await this.axiosInstance.get('/categories', {
+          params: {
+            pageSize: requestedPageSize,
+            currentItem,
+            hierarchicalData: false, // Get flat structure
+          },
+        });
+
+        this.requestCount++;
+
+        const actualPageSize = response.data.pageSize;
+        const totalFromAPI = response.data.total;
+        const returnedData = response.data.data || [];
+
+        this.logger.log(
+          `API Response - Total: ${totalFromAPI}, PageSize: ${actualPageSize}, Returned: ${returnedData.length}`,
+        );
+
+        if (returnedData.length > 0) {
+          allCategories.push(...returnedData);
+
+          this.logger.log(
+            `Category batch ${batchNumber} completed: fetched ${returnedData.length} categories. Total so far: ${allCategories.length}/${totalFromAPI}`,
+          );
+
+          currentItem += returnedData.length;
+
+          hasMoreData =
+            returnedData.length === actualPageSize &&
+            allCategories.length < totalFromAPI;
+
+          batchNumber++;
+        } else {
+          hasMoreData = false;
+          this.logger.log('No more categories to fetch');
+        }
+
+        if (batchNumber > 20) {
+          this.logger.warn('Reached maximum batch limit (20), stopping fetch');
+          break;
+        }
+      }
+
       this.logger.log(
-        `Successfully fetched ${response.data.data.length} categories from KiotViet`,
+        `✅ Completed fetching all categories: total ${allCategories.length} categories (expected: ${allCategories.length > 0 ? 'based on last API total' : 'unknown'})`,
       );
-      return response.data.data;
+
+      return allCategories;
     } catch (error) {
+      this.logger.error('Failed to fetch all categories:', error.message);
+
       if (error.response) {
-        this.logger.error('KiotViet API Error Response:', {
+        this.logger.error('KiotViet Categories API Error:', {
           status: error.response.status,
           statusText: error.response.statusText,
           data: error.response.data,
-          headers: error.response.headers,
         });
-      } else if (error.request) {
-        this.logger.error('KiotViet API Request Error:', error.request);
-      } else {
-        this.logger.error('KiotViet API Error:', error.message);
       }
 
-      this.logger.error('Failed to fetch categories:', error.message);
       throw new BadRequestException(
         `Failed to fetch categories from KiotViet: ${error.message}`,
       );
