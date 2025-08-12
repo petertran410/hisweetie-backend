@@ -178,7 +178,7 @@ export class ProductController {
   @ApiOperation({
     summary: 'Sync categories from KiotViet',
     description:
-      'Syncs KiotViet categories to separate kiotviet_categories table',
+      'ONLY method to sync categories - syncs to kiotviet_category table',
   })
   async syncCategoriesFromKiotViet() {
     try {

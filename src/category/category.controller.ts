@@ -29,69 +29,6 @@ export class CategoryController {
 
   constructor(private readonly categoryService: CategoryService) {}
 
-  @Post('kiotviet/sync')
-  @ApiOperation({
-    summary: 'Sync all categories from KiotViet to local database',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Category synchronization completed successfully',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Category synchronization failed',
-  })
-  async fullCategorySync() {
-    try {
-      this.logger.log('Starting full category sync from KiotViet');
-      const result = await this.categoryService.syncCategoriesFromKiotViet();
-
-      return {
-        message: result.success
-          ? 'Category synchronization completed successfully'
-          : 'Category synchronization completed with errors',
-        ...result,
-      };
-    } catch (error) {
-      this.logger.error('Full category sync failed:', error.message);
-      throw new BadRequestException(`Category sync failed: ${error.message}`);
-    }
-  }
-
-  @Post('sync/clean-and-sync')
-  @ApiOperation({
-    summary: 'Clean database and sync all categories from KiotViet',
-    description:
-      'WARNING: This will delete all existing categories and their relationships, then sync fresh data from KiotViet',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Database cleaned and categories synced successfully',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Clean and sync operation failed',
-  })
-  async cleanAndSyncCategories() {
-    try {
-      this.logger.log(
-        'Starting clean database and category sync from KiotViet',
-      );
-      const result = await this.categoryService.cleanAndSyncCategories();
-
-      return {
-        message: result.success
-          ? `Database cleaned and successfully synced ${result.totalSynced} categories from KiotViet`
-          : `Database cleaned but sync completed with ${result.errors.length} errors`,
-        operation: 'clean-and-sync',
-        ...result,
-      };
-    } catch (error) {
-      this.logger.error('Clean and sync operation failed:', error.message);
-      throw new BadRequestException(`Clean and sync failed: ${error.message}`);
-    }
-  }
-
   @Get('sync/test-connection')
   @ApiOperation({ summary: 'Test connection to KiotViet API' })
   @ApiResponse({
