@@ -175,10 +175,6 @@ export class KiotVietService {
     }
   }
 
-  // ================================
-  // FETCH METHODS
-  // ================================
-
   async fetchAllTrademarks(): Promise<KiotVietTrademark[]> {
     this.logger.log('Fetching all trademarks from KiotViet');
 
@@ -186,14 +182,10 @@ export class KiotVietService {
     await this.setupAuthHeaders();
 
     try {
-      // FIXED: Use simpler parameters based on KiotViet API documentation
       const response = await this.axiosInstance.get('/trademark', {
         params: {
           pageSize: 100,
           currentItem: 0,
-          // FIXED: Remove orderBy and orderDirection that might be causing 500 error
-          // orderBy: 'tradeMarkName',
-          // orderDirection: 'Asc',
         },
       });
 
@@ -203,7 +195,6 @@ export class KiotVietService {
       );
       return response.data.data;
     } catch (error) {
-      // FIXED: Better error logging with response details
       if (error.response) {
         this.logger.error('KiotViet API Error Response:', {
           status: error.response.status,
@@ -228,81 +219,64 @@ export class KiotVietService {
     this.logger.log('Starting to fetch all categories from KiotViet');
 
     const allCategories: KiotVietCategory[] = [];
-    const processedCategoryIds = new Set<number>();
     let currentItem = 0;
-    let hasMoreData = true;
-    let batchNumber = 1;
+    let processedCount = 0;
     let totalCategories = 0;
     let consecutiveEmptyPages = 0;
     let consecutiveErrorPages = 0;
+    const processedCategoryIds = new Set<number>();
 
-    // Constants cho retry mechanism
-    const PAGE_SIZE = 50; // Giảm xuống từ 100 để tránh timeout
+    // ⚠️ SỬ DỤNG SAME CONSTANTS NHU sync_kiot_data
+    const PAGE_SIZE = 100; // TĂNG TỪ 50 LÊN 100
     const MAX_CONSECUTIVE_EMPTY_PAGES = 3;
-    const MAX_CONSECUTIVE_ERROR_PAGES = 5;
+    const MAX_CONSECUTIVE_ERROR_PAGES = 3;
     const RETRY_DELAY_MS = 2000;
-    const MAX_RETRIES = 3;
 
     await this.checkRateLimit();
     await this.setupAuthHeaders();
 
     try {
-      while (hasMoreData && batchNumber <= 50) {
-        // Tăng limit từ 20 lên 50
-        this.logger.log(
-          `📄 Fetching batch ${batchNumber} (currentItem: ${currentItem})`,
-        );
+      while (true) {
+        // ⚠️ INFINITE LOOP NHƯ sync_kiot_data
+        const currentPage = Math.floor(currentItem / PAGE_SIZE) + 1;
+
+        if (totalCategories > 0) {
+          const progressPercentage = (processedCount / totalCategories) * 100;
+          this.logger.log(
+            `📄 Fetching page ${currentPage} (${processedCount}/${totalCategories} - ${progressPercentage.toFixed(1)}% completed)`,
+          );
+
+          if (processedCount >= totalCategories) {
+            this.logger.log(`✅ All categories processed successfully!`);
+            break;
+          }
+        } else {
+          this.logger.log(
+            `📄 Fetching page ${currentPage} (currentItem: ${currentItem})`,
+          );
+        }
 
         try {
-          // Retry mechanism cho từng request
-          let response: AxiosResponse<KiotVietCategoryApiResponse> | null =
-            null;
-          let retryCount = 0;
-
-          while (retryCount < MAX_RETRIES && !response) {
-            try {
-              // Type assertion để tránh lỗi TypeScript
-              response =
-                await this.axiosInstance.get<KiotVietCategoryApiResponse>(
-                  '/categories',
-                  {
-                    params: {
-                      pageSize: PAGE_SIZE,
-                      currentItem,
-                      hierarchicalData: true, // Sử dụng hierarchical data như source mẫu
-                      orderBy: 'createdDate',
-                      orderDirection: 'ASC',
-                    },
-                  },
-                );
-              this.requestCount++;
-            } catch (error) {
-              retryCount++;
-              this.logger.warn(
-                `⚠️ Request failed (attempt ${retryCount}/${MAX_RETRIES}): ${error.message}`,
-              );
-
-              if (retryCount < MAX_RETRIES) {
-                await new Promise((resolve) =>
-                  setTimeout(resolve, RETRY_DELAY_MS * retryCount),
-                );
-              } else {
-                throw error;
-              }
-            }
-          }
+          // ⚠️ SỬ DỤNG CÙNG PARAMETERS
+          const response = await this.axiosInstance.get('/categories', {
+            params: {
+              hierachicalData: true,
+              orderBy: 'createdDate',
+              orderDirection: 'ASC',
+              pageSize: PAGE_SIZE, // 100
+              currentItem,
+            },
+          });
 
           if (!response || !response.data) {
-            this.logger.warn('⚠️ Received null response from KiotViet API');
             consecutiveEmptyPages++;
-
             if (consecutiveEmptyPages >= MAX_CONSECUTIVE_EMPTY_PAGES) {
               this.logger.log(
                 `🔚 API returned null ${consecutiveEmptyPages} times - ending pagination`,
               );
               break;
             }
-
+            await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
             currentItem += PAGE_SIZE;
             continue;
           }
@@ -310,65 +284,47 @@ export class KiotVietService {
           consecutiveEmptyPages = 0;
           consecutiveErrorPages = 0;
 
-          // Safe destructuring với type checking
-          const responseData = response.data;
-          const total = responseData.total;
-          const categories = responseData.data || [];
+          const { total, data: categories } = response.data;
 
-          // Cập nhật total categories
           if (total !== undefined && total !== null) {
             if (totalCategories === 0) {
               totalCategories = total;
               this.logger.log(
                 `📊 Total categories detected: ${totalCategories}`,
               );
-            } else if (total !== totalCategories) {
-              this.logger.warn(
-                `⚠️ Total count updated: ${totalCategories} → ${total}`,
-              );
-              totalCategories = total;
             }
           }
 
           if (!categories || categories.length === 0) {
-            this.logger.warn(
-              `⚠️ Empty page received at position ${currentItem}`,
-            );
             consecutiveEmptyPages++;
-
-            if (
-              totalCategories > 0 &&
-              allCategories.length >= totalCategories
-            ) {
+            if (totalCategories > 0 && processedCount >= totalCategories) {
               this.logger.log(
                 '✅ All expected categories processed - pagination complete',
               );
               break;
             }
-
             if (consecutiveEmptyPages >= MAX_CONSECUTIVE_EMPTY_PAGES) {
               this.logger.log(
                 `🔚 Stopping after ${consecutiveEmptyPages} consecutive empty pages`,
               );
               break;
             }
-
             currentItem += PAGE_SIZE;
             continue;
           }
 
-          // Filter duplicate categories
+          // ⚠️ EXACT DUPLICATE FILTERING LOGIC
           const newCategories = categories.filter((category) => {
             if (!category.categoryId || !category.categoryName) {
               this.logger.warn(
-                `⚠️ Skipping invalid category: id=${category.categoryId}, name='${category.categoryName}'`,
+                `⚠️ Skipping invalid category: id=${category.categoryId}`,
               );
               return false;
             }
 
             if (processedCategoryIds.has(category.categoryId)) {
               this.logger.debug(
-                `⚠️ Duplicate category ID detected: ${category.categoryId} (${category.categoryName})`,
+                `⚠️ Duplicate category ID: ${category.categoryId}`,
               );
               return false;
             }
@@ -377,73 +333,59 @@ export class KiotVietService {
             return true;
           });
 
-          if (newCategories.length > 0) {
-            allCategories.push(...newCategories);
-
+          if (newCategories.length === 0) {
             this.logger.log(
-              `✅ Batch ${batchNumber} completed: fetched ${newCategories.length} new categories. ` +
-                `Total so far: ${allCategories.length}${totalCategories > 0 ? `/${totalCategories}` : ''}`,
+              `⏭️ Skipping page ${currentPage} - all filtered out`,
+            );
+            currentItem += PAGE_SIZE;
+            continue;
+          }
+
+          allCategories.push(...newCategories);
+          processedCount += newCategories.length;
+
+          if (totalCategories > 0) {
+            const completionPercentage =
+              (processedCount / totalCategories) * 100;
+            this.logger.log(
+              `📈 Progress: ${processedCount}/${totalCategories} (${completionPercentage.toFixed(1)}%)`,
             );
           }
 
-          // Update currentItem for next iteration
+          // ⚠️ QUAN TRỌNG: LUÔN INCREMENT PAGE_SIZE
           currentItem += PAGE_SIZE;
 
-          // Check if we have more data
-          hasMoreData =
-            newCategories.length === PAGE_SIZE &&
-            (totalCategories === 0 || allCategories.length < totalCategories);
-
-          batchNumber++;
-
-          // Rate limiting delay
-          await new Promise((resolve) => setTimeout(resolve, 200));
+          await new Promise((resolve) => setTimeout(resolve, 100));
         } catch (error) {
           consecutiveErrorPages++;
           this.logger.error(
-            `❌ Error fetching batch ${batchNumber}: ${error.message}`,
+            `❌ Error fetching page ${currentPage}: ${error.message}`,
           );
 
           if (consecutiveErrorPages >= MAX_CONSECUTIVE_ERROR_PAGES) {
             this.logger.error(
-              `💥 Too many consecutive errors (${consecutiveErrorPages}). Stopping sync.`,
+              `💥 Too many consecutive errors (${consecutiveErrorPages}). Stopping.`,
             );
             throw error;
           }
 
-          // Exponential backoff for errors
           await new Promise((resolve) =>
             setTimeout(resolve, RETRY_DELAY_MS * consecutiveErrorPages),
           );
-
-          currentItem += PAGE_SIZE;
         }
       }
 
       const completionRate =
-        totalCategories > 0
-          ? (allCategories.length / totalCategories) * 100
-          : 100;
-
+        totalCategories > 0 ? (processedCount / totalCategories) * 100 : 100;
       this.logger.log(
-        `✅ Completed fetching categories: ${allCategories.length} categories ` +
-          `(${completionRate.toFixed(1)}% completion rate)`,
+        `✅ Completed: ${processedCount}/${totalCategories} (${completionRate.toFixed(1)}%)`,
       );
 
       return allCategories;
     } catch (error) {
       this.logger.error('Failed to fetch all categories:', error.message);
-
-      if (error.response) {
-        this.logger.error('KiotViet Categories API Error:', {
-          status: error.response.status,
-          statusText: error.response.statusText,
-          data: error.response.data,
-        });
-      }
-
       throw new BadRequestException(
-        `Failed to fetch categories from KiotViet: ${error.message}`,
+        `Failed to fetch categories: ${error.message}`,
       );
     }
   }
