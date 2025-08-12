@@ -31,29 +31,25 @@ model kiotviet_trademark {
 
 model kiotviet_category {
   id              BigInt    @id @default(autoincrement())
-  kiotviet_id     Int       @unique // categoryId from KiotViet
-  name            String    @db.VarChar(255) // categoryName
-  parent_id       Int?      // parentId from KiotViet hierarchy
-  has_child       Boolean?  @default(false) @db.Bit(1)
-  rank            Int?      // category rank/order
-  retailer_id     Int?      // retailerId from KiotViet
-  created_date    DateTime? @db.DateTime(6) // createdDate from KiotViet
-  modified_date   DateTime? @db.DateTime(6) // modifiedDate from KiotViet
-  synced_at       DateTime  @default(now()) @db.DateTime(6)
-  is_active       Boolean   @default(true) @db.Bit(1)
+  kiotviet_id     Int       @unique // categoryId từ KiotViet
+  name            String    @db.VarChar(255)
+  parent_id       Int?      
+  has_child       Boolean?  @default(false)
+  rank            Int?      
+  retailer_id     Int?      
+  created_date    DateTime? 
+  modified_date   DateTime? 
+  synced_at       DateTime  @default(now())
+  is_active       Boolean   @default(true)
   
-  // Relations
-  products        product[] // Products in this category
+  // ✅ RELATIONSHIP VỚI PRODUCT
+  products        product[] // Danh sách products thuộc category này
   
   @@index([kiotviet_id])
   @@index([parent_id])
   @@index([name])
-  @@map("kiotviet_categories")
 }
 
-// ================================
-// ENHANCED PRODUCT TABLE (Existing + KiotViet fields)
-// ================================
 
 model product {
   id                  BigInt               @id @default(autoincrement())
@@ -87,7 +83,6 @@ model product {
   review              review[]
   category            category?            @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   
-  kiotviet_category   kiotviet_category?   @relation(fields: [kiotviet_category_id], references: [kiotviet_id], onDelete: SetNull)
   kiotviet_trademark  kiotviet_trademark?  @relation(fields: [kiotviet_trademark_id], references: [kiotviet_id], onDelete: SetNull)
 
   @@index([is_visible])
@@ -97,6 +92,7 @@ model product {
   @@index([kiotviet_category_id])
   @@index([kiotviet_trademark_id])
   @@index([is_from_kiotviet])
+  kiotviet_category kiotviet_category[]
 }
 
 // ================================
