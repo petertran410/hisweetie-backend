@@ -648,7 +648,6 @@ export class KiotVietService {
     }
   }
 
-  // FIXED: syncProducts with category validation to prevent foreign key errors
   async syncProducts(lastModifiedFrom?: string): Promise<SyncResult> {
     this.logger.log('Starting product synchronization from KiotViet');
 
@@ -661,7 +660,6 @@ export class KiotVietService {
         where: { is_from_kiotviet: true },
       });
 
-      // STEP 1: Get all existing category IDs to validate references
       const existingCategories = await this.prisma.kiotviet_category.findMany({
         select: { kiotviet_id: true },
       });
@@ -672,7 +670,6 @@ export class KiotVietService {
         `Found ${validCategoryIds.size} existing categories for validation`,
       );
 
-      // STEP 2: Get all existing trademark IDs to validate references
       const existingTrademarks = await this.prisma.kiotviet_trademark.findMany({
         select: { kiotviet_id: true },
       });
@@ -683,7 +680,6 @@ export class KiotVietService {
         `Found ${validTrademarkIds.size} existing trademarks for validation`,
       );
 
-      // STEP 3: Fetch all products from KiotViet
       const fetchResult = await this.fetchAllProducts(lastModifiedFrom);
       const kiotVietProducts = fetchResult.products;
       this.logger.log(
@@ -698,7 +694,6 @@ export class KiotVietService {
 
           for (const kiotProduct of kiotVietProducts) {
             try {
-              // FIXED: Validate category reference before creating/updating
               let categoryId: number | null = null;
               if (kiotProduct.categoryId) {
                 if (validCategoryIds.has(kiotProduct.categoryId)) {
@@ -710,7 +705,6 @@ export class KiotVietService {
                 }
               }
 
-              // FIXED: Validate trademark reference before creating/updating
               let trademarkId: number | null = null;
               if (kiotProduct.tradeMarkId) {
                 if (validTrademarkIds.has(kiotProduct.tradeMarkId)) {
@@ -724,9 +718,13 @@ export class KiotVietService {
 
               const existingProduct = await prisma.product.findUnique({
                 where: { kiotviet_id: BigInt(kiotProduct.id) },
+                select: {
+                  id: true,
+                  is_visible: true,
+                  title: true,
+                },
               });
 
-              // FIXED: Handle images properly - use undefined instead of null for Prisma Json field
               let processedImages: string[] | undefined = undefined;
 
               if (
@@ -734,9 +732,6 @@ export class KiotVietService {
                 Array.isArray(kiotProduct.images) &&
                 kiotProduct.images.length > 0
               ) {
-                // Handle both formats from KiotViet API:
-                // Format 1: [{Image: "url"}] (object with Image property)
-                // Format 2: ["url"] (direct string array)
                 const imageUrls = kiotProduct.images
                   .map((img) => {
                     if (
@@ -744,28 +739,25 @@ export class KiotVietService {
                       img !== null &&
                       'Image' in img
                     ) {
-                      return img.Image; // Format 1: Extract from object
+                      return img.Image;
                     } else if (typeof img === 'string') {
-                      return img; // Format 2: Direct string
+                      return img;
                     }
-                    return null; // Invalid format
+                    return null;
                   })
                   .filter(
                     (url): url is string =>
                       url !== null &&
                       typeof url === 'string' &&
                       url.trim().length > 0 &&
-                      url.startsWith('http'), // Only valid URLs
+                      url.startsWith('http'),
                   );
 
-                // FIXED: Only set processedImages if we have valid image URLs
                 if (imageUrls.length > 0) {
                   processedImages = imageUrls;
                 }
-                // If no valid images, leave as undefined (not null)
               }
 
-              // FIXED: Build productData object with clean fields
               const productData: any = {
                 kiotviet_id: BigInt(kiotProduct.id),
                 kiotviet_code: kiotProduct.code,
@@ -779,25 +771,24 @@ export class KiotVietService {
                 is_from_kiotviet: true,
                 kiotviet_synced_at: new Date(),
 
-                // Also populate basic fields for consistency
                 title: kiotProduct.name,
-                is_visible: kiotProduct.allowsSale !== false,
               };
 
-              // FIXED: Only add kiotviet_images if we have processed images (avoid null)
               if (processedImages !== undefined) {
                 productData.kiotviet_images = processedImages;
               }
 
-              // FIXED: Remove any undefined fields before sending to Prisma
               Object.keys(productData).forEach((key) => {
                 if (productData[key] === undefined) {
                   delete productData[key];
                 }
               });
 
+              if (!existingProduct) {
+                productData.is_visible = kiotProduct.allowsSale !== false;
+              }
+
               if (existingProduct) {
-                // Update existing product
                 await prisma.product.update({
                   where: { kiotviet_id: BigInt(kiotProduct.id) },
                   data: productData,
@@ -807,7 +798,6 @@ export class KiotVietService {
                   `Updated product: ${kiotProduct.name} (ID: ${kiotProduct.id})`,
                 );
               } else {
-                // Create new product
                 await prisma.product.create({
                   data: productData,
                 });
@@ -831,7 +821,7 @@ export class KiotVietService {
           return { newRecords, updatedRecords, skippedRecords };
         },
         {
-          timeout: 300000, // 5 minutes timeout for large datasets
+          timeout: 300000,
         },
       );
 
@@ -863,17 +853,12 @@ export class KiotVietService {
     }
   }
 
-  // ================================
-  // FULL SYNC
-  // ================================
-
   async fullSync(): Promise<FullSyncResult> {
     this.logger.log('Starting full KiotViet synchronization');
 
     const allErrors: string[] = [];
 
     try {
-      // STEP 1: Sync Trademarks first (no dependencies)
       this.logger.log('🔄 Step 1/3: Syncing trademarks...');
       const trademarksResult = await this.syncTrademarks();
       allErrors.push(...trademarksResult.errors);
@@ -888,7 +873,6 @@ export class KiotVietService {
         );
       }
 
-      // STEP 2: Sync Categories second (no dependencies)
       this.logger.log('🔄 Step 2/3: Syncing categories...');
       const categoriesResult = await this.syncCategories();
       allErrors.push(...categoriesResult.errors);
@@ -903,7 +887,6 @@ export class KiotVietService {
         );
       }
 
-      // STEP 3: Sync Products last (depends on categories and trademarks)
       this.logger.log('🔄 Step 3/3: Syncing products...');
       const productsResult = await this.syncProducts();
       allErrors.push(...productsResult.errors);
@@ -937,10 +920,6 @@ export class KiotVietService {
       throw new BadRequestException(`Full sync failed: ${error.message}`);
     }
   }
-
-  // ================================
-  // UTILITY METHODS
-  // ================================
 
   async testConnection(): Promise<{
     success: boolean;

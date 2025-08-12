@@ -1,4 +1,3 @@
-// src/product/product.controller.ts - UPDATED FOR KIOTVIET SYNC
 import {
   Controller,
   Get,
@@ -26,13 +25,6 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 
-import {
-  SyncResult,
-  FullSyncResult,
-  ValidationResult,
-  SyncOrderStep,
-} from './types/sync.types';
-
 @ApiTags('product')
 @Controller('product')
 export class ProductController {
@@ -42,10 +34,6 @@ export class ProductController {
     private readonly productService: ProductService,
     private readonly kiotVietService: KiotVietService,
   ) {}
-
-  // ================================
-  // KIOTVIET SYNC ENDPOINTS
-  // ================================
 
   @Post('kiotviet/sync/full')
   @ApiOperation({
