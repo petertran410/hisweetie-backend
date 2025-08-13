@@ -1,3 +1,4 @@
+import { category } from './../../node_modules/.prisma/client/index.d';
 import {
   Injectable,
   NotFoundException,
@@ -19,9 +20,9 @@ interface KiotProduct {
   barCode?: string;
   name: string;
   fullName: string;
-  kiotviet_category_id?: number;
+  categoryId?: number;
   categoryName?: string;
-  kiotviet_trademark_id?: number;
+  tradeMarkId?: number;
   tradeMarkName?: string;
   type?: number;
   description?: string;
@@ -454,14 +455,14 @@ export class ProductService {
     for (const productData of products) {
       try {
         const category = await this.prismaService.kiotviet_category.findFirst({
-          where: { kiotVietId: productData.kiotviet_category_id },
-          select: { id: true },
+          where: { kiotVietId: productData.categoryId },
+          select: { kiotVietId: true, name: true },
         });
 
         const tradeMark = await this.prismaService.kiotviet_trademark.findFirst(
           {
-            where: { kiotviet_id: productData.kiotviet_trademark_id },
-            select: { id: true },
+            where: { kiotviet_id: productData.tradeMarkId },
+            select: { kiotviet_id: true, name: true },
           },
         );
 
@@ -470,8 +471,10 @@ export class ProductService {
           update: {
             kiotviet_code: productData.code.trim(),
             kiotviet_name: productData.name.trim(),
-            kiotviet_category_id: category?.id,
-            kiotviet_trademark_id: tradeMark?.id,
+            kiotviet_category_id: category?.kiotVietId,
+            kiotviet_category_name: category?.name,
+            kiotviet_trademark_id: tradeMark?.kiotviet_id,
+            kiotviet_trademark_name: tradeMark?.name,
             kiotviet_type: productData.type ?? 1,
             kiotviet_price: productData.basePrice
               ? new Prisma.Decimal(productData.basePrice)
@@ -484,8 +487,8 @@ export class ProductService {
             kiotviet_id: BigInt(productData.id),
             kiotviet_code: productData.code.trim(),
             kiotviet_name: productData.name.trim(),
-            kiotviet_category_id: category?.id,
-            kiotviet_trademark_id: tradeMark?.id,
+            kiotviet_category_id: category?.kiotVietId,
+            kiotviet_trademark_id: tradeMark?.kiotviet_id,
             kiotviet_type: productData.type ?? 1,
             kiotviet_price: productData.basePrice
               ? new Prisma.Decimal(productData.basePrice)
@@ -1134,12 +1137,17 @@ export class ProductService {
     pageSize: number;
     pageNumber: number;
     title?: string;
-    categoryId?: number;
+    kiotviet_category_id?: number;
     visibilityFilter?: boolean;
   }) {
     try {
-      const { pageSize, pageNumber, title, categoryId, visibilityFilter } =
-        params;
+      const {
+        pageSize,
+        pageNumber,
+        title,
+        kiotviet_category_id,
+        visibilityFilter,
+      } = params;
 
       const skip = pageNumber * pageSize;
       const take = pageSize;
@@ -1157,8 +1165,8 @@ export class ProductService {
         ];
       }
 
-      if (categoryId) {
-        where.category_id = BigInt(categoryId);
+      if (kiotviet_category_id) {
+        where.kiotviet_category_id = kiotviet_category_id;
       }
 
       const orderByClause: Prisma.productOrderByWithRelationInput = {
@@ -1172,7 +1180,6 @@ export class ProductService {
           take,
           orderBy: orderByClause,
           include: {
-            category: { select: { id: true, name: true } },
             kiotviet_category: { select: { kiotVietId: true, name: true } },
             kiotviet_trademark: { select: { kiotviet_id: true, name: true } },
           },
@@ -1194,11 +1201,15 @@ export class ProductService {
 
       const transformedProducts = products.map((product) => {
         const transformed = this.transformProduct(product);
+        // console.log(product.kiotviet_category_name);
+        // console.log(product);
         return {
           ...transformed,
           isVisible: product.is_visible,
         };
       });
+
+      console.log(transformedProducts);
 
       return {
         content: transformedProducts,

@@ -551,9 +551,11 @@ export class CategoryService {
         this.prisma.kiotviet_category.count({ where }),
       ]);
 
+      console.log(categories);
+
       return {
         content: categories.map((cat) => ({
-          id: cat.kiotVietId,
+          id: cat.id,
           name: cat.name,
           parentId: cat.parentId,
           hasChild: cat.hasChild,

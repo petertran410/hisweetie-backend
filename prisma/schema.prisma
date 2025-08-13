@@ -62,13 +62,15 @@ model product {
   kiotviet_price        Decimal?            @db.Decimal(15, 2)
   kiotviet_type         Int?
   kiotviet_category_id  Int?
+  kiotviet_category_name String?
   kiotviet_trademark_id Int?
+  kiotviet_trademark_name String?
   is_from_kiotviet      Boolean             @default(dbgenerated("b'0'")) @db.Bit(1)
   kiotviet_synced_at    DateTime?           @db.DateTime(6)
   kiotviet_description  String?
   orders                orders[]
   category              category?           @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  kiotviet_category     kiotviet_category?  @relation(fields: [kiotviet_category_id], references: [id])
+  kiotviet_category     kiotviet_category?  @relation(fields: [kiotviet_category_id], references: [kiotVietId])
   kiotviet_trademark    kiotviet_trademark? @relation(fields: [kiotviet_trademark_id], references: [kiotviet_id])
   review                review[]
 
