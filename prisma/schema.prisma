@@ -1,4 +1,3 @@
-// prisma/schema.prisma - UPDATED FOR KIOTVIET INTEGRATION (Using existing product table)
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,20 +7,15 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ================================
-// KIOTVIET REFERENCE TABLES (Separate from custom data)
-// ================================
-
 model kiotviet_trademark {
-  id              Int    @id @default(autoincrement())
-  kiotviet_id     Int       @unique
-  name            String    @db.VarChar(255)
-  created_date    DateTime? @db.DateTime(6)
-  modified_date   DateTime? @db.DateTime(6)
-  synced_at       DateTime  @default(now()) @db.DateTime(6)
-  is_active       Boolean   @default(true) @db.Bit(1)
-  
-  products        product[]
+  id            Int       @id @default(autoincrement())
+  kiotviet_id   Int       @unique
+  name          String    @db.VarChar(255)
+  created_date  DateTime? @db.DateTime(6)
+  modified_date DateTime? @db.DateTime(6)
+  synced_at     DateTime  @default(now()) @db.DateTime(6)
+  is_active     Boolean   @default(dbgenerated("b'1'")) @db.Bit(1)
+  products      product[]
 
   @@index([kiotviet_id])
   @@index([name])
@@ -29,61 +23,54 @@ model kiotviet_trademark {
 }
 
 model kiotviet_category {
-  id                      Int                       @id @default(autoincrement())
-  kiotVietId              Int?                      @unique
-  name                    String
-  parentId                Int?
-  retailerId              Int?
-  createdDate             DateTime                  @default(now())
-  modifiedDate            DateTime                  @updatedAt
-  lastSyncedAt            DateTime                  @default(now())
-  hasChild                Boolean                   @default(false)
-  rank                    Int?
-  parent                  kiotviet_category?                 @relation("CategoryHierarchy", fields: [parentId], references: [id])
-  children                kiotviet_category[]                @relation("CategoryHierarchy")
-  products                product[]
+  id           Int                 @id @default(autoincrement())
+  name         String
+  rank         Int?
+  createdDate  DateTime            @default(now())
+  hasChild     Boolean             @default(false)
+  kiotVietId   Int?                @unique
+  lastSyncedAt DateTime            @default(now())
+  modifiedDate DateTime            @updatedAt
+  parentId     Int?
+  retailerId   Int?
+  parent       kiotviet_category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children     kiotviet_category[] @relation("CategoryHierarchy")
+  products     product[]
 
   @@index([kiotVietId])
   @@index([parentId])
   @@index([lastSyncedAt])
 }
 
-
 model product {
-  id                  BigInt               @id @default(autoincrement())
-  
-  category_id         BigInt?
-  description         String?              @db.LongText
-  general_description String?              @db.LongText
-  images_url          String?              @db.LongText
-  instruction         String?              @db.LongText
-  is_featured         Boolean?             @db.Bit(1)
-  is_visible          Boolean?             @default(false) @db.Bit(1)
-  rate                Float?
-  title               String?              @db.VarChar(255)
-  featured_thumbnail  String?              @db.VarChar(255)
-  recipe_thumbnail    String?              @db.VarChar(255)
-  
-  kiotviet_id         BigInt?              @unique
-  kiotviet_code       String?              @unique @db.VarChar(255)
-  kiotviet_name       String?              @db.VarChar(500)
-  kiotviet_images     Json?
-  kiotviet_price      Decimal?             @db.Decimal(15,2)
-  kiotviet_type       Int?
-  
-  kiotviet_category_id   Int?
-  kiotviet_trademark_id  Int?
+  id                    BigInt              @id @default(autoincrement())
+  category_id           BigInt?
+  description           String?             @db.LongText
+  general_description   String?             @db.LongText
+  images_url            String?             @db.LongText
+  instruction           String?             @db.LongText
+  is_featured           Boolean?            @db.Bit(1)
+  is_visible            Boolean?            @default(dbgenerated("b'0'")) @db.Bit(1)
+  rate                  Float?
+  title                 String?             @db.VarChar(255)
+  featured_thumbnail    String?             @db.VarChar(255)
+  recipe_thumbnail      String?             @db.VarChar(255)
+  kiotviet_id           BigInt?             @unique
+  kiotviet_code         String?             @unique @db.VarChar(255)
+  kiotviet_name         String?             @db.VarChar(500)
+  kiotviet_images       Json?
+  kiotviet_price        Decimal?            @db.Decimal(15, 2)
+  kiotviet_type         Int?
+  kiotviet_category_id  Int?
+  kiotviet_trademark_id Int?
+  is_from_kiotviet      Boolean             @default(dbgenerated("b'0'")) @db.Bit(1)
+  kiotviet_synced_at    DateTime?           @db.DateTime(6)
   kiotviet_description  String?
-  
-  is_from_kiotviet    Boolean              @default(false) @db.Bit(1)
-  kiotviet_synced_at  DateTime?            @db.DateTime(6)
-  
-  orders              orders[]
-  review              review[]
-
-  category            category?            @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  kiotviet_category   kiotviet_category?   @relation(fields: [kiotviet_category_id], references: [id], onDelete: SetNull)
-  kiotviet_trademark  kiotviet_trademark?  @relation(fields: [kiotviet_trademark_id], references: [kiotviet_id], onDelete: SetNull)
+  orders                orders[]
+  category              category?           @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  kiotviet_category     kiotviet_category?  @relation(fields: [kiotviet_category_id], references: [id])
+  kiotviet_trademark    kiotviet_trademark? @relation(fields: [kiotviet_trademark_id], references: [kiotviet_id])
+  review                review[]
 
   @@index([is_visible])
   @@index([category_id])
@@ -95,46 +82,36 @@ model product {
 }
 
 model category {
-  id                 BigInt               @id @default(autoincrement())
-  name               String?              @db.VarChar(255)
-  created_by         String?              @db.VarChar(255)
-  created_date       DateTime?            @db.DateTime(6)
-  updated_by         String?              @db.VarChar(255)
-  updated_date       DateTime?            @db.DateTime(6)
-  description        String?              @db.LongText
-  images_url         String?              @db.LongText
-  parent_id          BigInt?
-  priority           Int?
-  
-  // Relations to products (your custom categories)
-  product            product[]
+  id           BigInt    @id @default(autoincrement())
+  name         String?   @db.VarChar(255)
+  created_by   String?   @db.VarChar(255)
+  created_date DateTime? @db.DateTime(6)
+  updated_by   String?   @db.VarChar(255)
+  updated_date DateTime? @db.DateTime(6)
+  description  String?   @db.LongText
+  images_url   String?   @db.LongText
+  parent_id    BigInt?
+  priority     Int?
+  product      product[]
 }
-
-// ================================
-// SYNC MANAGEMENT
-// ================================
 
 model kiotviet_sync_log {
   id            Int       @id @default(autoincrement())
-  sync_type     String    @db.VarChar(50) // 'products', 'categories', 'trademarks', 'full'
-  entity_type   String    @db.VarChar(50) // What was synced
+  sync_type     String    @db.VarChar(50)
+  entity_type   String    @db.VarChar(50)
   started_at    DateTime  @default(now())
   completed_at  DateTime?
-  status        String    @default("pending") @db.VarChar(20) // pending, success, failed
+  status        String    @default("pending") @db.VarChar(20)
   total_synced  Int?      @default(0)
   total_updated Int?      @default(0)
   total_deleted Int?      @default(0)
   error_message String?   @db.Text
-  details       Json?     // Additional sync details
-  
+  details       Json?
+
   @@index([status])
   @@index([sync_type, started_at])
   @@index([entity_type])
 }
-
-// ================================
-// EXISTING ENTITIES (Keep unchanged)
-// ================================
 
 model applicant {
   id           BigInt        @id @default(autoincrement())
@@ -208,11 +185,11 @@ model news {
   description  String?   @db.LongText
   html_content String?   @db.LongText
   images_url   String?   @db.LongText
-  embed_url    String?   @db.LongText
   title        String?   @db.VarChar(255)
   view         Int?
   user_id      String?   @db.VarChar(255)
   type         String?   @db.VarChar(255)
+  embed_url    String?   @db.LongText
   user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([user_id])
@@ -235,22 +212,22 @@ model orders {
 }
 
 model product_order {
-  id             BigInt          @id @default(autoincrement())
-  created_by     String?         @db.VarChar(255)
-  created_date   DateTime?       @db.DateTime(6)
-  updated_by     String?         @db.VarChar(255)
-  updated_date   DateTime?       @db.DateTime(6)
-  address        String?         @db.LongText
-  note           String?         @db.LongText
-  payment_method String?         @db.VarChar(255)
-  phone          String?         @db.VarChar(255)
-  status         String?         @db.VarChar(255)
+  id             BigInt         @id @default(autoincrement())
+  created_by     String?        @db.VarChar(255)
+  created_date   DateTime?      @db.DateTime(6)
+  updated_by     String?        @db.VarChar(255)
+  updated_date   DateTime?      @db.DateTime(6)
+  address        String?        @db.LongText
+  note           String?        @db.LongText
+  payment_method String?        @db.VarChar(255)
+  phone          String?        @db.VarChar(255)
+  status         String?        @db.VarChar(255)
   total_amount   BigInt?
-  user_full_name String?         @db.VarChar(255)
-  user_id        String?         @db.VarChar(255)
+  user_full_name String?        @db.VarChar(255)
+  user_id        String?        @db.VarChar(255)
   orders         orders[]
   payment_logs   payment_logs[]
-  user           user?           @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user           user?          @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([user_id])
 }
@@ -362,31 +339,23 @@ model webhook_log {
 }
 
 model pages {
-  id              BigInt    @id @default(autoincrement())
-  created_by      String?   @db.VarChar(255)
-  created_date    DateTime? @db.DateTime(6)
-  updated_by      String?   @db.VarChar(255)
-  updated_date    DateTime? @db.DateTime(6)
-  
-  // Core fields
-  slug            String    @unique @db.VarChar(255) // URL slug: chinh-sach-bao-mat
-  title           String    @db.VarChar(255) // Tên hiển thị
-  content         String?   @db.LongText // Nội dung HTML
-  
-  // SEO fields
-  meta_title      String?   @db.VarChar(255) // SEO title
-  meta_description String?  @db.Text // SEO description
-  
-  // Display & hierarchy
-  display_order   Int?      @default(0) // Thứ tự hiển thị trong sidebar
-  parent_id       BigInt?   // ID của trang cha (chinh-sach-diep-tra)
-  is_active       Boolean   @default(true) @db.Bit(1) // Có hiển thị không
-  is_main_page    Boolean   @default(false) @db.Bit(1) // Trang chính (chinh-sach-diep-tra)
-  
-  // Relations
-  parent          pages?    @relation("PageHierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
-  children        pages[]   @relation("PageHierarchy")
-  
+  id               BigInt    @id @default(autoincrement())
+  created_by       String?   @db.VarChar(255)
+  created_date     DateTime? @db.DateTime(6)
+  updated_by       String?   @db.VarChar(255)
+  updated_date     DateTime? @db.DateTime(6)
+  slug             String    @unique @db.VarChar(255)
+  title            String    @db.VarChar(255)
+  content          String?   @db.LongText
+  meta_title       String?   @db.VarChar(255)
+  meta_description String?   @db.Text
+  display_order    Int?      @default(0)
+  parent_id        BigInt?
+  is_active        Boolean   @default(dbgenerated("b'1'")) @db.Bit(1)
+  is_main_page     Boolean   @default(dbgenerated("b'0'")) @db.Bit(1)
+  parent           pages?    @relation("PageHierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
+  children         pages[]   @relation("PageHierarchy")
+
   @@index([slug])
   @@index([parent_id])
   @@index([display_order])
