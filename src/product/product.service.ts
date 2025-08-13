@@ -355,6 +355,7 @@ export class ProductService {
               ? new Prisma.Decimal(productData.basePrice)
               : null,
             kiotviet_description: productData.description?.trim() || null,
+            kiotviet_images: productData.images,
             kiotviet_synced_at: new Date(),
           },
           create: {
@@ -368,22 +369,23 @@ export class ProductService {
               ? new Prisma.Decimal(productData.basePrice)
               : null,
             kiotviet_description: productData.description?.trim() || null,
+            kiotviet_images: productData.images,
             kiotviet_synced_at: new Date(),
           },
         });
 
-        if (productData.images && productData.images.length > 0) {
-          const image = productData.images;
-          await this.prismaService.product.upsert({
-            where: { kiotviet_id: BigInt(productData.id) },
-            update: {
-              kiotviet_images: image.images,
-            },
-            create: {
-              kiotviet_images: image.images,
-            },
-          });
-        }
+        // if (productData.images && productData.images.length > 0) {
+        //   const image = productData.images;
+        //   await this.prismaService.product.upsert({
+        //     where: { kiotviet_id: BigInt(productData.id) },
+        //     update: {
+        //       kiotviet_images: image.images,
+        //     },
+        //     create: {
+        //       kiotviet_images: image.images,
+        //     },
+        //   });
+        // }
 
         savedProducts.push(product);
       } catch (error) {
