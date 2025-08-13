@@ -13,6 +13,126 @@ import { KiotVietAuthService } from 'src/auth/kiotviet-auth/auth.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { async, firstValueFrom } from 'rxjs';
 
+interface KiotProduct {
+  id: number;
+  code: string;
+  barCode?: string;
+  name: string;
+  fullName: string;
+  kiotviet_category_id?: number;
+  categoryName?: string;
+  kiotviet_trademark_id?: number;
+  tradeMarkName?: string;
+  type?: number;
+  description?: string;
+  allowsSale?: boolean;
+  hasVariants?: boolean;
+  basePrice?: number;
+  unit?: string;
+  masterProductId?: number;
+  masterCode?: string;
+  masterUnitId?: number;
+  conversionValue?: number;
+  weight?: number;
+  isLotSerialControl?: boolean;
+  isBatchExpireControl?: boolean;
+  orderTemplate?: string;
+  minQuantity?: number;
+  maxQuantity?: number;
+  isRewardPoint?: boolean;
+  isActive?: boolean;
+  retailerId?: number;
+  modifiedDate?: string;
+  createdDate?: string;
+
+  // Detailed fields from enrichment
+  attributes?: Array<{
+    productId: number;
+    attributeName: string;
+    attributeValue: string;
+  }>;
+
+  units?: Array<{
+    id: number;
+    code: string;
+    name: string;
+    fullName: string;
+    unit: string;
+    conversionValue: number;
+    basePrice: number;
+  }>;
+
+  inventories: Array<{
+    productId: number;
+    productCode?: string;
+    productName?: string;
+    branchId: number;
+    branchName?: string;
+    cost: number;
+    onHand: number;
+    reserved: number;
+    lineNumber: number;
+    actualReserved?: number;
+    minQuantity?: number;
+    maxQuantity?: number;
+    isActive?: boolean;
+    onOrder?: number;
+  }>;
+
+  priceBooks?: Array<{
+    productId: number;
+    priceBookId: number;
+    priceBookName: string;
+    price: number;
+    isActive?: boolean;
+    startDate?: string;
+    endDate?: string;
+  }>;
+
+  images?: Array<{
+    image: string;
+  }>;
+
+  productSerials?: Array<{
+    productId: number;
+    serialNumber: string;
+    status: number;
+    branchId: number;
+    quantity?: number;
+    createdDate?: string;
+    modifiedDate?: string;
+  }>;
+
+  productBatchExpires?: Array<{
+    productId: number;
+    onHand: number;
+    batchName: string;
+    expireDate?: string;
+    fullNameVirgule: string;
+    branchId: number;
+  }>;
+
+  warranties?: Array<{
+    productId: number;
+    description?: string;
+    numberTime: number;
+    timeType: number;
+    warrantyType: number;
+    createdDate?: string;
+    modifiedDate?: string;
+  }>;
+
+  productFormulas?: Array<{
+    materialId: number;
+    materialCode: string;
+    materialFullName: string;
+    materialName: string;
+    quantity: number;
+    basePrice: number;
+    productId?: number;
+  }>;
+}
+
 @Injectable()
 export class ProductService {
   private readonly logger = new Logger(ProductService.name);
@@ -324,7 +444,9 @@ export class ProductService {
     return enrichedProducts;
   }
 
-  private async saveProductsToDatabase(products: any[]): Promise<any[]> {
+  private async saveProductsToDatabase(
+    products: KiotProduct[],
+  ): Promise<any[]> {
     this.logger.log(`💾 Saving ${products.length} products to database...`);
 
     const savedProducts: any[] = [];
@@ -332,14 +454,14 @@ export class ProductService {
     for (const productData of products) {
       try {
         const category = await this.prismaService.kiotviet_category.findFirst({
-          where: { kiotVietId: productData.categoryId },
-          select: { kiotVietId: true },
+          where: { kiotVietId: productData.kiotviet_category_id },
+          select: { id: true },
         });
 
         const tradeMark = await this.prismaService.kiotviet_trademark.findFirst(
           {
-            where: { kiotviet_id: productData.tradeMarkId },
-            select: { kiotviet_id: true },
+            where: { kiotviet_id: productData.kiotviet_trademark_id },
+            select: { id: true },
           },
         );
 
@@ -348,8 +470,8 @@ export class ProductService {
           update: {
             kiotviet_code: productData.code.trim(),
             kiotviet_name: productData.name.trim(),
-            kiotviet_category_id: category?.kiotVietId,
-            kiotviet_trademark_id: tradeMark?.kiotviet_id,
+            kiotviet_category_id: category?.id,
+            kiotviet_trademark_id: tradeMark?.id,
             kiotviet_type: productData.type ?? 1,
             kiotviet_price: productData.basePrice
               ? new Prisma.Decimal(productData.basePrice)
@@ -362,8 +484,8 @@ export class ProductService {
             kiotviet_id: BigInt(productData.id),
             kiotviet_code: productData.code.trim(),
             kiotviet_name: productData.name.trim(),
-            kiotviet_category_id: category?.kiotVietId,
-            kiotviet_trademark_id: tradeMark?.kiotviet_id,
+            kiotviet_category_id: category?.id,
+            kiotviet_trademark_id: tradeMark?.id,
             kiotviet_type: productData.type ?? 1,
             kiotviet_price: productData.basePrice
               ? new Prisma.Decimal(productData.basePrice)
