@@ -77,7 +77,7 @@ export class ProductService {
           orderBy: orderByClause,
           include: {
             category: { select: { id: true, name: true } },
-            kiotviet_category: { select: { kiotviet_id: true, name: true } },
+            kiotviet_category: { select: { kiotVietId: true, name: true } },
             kiotviet_trademark: { select: { kiotviet_id: true, name: true } },
           },
         }),
@@ -138,7 +138,7 @@ export class ProductService {
             select: { id: true, name: true, description: true },
           },
           kiotviet_category: {
-            select: { kiotviet_id: true, name: true, parent_id: true },
+            select: { kiotVietId: true, name: true, parentId: true },
           },
           kiotviet_trademark: {
             select: { kiotviet_id: true, name: true },
@@ -236,7 +236,7 @@ export class ProductService {
           orderBy: orderByClause,
           include: {
             category: { select: { id: true, name: true } },
-            kiotviet_category: { select: { kiotviet_id: true, name: true } },
+            kiotviet_category: { select: { kiotVietId: true, name: true } },
             kiotviet_trademark: { select: { kiotviet_id: true, name: true } },
           },
         }),
@@ -705,7 +705,7 @@ export class ProductService {
           orderBy: orderByClause,
           include: {
             category: { select: { id: true, name: true } },
-            kiotviet_category: { select: { kiotviet_id: true, name: true } },
+            kiotviet_category: { select: { kiotVietId: true, name: true } },
             kiotviet_trademark: { select: { kiotviet_id: true, name: true } },
           },
         }),

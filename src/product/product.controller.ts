@@ -35,76 +35,6 @@ export class ProductController {
     private readonly kiotVietService: KiotVietService,
   ) {}
 
-  @Post('kiotviet/sync/full')
-  @ApiOperation({
-    summary: 'Full sync from KiotViet',
-    description:
-      'Syncs all trademarks, categories, and products from KiotViet (minimal fields only)',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Full synchronization completed',
-  })
-  async fullSyncFromKiotViet() {
-    try {
-      this.logger.log('Starting full KiotViet synchronization');
-
-      const result = await this.kiotVietService.fullSync();
-
-      const response = {
-        success: result.success,
-        message: result.success
-          ? 'Full synchronization completed successfully'
-          : `Full synchronization completed with ${result.errors.length} errors`,
-        summary: {
-          trademarks: {
-            synced: result.trademarks.totalSynced,
-            updated: result.trademarks.totalUpdated,
-            total: result.trademarks.summary.afterSync,
-          },
-          categories: {
-            synced: result.categories.totalSynced,
-            updated: result.categories.totalUpdated,
-            total: result.categories.summary.afterSync,
-          },
-          products: {
-            synced: result.products.totalSynced,
-            updated: result.products.totalUpdated,
-            total: result.products.summary.afterSync,
-            syncedFields: [
-              'kiotviet_id',
-              'code',
-              'name',
-              'image',
-              'price',
-              'type',
-              'category',
-            ],
-          },
-        },
-        errors: result.errors,
-        timestamp: new Date().toISOString(),
-      };
-
-      if (result.success) {
-        this.logger.log(
-          'Full KiotViet sync completed successfully',
-          response.summary,
-        );
-      } else {
-        this.logger.warn('Full KiotViet sync completed with errors', {
-          errorCount: result.errors.length,
-          summary: response.summary,
-        });
-      }
-
-      return response;
-    } catch (error) {
-      this.logger.error('Full KiotViet sync failed:', error.message);
-      throw new BadRequestException(`Full sync failed: ${error.message}`);
-    }
-  }
-
   @Post('kiotviet/sync/products')
   @ApiOperation({
     summary: 'Sync products only from KiotViet',
@@ -171,35 +101,6 @@ export class ProductController {
     } catch (error) {
       this.logger.error('KiotViet product sync failed:', error.message);
       throw new BadRequestException(`Product sync failed: ${error.message}`);
-    }
-  }
-
-  @Post('kiotviet/sync/categories')
-  @ApiOperation({
-    summary: 'Sync categories from KiotViet',
-    description:
-      'ONLY method to sync categories - syncs to kiotviet_category table',
-  })
-  async syncCategoriesFromKiotViet() {
-    try {
-      this.logger.log('Starting KiotViet category sync');
-
-      const result = await this.kiotVietService.syncCategories();
-
-      const response = {
-        success: result.success,
-        message: result.success
-          ? `Successfully synced ${result.totalSynced + result.totalUpdated} categories from KiotViet`
-          : `Category sync completed with ${result.errors.length} errors`,
-        summary: result.summary,
-        errors: result.errors,
-        timestamp: new Date().toISOString(),
-      };
-
-      return response;
-    } catch (error) {
-      this.logger.error('KiotViet category sync failed:', error.message);
-      throw new BadRequestException(`Category sync failed: ${error.message}`);
     }
   }
 

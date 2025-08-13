@@ -22,7 +22,7 @@ model kiotviet_trademark {
   is_active       Boolean   @default(true) @db.Bit(1)
   
   // Relations
-  products        product[] // Products using this trademark
+  products        product[]
 
   @@index([kiotviet_id])
   @@index([name])
@@ -30,24 +30,23 @@ model kiotviet_trademark {
 }
 
 model kiotviet_category {
-  id              BigInt    @id @default(autoincrement())
-  kiotviet_id     Int       @unique // categoryId từ KiotViet
-  name            String    @db.VarChar(255)
-  parent_id       Int?      
-  has_child       Boolean?  @default(false)
-  rank            Int?      
-  retailer_id     Int?      
-  created_date    DateTime? 
-  modified_date   DateTime? 
-  synced_at       DateTime  @default(now())
-  is_active       Boolean   @default(true)
-  
-  // ✅ RELATIONSHIP VỚI PRODUCT
-  products        product[] // Danh sách products thuộc category này
-  
-  @@index([kiotviet_id])
-  @@index([parent_id])
-  @@index([name])
+  id                      Int                       @id @default(autoincrement())
+  kiotVietId              Int?                      @unique
+  name                    String
+  parentId                Int?
+  retailerId              Int?
+  createdDate             DateTime                  @default(now())
+  modifiedDate            DateTime                  @updatedAt
+  lastSyncedAt            DateTime                  @default(now())
+  hasChild                Boolean                   @default(false)
+  rank                    Int?
+  parent                  kiotviet_category?                 @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children                kiotviet_category[]                @relation("CategoryHierarchy")
+  products                product[]
+
+  @@index([kiotVietId])
+  @@index([parentId])
+  @@index([lastSyncedAt])
 }
 
 

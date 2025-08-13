@@ -29,12 +29,6 @@ interface KiotVietCategory {
   rank?: number;
 }
 
-interface KiotVietCategoryApiResponse {
-  total: number;
-  pageSize: number;
-  data: KiotVietCategory[];
-}
-
 interface SyncResult {
   success: boolean;
   totalSynced: number;
@@ -232,252 +226,6 @@ export class KiotVietService {
       this.logger.error('Failed to fetch trademarks:', error.message);
       throw new BadRequestException(
         `Failed to fetch trademarks from KiotViet: ${error.message}`,
-      );
-    }
-  }
-
-  async fetchAllCategories(): Promise<KiotVietCategory[]> {
-    this.logger.log('🚀 Starting to fetch all categories from KiotViet');
-
-    const allCategories: KiotVietCategory[] = [];
-    const processedCategoryIds = new Set<number>();
-
-    // Configuration
-    const PAGE_SIZE = 100; // Tối đa cho phép bởi KiotViet
-    let currentItem = 0;
-    let totalCategories = 0;
-    let hasMoreData = true;
-    let currentPage = 1;
-
-    // Error handling configuration
-    const MAX_CONSECUTIVE_EMPTY_PAGES = 3;
-    const MAX_CONSECUTIVE_ERROR_PAGES = 5;
-    const RETRY_DELAY_MS = 2000;
-    const MAX_RETRIES = 3;
-
-    let consecutiveEmptyPages = 0;
-    let consecutiveErrorPages = 0;
-
-    await this.checkRateLimit();
-    await this.setupAuthHeaders();
-
-    try {
-      // Main pagination loop - KHÔNG GIỚI HẠN SỐ LẦN GỌI
-      while (hasMoreData) {
-        this.logger.log(
-          `📄 Fetching page ${currentPage} (currentItem: ${currentItem}, collected: ${allCategories.length}/${totalCategories || '?'})`,
-        );
-
-        try {
-          // Retry mechanism cho mỗi request
-          let response: AxiosResponse<KiotVietCategoryApiResponse> | null =
-            null;
-          let retryCount = 0;
-
-          while (retryCount < MAX_RETRIES && !response) {
-            try {
-              response =
-                await this.axiosInstance.get<KiotVietCategoryApiResponse>(
-                  '/categories',
-                  {
-                    params: {
-                      // QUAN TRỌNG: Sử dụng hierarchicalData
-                      hierachicalData: true,
-                      orderBy: 'createdDate',
-                      orderDirection: 'ASC',
-                      pageSize: PAGE_SIZE,
-                      currentItem: currentItem,
-                    },
-                    timeout: 30000,
-                  },
-                );
-
-              this.requestCount++;
-              consecutiveErrorPages = 0; // Reset error counter on success
-            } catch (error) {
-              retryCount++;
-              this.logger.warn(
-                `⚠️ Request failed (attempt ${retryCount}/${MAX_RETRIES}): ${error.message}`,
-              );
-
-              if (retryCount < MAX_RETRIES) {
-                await new Promise((resolve) =>
-                  setTimeout(resolve, RETRY_DELAY_MS * retryCount),
-                );
-              } else {
-                throw error;
-              }
-            }
-          }
-
-          // Kiểm tra response
-          if (!response || !response.data) {
-            this.logger.warn('⚠️ Received null response from KiotViet API');
-            consecutiveEmptyPages++;
-
-            if (consecutiveEmptyPages >= MAX_CONSECUTIVE_EMPTY_PAGES) {
-              this.logger.log(
-                `🔚 API returned null ${consecutiveEmptyPages} times - ending pagination`,
-              );
-              break;
-            }
-
-            currentItem += PAGE_SIZE;
-            currentPage++;
-            continue;
-          }
-
-          consecutiveEmptyPages = 0;
-
-          // Extract data từ response
-          const { total, data: categories } = response.data;
-
-          // Cập nhật total categories nếu có
-          if (total !== undefined && total !== null) {
-            if (totalCategories === 0) {
-              totalCategories = total;
-              this.logger.log(
-                `📊 Total categories detected: ${totalCategories}`,
-              );
-            } else if (total !== totalCategories) {
-              this.logger.warn(
-                `⚠️ Total count changed: ${totalCategories} → ${total}`,
-              );
-              totalCategories = total;
-            }
-          }
-
-          // Kiểm tra nếu không có categories
-          if (!categories || categories.length === 0) {
-            this.logger.warn(
-              `⚠️ Empty page received at position ${currentItem}`,
-            );
-            consecutiveEmptyPages++;
-
-            // Kiểm tra điều kiện dừng
-            if (
-              totalCategories > 0 &&
-              allCategories.length >= totalCategories
-            ) {
-              this.logger.log(
-                '✅ All expected categories processed - pagination complete',
-              );
-              break;
-            }
-
-            if (consecutiveEmptyPages >= MAX_CONSECUTIVE_EMPTY_PAGES) {
-              this.logger.log(
-                `🔚 Stopping after ${consecutiveEmptyPages} consecutive empty pages`,
-              );
-              break;
-            }
-
-            currentItem += PAGE_SIZE;
-            currentPage++;
-            continue;
-          }
-
-          // Lọc categories trùng lặp và không hợp lệ
-          const newCategories = categories.filter((category) => {
-            if (!category.categoryId || !category.categoryName) {
-              this.logger.warn(
-                `⚠️ Skipping invalid category: id=${category.categoryId}, name='${category.categoryName}'`,
-              );
-              return false;
-            }
-
-            if (processedCategoryIds.has(category.categoryId)) {
-              this.logger.debug(
-                `⚠️ Duplicate category ID detected: ${category.categoryId} (${category.categoryName})`,
-              );
-              return false;
-            }
-
-            processedCategoryIds.add(category.categoryId);
-            return true;
-          });
-
-          // Thêm categories mới vào danh sách
-          if (newCategories.length > 0) {
-            allCategories.push(...newCategories);
-
-            this.logger.log(
-              `✅ Page ${currentPage} completed: fetched ${newCategories.length} new categories. ` +
-                `Total so far: ${allCategories.length}${totalCategories > 0 ? `/${totalCategories}` : ''}`,
-            );
-          }
-
-          // Điều kiện dừng pagination
-          if (totalCategories > 0 && allCategories.length >= totalCategories) {
-            this.logger.log(
-              `✅ Reached expected total: ${allCategories.length}/${totalCategories}`,
-            );
-            hasMoreData = false;
-          } else if (newCategories.length < PAGE_SIZE) {
-            // Nếu page không đủ items => đã hết data
-            this.logger.log(
-              `✅ Last page detected (only ${newCategories.length} items)`,
-            );
-            hasMoreData = false;
-          } else {
-            // Tiếp tục với page tiếp theo
-            currentItem += PAGE_SIZE;
-            currentPage++;
-          }
-
-          // Rate limiting delay
-          await new Promise((resolve) => setTimeout(resolve, 200));
-        } catch (error) {
-          consecutiveErrorPages++;
-          this.logger.error(
-            `❌ Error fetching page ${currentPage}: ${error.message}`,
-          );
-
-          if (consecutiveErrorPages >= MAX_CONSECUTIVE_ERROR_PAGES) {
-            this.logger.error(
-              `💥 Too many consecutive errors (${consecutiveErrorPages}). Stopping sync.`,
-            );
-            throw error;
-          }
-
-          // Exponential backoff for errors
-          await new Promise((resolve) =>
-            setTimeout(resolve, RETRY_DELAY_MS * consecutiveErrorPages),
-          );
-
-          currentItem += PAGE_SIZE;
-          currentPage++;
-        }
-      }
-
-      // Final summary
-      const completionRate =
-        totalCategories > 0
-          ? (allCategories.length / totalCategories) * 100
-          : 100;
-
-      this.logger.log(
-        `✅ Category fetch completed successfully!\n` +
-          `   📊 Total fetched: ${allCategories.length} categories\n` +
-          `   📊 Expected total: ${totalCategories || 'Unknown'}\n` +
-          `   📊 Completion rate: ${completionRate.toFixed(1)}%\n` +
-          `   📊 Unique categories: ${processedCategoryIds.size}`,
-      );
-
-      return allCategories;
-    } catch (error) {
-      this.logger.error('Failed to fetch all categories:', error.message);
-
-      if (error.response) {
-        this.logger.error('KiotViet API Error Details:', {
-          status: error.response.status,
-          statusText: error.response.statusText,
-          data: error.response.data,
-        });
-      }
-
-      throw new BadRequestException(
-        `Failed to fetch categories from KiotViet: ${error.message}`,
       );
     }
   }
@@ -701,121 +449,6 @@ export class KiotVietService {
     }
   }
 
-  async syncCategories(): Promise<SyncResult> {
-    this.logger.log('🔄 Starting category synchronization to database');
-
-    const errors: string[] = [];
-
-    try {
-      // Đếm số lượng trước khi sync
-      const beforeSync = await this.prisma.kiotviet_category.count();
-
-      // Lấy tất cả categories từ KiotViet
-      const categories = await this.fetchAllCategories();
-
-      this.logger.log(
-        `📥 Fetched ${categories.length} categories from KiotViet`,
-      );
-
-      // Sync vào database trong transaction
-      const results = await this.prisma.$transaction(async (prisma) => {
-        let newRecords = 0;
-        let updatedRecords = 0;
-        let skippedRecords = 0;
-
-        for (const category of categories) {
-          try {
-            // Kiểm tra category đã tồn tại chưa
-            const existingCategory = await prisma.kiotviet_category.findUnique({
-              where: { kiotviet_id: category.categoryId },
-            });
-
-            if (existingCategory) {
-              // Update existing category
-              await prisma.kiotviet_category.update({
-                where: { kiotviet_id: category.categoryId },
-                data: {
-                  name: category.categoryName,
-                  parent_id: category.parentId || null,
-                  has_child: category.hasChild || false,
-                  rank: category.rank || 0,
-                  retailer_id: category.retailerId || null,
-                  created_date: category.createdDate
-                    ? new Date(category.createdDate)
-                    : null,
-                  modified_date: category.modifiedDate
-                    ? new Date(category.modifiedDate)
-                    : null,
-                  synced_at: new Date(),
-                },
-              });
-              updatedRecords++;
-            } else {
-              // Create new category
-              await prisma.kiotviet_category.create({
-                data: {
-                  kiotviet_id: category.categoryId,
-                  name: category.categoryName,
-                  parent_id: category.parentId || null,
-                  has_child: category.hasChild || false,
-                  rank: category.rank || 0,
-                  retailer_id: category.retailerId || null,
-                  created_date: category.createdDate
-                    ? new Date(category.createdDate)
-                    : new Date(),
-                  modified_date: category.modifiedDate
-                    ? new Date(category.modifiedDate)
-                    : new Date(),
-                  synced_at: new Date(),
-                },
-              });
-              newRecords++;
-            }
-          } catch (error) {
-            errors.push(
-              `Failed to sync category ${category.categoryId} (${category.categoryName}): ${error.message}`,
-            );
-            skippedRecords++;
-          }
-        }
-
-        return { newRecords, updatedRecords, skippedRecords };
-      });
-
-      // Đếm số lượng sau khi sync
-      const afterSync = await this.prisma.kiotviet_category.count();
-
-      // Log kết quả
-      this.logger.log(
-        `✅ Category sync completed:\n` +
-          `   📊 New records: ${results.newRecords}\n` +
-          `   📊 Updated records: ${results.updatedRecords}\n` +
-          `   📊 Skipped records: ${results.skippedRecords}\n` +
-          `   📊 Total errors: ${errors.length}\n` +
-          `   📊 Database before: ${beforeSync}\n` +
-          `   📊 Database after: ${afterSync}`,
-      );
-
-      return {
-        success: errors.length === 0,
-        totalSynced: results.newRecords,
-        totalUpdated: results.updatedRecords,
-        totalDeleted: 0,
-        errors,
-        summary: {
-          beforeSync,
-          afterSync,
-          newRecords: results.newRecords,
-          updatedRecords: results.updatedRecords,
-          skippedRecords: results.skippedRecords,
-        },
-      };
-    } catch (error) {
-      this.logger.error('Category sync failed:', error.message);
-      throw new BadRequestException(`Category sync failed: ${error.message}`);
-    }
-  }
-
   async syncProducts(lastModifiedFrom?: string): Promise<SyncResult> {
     this.logger.log('Starting product synchronization from KiotViet');
 
@@ -829,11 +462,9 @@ export class KiotVietService {
       });
 
       const existingCategories = await this.prisma.kiotviet_category.findMany({
-        select: { kiotviet_id: true },
+        select: { id: true },
       });
-      const validCategoryIds = new Set(
-        existingCategories.map((cat) => cat.kiotviet_id),
-      );
+      const validCategoryIds = new Set(existingCategories.map((cat) => cat.id));
       this.logger.log(
         `Found ${validCategoryIds.size} existing categories for validation`,
       );
@@ -1021,73 +652,68 @@ export class KiotVietService {
     }
   }
 
-  async fullSync(): Promise<FullSyncResult> {
-    this.logger.log('Starting full KiotViet synchronization');
+  // async fullSync(): Promise<FullSyncResult> {
+  //   this.logger.log('Starting full KiotViet synchronization');
 
-    const allErrors: string[] = [];
+  //   const allErrors: string[] = [];
 
-    try {
-      this.logger.log('🔄 Step 1/3: Syncing trademarks...');
-      const trademarksResult = await this.syncTrademarks();
-      allErrors.push(...trademarksResult.errors);
+  //   try {
+  //     this.logger.log('🔄 Step 1/3: Syncing trademarks...');
+  //     const trademarksResult = await this.syncTrademarks();
+  //     allErrors.push(...trademarksResult.errors);
 
-      if (trademarksResult.success) {
-        this.logger.log(
-          `✅ Trademarks synced: ${trademarksResult.totalSynced} new, ${trademarksResult.totalUpdated} updated`,
-        );
-      } else {
-        this.logger.warn(
-          `⚠️ Trademarks sync had ${trademarksResult.errors.length} errors`,
-        );
-      }
+  //     if (trademarksResult.success) {
+  //       this.logger.log(
+  //         `✅ Trademarks synced: ${trademarksResult.totalSynced} new, ${trademarksResult.totalUpdated} updated`,
+  //       );
+  //     } else {
+  //       this.logger.warn(
+  //         `⚠️ Trademarks sync had ${trademarksResult.errors.length} errors`,
+  //       );
+  //     }
 
-      this.logger.log('🔄 Step 2/3: Syncing categories...');
-      const categoriesResult = await this.syncCategories();
-      allErrors.push(...categoriesResult.errors);
+  //     this.logger.log('🔄 Step 2/3: Syncing categories...');
+  //     // const categoriesResult = await this.syncCategories();
+  //     // allErrors.push(...categoriesResult.errors);
 
-      if (categoriesResult.success) {
-        this.logger.log(
-          `✅ Categories synced: ${categoriesResult.totalSynced} new, ${categoriesResult.totalUpdated} updated`,
-        );
-      } else {
-        this.logger.warn(
-          `⚠️ Categories sync had ${categoriesResult.errors.length} errors`,
-        );
-      }
+  //     // if (categoriesResult.success) {
+  //     //   this.logger.log(
+  //     //     `✅ Categories synced: ${categoriesResult.totalSynced} new, ${categoriesResult.totalUpdated} updated`,
+  //     //   );
+  //     // } else {
+  //     //   this.logger.warn(
+  //     //     `⚠️ Categories sync had ${categoriesResult.errors.length} errors`,
+  //     //   );
+  //     // }
 
-      this.logger.log('🔄 Step 3/3: Syncing products...');
-      const productsResult = await this.syncProducts();
-      allErrors.push(...productsResult.errors);
+  //     this.logger.log('🔄 Step 3/3: Syncing products...');
+  //     const productsResult = await this.syncProducts();
+  //     allErrors.push(...productsResult.errors);
 
-      if (productsResult.success) {
-        this.logger.log(
-          `✅ Products synced: ${productsResult.totalSynced} new, ${productsResult.totalUpdated} updated`,
-        );
-      } else {
-        this.logger.warn(
-          `⚠️ Products sync had ${productsResult.errors.length} errors`,
-        );
-      }
+  //     if (productsResult.success) {
+  //       this.logger.log(
+  //         `✅ Products synced: ${productsResult.totalSynced} new, ${productsResult.totalUpdated} updated`,
+  //       );
+  //     } else {
+  //       this.logger.warn(
+  //         `⚠️ Products sync had ${productsResult.errors.length} errors`,
+  //       );
+  //     }
 
-      const overallSuccess = allErrors.length === 0;
+  //     const overallSuccess = allErrors.length === 0;
 
-      this.logger.log(
-        `🎯 Full sync completed ${overallSuccess ? 'successfully' : 'with errors'}. ` +
-          `Total: ${trademarksResult.totalSynced + categoriesResult.totalSynced + productsResult.totalSynced} new items`,
-      );
-
-      return {
-        success: overallSuccess,
-        errors: allErrors,
-        trademarks: trademarksResult,
-        categories: categoriesResult,
-        products: productsResult,
-      };
-    } catch (error) {
-      this.logger.error('Full sync failed:', error.message);
-      throw new BadRequestException(`Full sync failed: ${error.message}`);
-    }
-  }
+  //     return {
+  //       success: overallSuccess,
+  //       errors: allErrors,
+  //       trademarks: trademarksResult,
+  //       categories: categoriesResult,
+  //       products: productsResult,
+  //     };
+  //   } catch (error) {
+  //     this.logger.error('Full sync failed:', error.message);
+  //     throw new BadRequestException(`Full sync failed: ${error.message}`);
+  //   }
+  // }
 
   async testConnection(): Promise<{
     success: boolean;

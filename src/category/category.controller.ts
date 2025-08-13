@@ -20,7 +20,6 @@ import {
   ApiTags,
   ApiResponse,
 } from '@nestjs/swagger';
-import { KiotVietCategory } from '../product/types/kiotviet.types';
 
 @ApiTags('category')
 @Controller('category')
@@ -29,124 +28,25 @@ export class CategoryController {
 
   constructor(private readonly categoryService: CategoryService) {}
 
-  @Get('sync/test-connection')
-  @ApiOperation({ summary: 'Test connection to KiotViet API' })
-  @ApiResponse({
-    status: 200,
-    description: 'Connection test result',
-  })
-  async testKiotVietConnection() {
+  @Post('categories')
+  async syncCategories() {
     try {
-      // We'll access the KiotVietService through the CategoryService
-      const result =
-        await this.categoryService['kiotVietService'].testConnection();
+      this.logger.log('🗂️ Starting category sync...');
 
-      if (result.success) {
-        this.logger.log('KiotViet connection test successful');
-      } else {
-        this.logger.warn('KiotViet connection test failed:', result.message);
-      }
-
-      return result;
-    } catch (error) {
-      this.logger.error('Connection test error:', error.message);
-      throw new BadRequestException(`Connection test failed: ${error.message}`);
-    }
-  }
-
-  @Get('sync/preview')
-  @ApiOperation({
-    summary: 'Preview KiotViet category hierarchy without syncing',
-    description:
-      'Get a preview of the category structure that would be synced from KiotViet',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns KiotViet category hierarchy preview',
-  })
-  async previewKiotVietCategories(): Promise<{
-    message: string;
-    preview: boolean;
-    categories: KiotVietCategory[];
-    stats: {
-      totalCategories: number;
-      rootCategories: number;
-      categoriesWithChildren: number;
-      maxDepth: number;
-    };
-  }> {
-    try {
-      const result = await this.categoryService.getKiotVietCategoryHierarchy();
-
-      this.logger.log(
-        `Preview: Found ${result.stats.totalCategories} categories in KiotViet`,
-      );
+      await this.categoryService.syncAllCategories();
 
       return {
-        message: `Found ${result.stats.totalCategories} categories in KiotViet hierarchy`,
-        preview: true,
-        ...result,
+        success: true,
+        message: 'Category sync completed successfully',
+        timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      this.logger.error(
-        'Failed to preview KiotViet categories:',
-        error.message,
-      );
-      throw new BadRequestException(`Preview failed: ${error.message}`);
-    }
-  }
-
-  @Get('sync/status')
-  @ApiOperation({ summary: 'Get category sync status and statistics' })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns current sync status and database statistics',
-  })
-  async getCategorySyncStatus() {
-    try {
-      const totalLocalCategories =
-        await this.categoryService['prisma'].category.count();
-      const totalProductRelations =
-        await this.categoryService['prisma'].category.count();
-
-      let kiotVietConfigured = false;
-      let kiotVietCategoryCount = 0;
-      let configMessage = '';
-
-      try {
-        const connectionTest =
-          await this.categoryService['kiotVietService'].testConnection();
-        kiotVietConfigured = connectionTest.success;
-        configMessage = connectionTest.message;
-
-        if (connectionTest.success) {
-          const preview =
-            await this.categoryService.getKiotVietCategoryHierarchy();
-          kiotVietCategoryCount = preview.stats.totalCategories;
-        }
-      } catch (error) {
-        this.logger.warn('KiotViet not configured:', error.message);
-        configMessage = `KiotViet configuration error: ${error.message}`;
-      }
-
+      this.logger.error(`❌ Category sync failed: ${error.message}`);
       return {
-        localDatabase: {
-          totalCategories: totalLocalCategories,
-          totalProductRelations: totalProductRelations,
-        },
-        kiotViet: {
-          configured: kiotVietConfigured,
-          totalCategories: kiotVietCategoryCount,
-          message: configMessage,
-        },
-        syncEnabled: true,
-        lastSyncAttempt: null, // You can implement this if needed
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString(),
       };
-    } catch (error) {
-      this.logger.error('Failed to get sync status:', error.message);
-      throw new BadRequestException(
-        `Failed to get sync status: ${error.message}`,
-      );
     }
   }
 
@@ -160,10 +60,9 @@ export class CategoryController {
   @ApiBody({ type: UpdateCategoryDto })
   @Patch()
   updatePriorities(@Body() updateCategoryPrioritiesDto: UpdateCategoryDto) {
-    // FIXED: Use correct type
     return this.categoryService.updatePriorities(
       updateCategoryPrioritiesDto.items,
-    ); // FIXED: Pass .items
+    );
   }
 
   @Get('v2/get-all')

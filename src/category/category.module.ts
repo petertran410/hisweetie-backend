@@ -1,19 +1,20 @@
-// src/category/category.module.ts
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { CategoryService } from './category.service';
 import { CategoryController } from './category.controller';
-import { KiotVietService } from '../product/kiotviet.service'; // Import from product module
+import { KiotVietService } from '../product/kiotviet.service';
+import { HttpModule } from '@nestjs/axios';
 
 @Module({
   imports: [
-    ConfigModule, // For KiotVietService credentials
+    HttpModule.register({
+      timeout: 60000,
+      maxRedirects: 10,
+    }),
+    ConfigModule,
   ],
   controllers: [CategoryController],
-  providers: [
-    CategoryService,
-    KiotVietService, // Provide KiotVietService locally
-  ],
-  exports: [CategoryService], // Export CategoryService
+  providers: [CategoryService, KiotVietService],
+  exports: [CategoryService],
 })
 export class CategoryModule {}
