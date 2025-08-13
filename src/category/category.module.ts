@@ -4,6 +4,8 @@ import { CategoryService } from './category.service';
 import { CategoryController } from './category.controller';
 import { KiotVietService } from '../product/kiotviet.service';
 import { HttpModule } from '@nestjs/axios';
+import { PrismaModule } from 'src/prisma/prisma.module';
+import { AuthModule } from 'src/auth/auth.module';
 
 @Module({
   imports: [
@@ -12,6 +14,8 @@ import { HttpModule } from '@nestjs/axios';
       maxRedirects: 10,
     }),
     ConfigModule,
+    PrismaModule,
+    AuthModule,
   ],
   controllers: [CategoryController],
   providers: [CategoryService, KiotVietService],

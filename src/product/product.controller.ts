@@ -35,72 +35,25 @@ export class ProductController {
     private readonly kiotVietService: KiotVietService,
   ) {}
 
-  @Post('kiotviet/sync/products')
-  @ApiOperation({
-    summary: 'Sync products only from KiotViet',
-    description:
-      'Syncs only products (minimal fields: kiotviet_id, code, name, image, price, type, category)',
-  })
-  @ApiQuery({
-    name: 'since',
-    required: false,
-    description:
-      'Only sync products modified since this date (YYYY-MM-DD format)',
-    example: '2024-01-01',
-  })
-  async syncProductsFromKiotViet(@Query('since') since?: string) {
+  @Post('products')
+  async syncProducts() {
     try {
-      this.logger.log(
-        `Starting KiotViet product sync${since ? ` since ${since}` : ''}`,
-      );
+      this.logger.log('🗂️ Starting category sync...');
 
-      if (since && !/^\d{4}-\d{2}-\d{2}$/.test(since)) {
-        throw new BadRequestException(
-          'Invalid date format. Use YYYY-MM-DD format.',
-        );
-      }
+      await this.productService.syncAllProducts();
 
-      const result = await this.kiotVietService.syncProducts(since);
-
-      const response = {
-        success: result.success,
-        message: result.success
-          ? `Successfully synced ${result.totalSynced + result.totalUpdated} products from KiotViet`
-          : `Product sync completed with ${result.errors.length} errors`,
-        summary: {
-          ...result.summary,
-          syncedFields: [
-            'kiotviet_id',
-            'code',
-            'name',
-            'image',
-            'price',
-            'type',
-            'category',
-          ],
-          incrementalSync: !!since,
-          sinceDate: since,
-        },
-        errors: result.errors,
+      return {
+        success: true,
+        message: 'Product sync completed successfully',
         timestamp: new Date().toISOString(),
       };
-
-      if (result.success) {
-        this.logger.log(
-          'KiotViet product sync completed successfully',
-          response.summary,
-        );
-      } else {
-        this.logger.warn('KiotViet product sync completed with errors', {
-          errorCount: result.errors.length,
-          summary: response.summary,
-        });
-      }
-
-      return response;
     } catch (error) {
-      this.logger.error('KiotViet product sync failed:', error.message);
-      throw new BadRequestException(`Product sync failed: ${error.message}`);
+      this.logger.error(`❌ Product sync failed: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
     }
   }
 
@@ -186,7 +139,6 @@ export class ProductController {
         this.productService.prisma.category.count(),
       ]);
 
-      // Test connection
       let connectionStatus = { success: false, message: 'Not tested' };
       try {
         connectionStatus = await this.kiotVietService.testConnection();
@@ -233,10 +185,6 @@ export class ProductController {
       );
     }
   }
-
-  // ================================
-  // PRODUCT CRUD ENDPOINTS (Existing)
-  // ================================
 
   @Get('get-by-id/:id')
   @ApiOperation({
@@ -371,13 +319,12 @@ export class ProductController {
     @Query('is_visible') is_visible?: string,
   ) {
     const filters: any = {
-      includeHidden: true, // ✅ CMS luôn include hidden products
+      includeHidden: true,
     };
 
     if (title) filters.title = title;
     if (categoryId) filters.categoryId = +categoryId;
 
-    // ✅ NEW: Specific visibility filter for CMS
     if (is_visible !== undefined) {
       filters.visibilityFilter = is_visible === 'true';
     }

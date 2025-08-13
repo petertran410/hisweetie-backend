@@ -280,7 +280,6 @@ export class KiotVietService {
         `Completed fetching all products: total ${allProducts.length} products`,
       );
 
-      // FIXED: Return object with correct structure
       return {
         products: allProducts,
         totalFetched: allProducts.length,
@@ -304,10 +303,7 @@ export class KiotVietService {
     const params: any = {
       currentItem,
       pageSize,
-      includeInventory: false, // We don't need inventory for basic sync
-      // FIXED: Remove orderBy/orderDirection that might cause issues
-      // orderBy: 'id',
-      // orderDirection: 'Asc',
+      includeInventory: false,
     };
 
     if (lastModifiedFrom) {
@@ -323,7 +319,6 @@ export class KiotVietService {
       );
       return response.data;
     } catch (error) {
-      // FIXED: Better error handling with response details
       if (error.response) {
         this.logger.error('KiotViet Products API Error Response:', {
           status: error.response.status,
@@ -356,10 +351,6 @@ export class KiotVietService {
     }
   }
 
-  // ================================
-  // SYNC METHODS
-  // ================================
-
   async syncTrademarks(): Promise<SyncResult> {
     this.logger.log('Starting trademark synchronization');
 
@@ -381,7 +372,6 @@ export class KiotVietService {
               });
 
             if (existingTrademark) {
-              // Update existing
               await prisma.kiotviet_trademark.update({
                 where: { kiotviet_id: trademark.tradeMarkId },
                 data: {
@@ -397,7 +387,6 @@ export class KiotVietService {
               });
               updatedRecords++;
             } else {
-              // Create new
               await prisma.kiotviet_trademark.create({
                 data: {
                   kiotviet_id: trademark.tradeMarkId,

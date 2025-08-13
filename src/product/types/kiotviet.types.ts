@@ -30,7 +30,7 @@ export interface KiotVietProduct {
   tradeMarkName?: string;
   basePrice?: number;
   images?: Array<{ Image: string }> | string[];
-  type?: number; // 1=combo, 2=normal, 3=service
+  type?: number;
   modifiedDate?: string;
   createdDate?: string;
   allowsSale?: boolean;

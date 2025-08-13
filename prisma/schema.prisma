@@ -74,6 +74,7 @@ model product {
   
   kiotviet_category_id   Int?
   kiotviet_trademark_id  Int?
+  kiotviet_description  String?
   
   is_from_kiotviet    Boolean              @default(false) @db.Bit(1)
   kiotviet_synced_at  DateTime?            @db.DateTime(6)
