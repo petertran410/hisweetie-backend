@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
+import { HttpModule } from '@nestjs/axios';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { UserModule } from '../user/user.module';
@@ -11,6 +12,7 @@ import { KiotVietAuthService } from './kiotviet-auth/auth.service';
 @Module({
   imports: [
     UserModule,
+    HttpModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -35,7 +37,7 @@ import { KiotVietAuthService } from './kiotviet-auth/auth.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, KiotVietAuthService],
   exports: [AuthService, JwtStrategy, PassportModule, KiotVietAuthService],
 })
 export class AuthModule {}
