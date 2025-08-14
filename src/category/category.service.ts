@@ -538,20 +538,29 @@ export class CategoryService {
 
       const where: any = {};
       if (parentId) {
-        where.parent_id = parseInt(parentId);
+        where.parentId = parseInt(parentId);
       }
 
       const [categories, total] = await Promise.all([
         this.prisma.kiotviet_category.findMany({
           where,
-          skip,
           take,
           orderBy: { rank: 'asc' },
+          include: {
+            children: {
+              orderBy: { rank: 'asc' },
+              include: {
+                children: {
+                  orderBy: { rank: 'asc' },
+                },
+              },
+            },
+          },
         }),
         this.prisma.kiotviet_category.count({ where }),
       ]);
 
-      console.log(categories);
+      console.log('📂 KiotViet Categories with children:', categories);
 
       return {
         content: categories.map((cat) => ({
@@ -561,9 +570,38 @@ export class CategoryService {
           hasChild: cat.hasChild,
           rank: cat.rank,
           retailerId: cat.retailerId,
+          kiotVietId: cat.kiotVietId,
           createdDate: cat.createdDate,
           modifiedDate: cat.modifiedDate,
           syncedAt: cat.lastSyncedAt,
+          // ✅ Include children in response
+          children:
+            cat.children?.map((child) => ({
+              id: child.id,
+              name: child.name,
+              parentId: child.parentId,
+              hasChild: child.hasChild,
+              rank: child.rank,
+              retailerId: child.retailerId,
+              kiotVietId: child.kiotVietId,
+              createdDate: child.createdDate,
+              modifiedDate: child.modifiedDate,
+              syncedAt: child.lastSyncedAt,
+              // ✅ Include grandchildren
+              children:
+                child.children?.map((grandchild) => ({
+                  id: grandchild.id,
+                  name: grandchild.name,
+                  parentId: grandchild.parentId,
+                  hasChild: grandchild.hasChild,
+                  rank: grandchild.rank,
+                  retailerId: grandchild.retailerId,
+                  kiotVietId: grandchild.kiotVietId,
+                  createdDate: grandchild.createdDate,
+                  modifiedDate: grandchild.modifiedDate,
+                  syncedAt: grandchild.lastSyncedAt,
+                })) || [],
+            })) || [],
         })),
         totalElements: total,
         totalPages: Math.ceil(total / pageSize),
