@@ -153,7 +153,6 @@ export class NewsService {
     };
   };
 
-  // Tất cả methods khác giữ nguyên...
   async findAllForClient(searchDto: ClientNewsSearchDto) {
     const { pageSize = 10, pageNumber = 0, title, type, featured } = searchDto;
 
@@ -225,38 +224,49 @@ export class NewsService {
     pageNumber?: number;
     title?: string;
     type?: string;
-  }): Promise<any> {
-    const { pageSize = 10, pageNumber = 0, title, type } = params || {};
+    excludeTypes?: string;
+  }) {
+    const {
+      pageSize = 10,
+      pageNumber = 0,
+      title,
+      type,
+      excludeTypes,
+    } = params || {};
 
     const where: any = {};
+
     if (title) {
       where.title = { contains: title };
     }
+
     if (type) {
       where.type = type;
     }
 
-    const totalElements = await this.prisma.news.count({ where });
+    if (excludeTypes) {
+      const typesToExclude = excludeTypes.split(',');
+      where.type = {
+        notIn: typesToExclude,
+      };
+    }
 
-    const news = await this.prisma.news.findMany({
-      where,
-      skip: pageNumber * pageSize,
-      take: pageSize,
-      orderBy: { created_date: 'desc' },
-    });
-
-    const content = news.map(this.formatNewsForResponse);
+    const [news, totalElements] = await Promise.all([
+      this.prisma.news.findMany({
+        where,
+        skip: pageNumber * pageSize,
+        take: pageSize,
+        orderBy: [{ created_date: 'desc' }],
+      }),
+      this.prisma.news.count({ where }),
+    ]);
 
     return {
-      content,
+      content: news.map(this.formatNewsForResponse),
       totalElements,
       totalPages: Math.ceil(totalElements / pageSize),
       number: pageNumber,
       size: pageSize,
-      pageable: {
-        pageNumber,
-        pageSize,
-      },
     };
   }
 
@@ -265,7 +275,6 @@ export class NewsService {
       where: {
         id: BigInt(id),
       },
-      // THÊM select để đảm bảo lấy embed_url
       select: {
         id: true,
         title: true,

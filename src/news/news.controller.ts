@@ -29,7 +29,6 @@ import {
 export class NewsController {
   constructor(private readonly newsService: NewsService) {}
 
-  // Admin endpoints
   @Get('get-all')
   findAll(
     @Query('pageSize') pageSize: string = '10',
@@ -45,7 +44,6 @@ export class NewsController {
     });
   }
 
-  // Client endpoints
   @Get('client/get-all')
   @ApiOperation({ summary: 'Get paginated news for client (public view)' })
   @ApiResponse({
