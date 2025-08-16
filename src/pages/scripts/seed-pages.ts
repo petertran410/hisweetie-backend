@@ -5,14 +5,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   try {
-    console.log('🌱 Starting to seed pages...');
-
-    // Xóa dữ liệu cũ nếu có
     await prisma.pages.deleteMany({});
-    console.log('🗑️  Cleared existing pages');
-
-    // 1. Tạo trang chính
-    console.log('📄 Creating main page...');
     const mainPage = await prisma.pages.create({
       data: {
         slug: 'chinh-sach-diep-tra',
@@ -42,9 +35,6 @@ async function main() {
       },
     });
 
-    console.log('✅ Main page created:', mainPage.title);
-
-    // 2. Tạo các trang con
     const childPages = [
       {
         slug: 'chinh-sach-bao-mat',
@@ -380,12 +370,8 @@ async function main() {
           is_main_page: false,
         },
       });
-
-      console.log('✅ Created child page:', childPage.title);
+      return childPage;
     }
-
-    console.log('🎉 Successfully created all pages!');
-    console.log(`📊 Total pages: ${childPages.length + 1}`);
   } catch (error) {
     console.error('❌ Error seeding pages:', error);
   } finally {

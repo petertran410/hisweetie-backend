@@ -118,7 +118,6 @@ export class ProductController {
   })
   async getKiotVietSyncStatus() {
     try {
-      // Get counts from database
       const [
         totalProducts,
         kiotVietProducts,
@@ -434,5 +433,43 @@ export class ProductController {
       bulkToggleDto.productIds,
       bulkToggleDto.is_visible,
     );
+  }
+
+  @Get('client/get-all')
+  @ApiOperation({
+    summary: 'Get products for client (public view)',
+    description: 'Get visible products only for public viewing',
+  })
+  @ApiQuery({ name: 'pageSize', required: false })
+  @ApiQuery({ name: 'pageNumber', required: false })
+  @ApiQuery({ name: 'title', required: false })
+  @ApiQuery({ name: 'categoryId', required: false })
+  @ApiQuery({ name: 'subCategoryId', required: false })
+  @ApiQuery({ name: 'orderBy', required: false })
+  @ApiQuery({ name: 'isDesc', required: false })
+  @ApiQuery({ name: 'is_visible', required: false })
+  getProductsForClient(
+    @Query('pageSize') pageSize: string = '12',
+    @Query('pageNumber') pageNumber: string = '0',
+    @Query('title') title?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('subCategoryId') subCategoryId?: string,
+    @Query('orderBy') orderBy?: string,
+    @Query('isDesc') isDesc?: string,
+    @Query('is_visible') is_visible?: string,
+  ) {
+    const params: any = {
+      pageSize: +pageSize,
+      pageNumber: +pageNumber,
+      is_visible: is_visible !== undefined ? is_visible === 'true' : true,
+    };
+
+    if (categoryId) params.categoryId = +categoryId;
+    if (subCategoryId) params.subCategoryId = +subCategoryId;
+    if (orderBy) params.orderBy = orderBy;
+    if (isDesc !== undefined) params.isDesc = isDesc === 'true';
+    if (title) params.title = title;
+
+    return this.productService.getProductsByCategories(params);
   }
 }

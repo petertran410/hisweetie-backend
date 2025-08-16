@@ -560,8 +560,6 @@ export class CategoryService {
         this.prisma.kiotviet_category.count({ where }),
       ]);
 
-      console.log('📂 KiotViet Categories with children:', categories);
-
       return {
         content: categories.map((cat) => ({
           id: cat.id,
@@ -574,7 +572,6 @@ export class CategoryService {
           createdDate: cat.createdDate,
           modifiedDate: cat.modifiedDate,
           syncedAt: cat.lastSyncedAt,
-          // ✅ Include children in response
           children:
             cat.children?.map((child) => ({
               id: child.id,

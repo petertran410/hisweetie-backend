@@ -29,17 +29,11 @@ async function bootstrap() {
 
   app.enableCors({
     origin: (origin, callback) => {
-      console.log('🔍 CORS Check - Origin:', origin);
-      console.log('🔍 Allowed Origins:', allowedOrigins);
-
-      // Allow requests with no origin (mobile apps, curl, etc.)
       if (!origin) {
-        console.log('✅ No origin - allowing request');
         return callback(null, true);
       }
 
       if (allowedOrigins.indexOf(origin) !== -1) {
-        console.log('✅ Origin allowed:', origin);
         callback(null, true);
       } else {
         console.log('❌ CORS blocked origin:', origin);

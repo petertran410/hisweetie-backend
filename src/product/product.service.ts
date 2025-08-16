@@ -1201,15 +1201,12 @@ export class ProductService {
 
       const transformedProducts = products.map((product) => {
         const transformed = this.transformProduct(product);
-        // console.log(product.kiotviet_category_name);
-        // console.log(product);
+
         return {
           ...transformed,
           isVisible: product.is_visible,
         };
       });
-
-      console.log(transformedProducts);
 
       return {
         content: transformedProducts,

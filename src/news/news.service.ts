@@ -50,7 +50,6 @@ export class NewsService {
           title: a.title,
           slug: convertToSlug(a.title || ''),
         }));
-        console.log('Available slugs:', availableSlugs);
 
         throw new NotFoundException(
           `Không tìm thấy bài viết với slug "${slug}" và type "${type}"`,
@@ -281,7 +280,7 @@ export class NewsService {
         description: true,
         html_content: true,
         images_url: true,
-        embed_url: true, // ĐẢM BẢO CÓ DÒNG NÀY
+        embed_url: true,
         created_date: true,
         updated_date: true,
         view: true,

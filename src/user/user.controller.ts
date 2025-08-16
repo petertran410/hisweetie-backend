@@ -35,9 +35,6 @@ export class UserController {
   @ApiOperation({ summary: 'Get current user information' })
   @ApiResponse({ status: 200, description: 'Returns current user details' })
   getCurrentUser(@CurrentUser() user: any, @Request() req: any) {
-    console.log('Controller - CurrentUser:', user); // Debug log
-    console.log('Controller - Request user:', req.user); // Debug log
-
     if (!user || !user.userId) {
       throw new Error('User not authenticated properly');
     }
