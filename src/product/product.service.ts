@@ -770,7 +770,7 @@ export class ProductService {
       title: productTitle,
       price: productPrice,
       quantity: product.quantity || 0,
-      generalDescription: product.general_description,
+      general_description: product.general_description,
       ofCategories: ofCategories,
 
       description: product.description,
@@ -919,7 +919,7 @@ export class ProductService {
       });
 
       this.logger.log(
-        `Updated product: ${product.title || product.kiotviet_name} (ID: ${product.id})`,
+        `Updated product: ${product.title || product.kiotviet_name} || ${product.description} || ${product.instruction} || ${product.general_description} (ID: ${product.id})`,
       );
       return this.transformProduct(product);
     } catch (error) {
