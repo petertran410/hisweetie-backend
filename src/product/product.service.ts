@@ -750,10 +750,30 @@ export class ProductService {
   }
 
   private transformProduct(product: any) {
+    const productTitle =
+      product.title || product.kiotviet_name || 'Untitled Product';
+
+    const productPrice = product.kiotviet_price
+      ? Number(product.kiotviet_price)
+      : null;
+
+    const ofCategories = product.category
+      ? [
+          {
+            id: product.category.id,
+            name: product.category.name,
+          },
+        ]
+      : [];
     return {
       id: Number(product.id),
+      title: productTitle,
+      price: productPrice,
+      quantity: product.quantity || 0,
+      generalDescription: product.general_description,
+      ofCategories: ofCategories,
+
       description: product.description,
-      generalDescription: product.generate_description,
       instruction: product.instruction,
       rate: product.rate,
       isFeatured: product.is_featured === true,
@@ -773,9 +793,6 @@ export class ProductService {
         price: product.kiotviet_price ? Number(product.kiotviet_price) : null,
         type: product.kiotviet_type,
         images: product.kiotviet_images,
-        category: product.kiotviet_category,
-        trademark: product.kiotviet_trademark,
-        syncedAt: product.kiotviet_synced_at,
         kiotviet_description: product.kiotviet_description,
       },
 
