@@ -448,6 +448,7 @@ export class ProductController {
   @ApiQuery({ name: 'orderBy', required: false })
   @ApiQuery({ name: 'isDesc', required: false })
   @ApiQuery({ name: 'is_visible', required: false })
+  @ApiQuery({ name: 'kiotviet_description', required: false })
   getProductsForClient(
     @Query('pageSize') pageSize: string = '12',
     @Query('pageNumber') pageNumber: string = '0',
@@ -457,6 +458,7 @@ export class ProductController {
     @Query('orderBy') orderBy?: string,
     @Query('isDesc') isDesc?: string,
     @Query('is_visible') is_visible?: string,
+    @Query('kiotviet_description') kiotviet_description?: string,
   ) {
     const params: any = {
       pageSize: +pageSize,
@@ -469,6 +471,8 @@ export class ProductController {
     if (orderBy) params.orderBy = orderBy;
     if (isDesc !== undefined) params.isDesc = isDesc === 'true';
     if (title) params.title = title;
+    if (kiotviet_description)
+      params.kiotviet_description = kiotviet_description;
 
     return this.productService.getProductsByCategories(params);
   }

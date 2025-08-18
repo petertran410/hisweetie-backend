@@ -13,6 +13,8 @@ import { ConfigService } from '@nestjs/config';
 import { KiotVietAuthService } from 'src/auth/kiotviet-auth/auth.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { async, firstValueFrom } from 'rxjs';
+import { create } from 'domain';
+import { title } from 'process';
 
 interface KiotProduct {
   id: number;
@@ -25,7 +27,11 @@ interface KiotProduct {
   tradeMarkId?: number;
   tradeMarkName?: string;
   type?: number;
+  title?: string;
+  generate_description?: string;
   description?: string;
+  instruction?: string;
+  is_featured?: boolean;
   allowsSale?: boolean;
   hasVariants?: boolean;
   basePrice?: number;
@@ -499,19 +505,6 @@ export class ProductService {
           },
         });
 
-        // if (productData.images && productData.images.length > 0) {
-        //   const image = productData.images;
-        //   await this.prismaService.product.upsert({
-        //     where: { kiotviet_id: BigInt(productData.id) },
-        //     update: {
-        //       kiotviet_images: image.images,
-        //     },
-        //     create: {
-        //       kiotviet_images: image.images,
-        //     },
-        //   });
-        // }
-
         savedProducts.push(product);
       } catch (error) {
         this.logger.error(
@@ -676,8 +669,6 @@ export class ProductService {
     pageSize: number;
     pageNumber: number;
     categoryId?: number;
-    kiotVietCategoryId?: number;
-    subCategoryId?: number;
     orderBy?: string;
     isDesc?: boolean;
     title?: string;
@@ -688,8 +679,6 @@ export class ProductService {
         pageSize,
         pageNumber,
         categoryId,
-        kiotVietCategoryId,
-        subCategoryId,
         orderBy = 'id',
         isDesc = false,
         title,
@@ -707,10 +696,6 @@ export class ProductService {
 
       if (categoryId) {
         where.category_id = BigInt(categoryId);
-      }
-
-      if (kiotVietCategoryId) {
-        where.kiotviet_category_id = kiotVietCategoryId;
       }
 
       if (title) {
@@ -737,8 +722,6 @@ export class ProductService {
           orderBy: orderByClause,
           include: {
             category: { select: { id: true, name: true } },
-            kiotviet_category: { select: { kiotVietId: true, name: true } },
-            kiotviet_trademark: { select: { kiotviet_id: true, name: true } },
           },
         }),
         this.prisma.product.count({ where }),
@@ -769,9 +752,8 @@ export class ProductService {
   private transformProduct(product: any) {
     return {
       id: Number(product.id),
-      title: product.title,
       description: product.description,
-      generalDescription: product.general_description,
+      generalDescription: product.generate_description,
       instruction: product.instruction,
       rate: product.rate,
       isFeatured: product.is_featured === true,
@@ -794,6 +776,7 @@ export class ProductService {
         category: product.kiotviet_category,
         trademark: product.kiotviet_trademark,
         syncedAt: product.kiotviet_synced_at,
+        kiotviet_description: product.kiotviet_description,
       },
 
       isFromKiotViet: product.is_from_kiotviet === true,

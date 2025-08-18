@@ -584,7 +584,6 @@ export class CategoryService {
               createdDate: child.createdDate,
               modifiedDate: child.modifiedDate,
               syncedAt: child.lastSyncedAt,
-              // ✅ Include grandchildren
               children:
                 child.children?.map((grandchild) => ({
                   id: grandchild.id,
@@ -635,9 +634,7 @@ export class CategoryService {
     }
   }
 
-  // FIXED: Single category update method with proper typing
   async update(id: number, updateData: Partial<CreateCategoryDto>) {
-    // FIXED: Use Partial<CreateCategoryDto>
     try {
       const existingCategory = await this.prisma.category.findUnique({
         where: { id: BigInt(id) },
@@ -647,7 +644,6 @@ export class CategoryService {
         throw new NotFoundException(`Category with ID ${id} not found`);
       }
 
-      // FIXED: Explicit typing for update data
       const updateInput: Prisma.categoryUpdateInput = {
         name: updateData.name,
         description: updateData.description,
@@ -660,7 +656,6 @@ export class CategoryService {
         updated_by: 'Manual_Update',
       };
 
-      // Remove undefined values
       Object.keys(updateInput).forEach((key) => {
         if (updateInput[key] === undefined) {
           delete updateInput[key];
@@ -740,4 +735,6 @@ export class CategoryService {
       );
     }
   }
+
+  async;
 }
