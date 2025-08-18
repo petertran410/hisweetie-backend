@@ -41,15 +41,6 @@ export class CreateProductDto {
   instruction?: string;
 
   @ApiProperty({
-    description: 'Product type',
-    example: 'SAN_PHAM',
-    required: false,
-  })
-  @IsOptional()
-  @IsNumber()
-  type?: number;
-
-  @ApiProperty({
     description: 'Custom category ID',
     example: 1,
     required: false,
