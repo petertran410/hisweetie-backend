@@ -1,46 +1,43 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber, IsArray, Min } from 'class-validator';
+import { IsString, IsOptional, IsNumber } from 'class-validator';
 
 export class CreateCategoryDto {
-  @ApiProperty({ description: 'Category name', example: 'Siro Pha Chế' })
+  @ApiProperty({
+    description: 'Category name',
+    example: 'Trà Sữa',
+  })
   @IsString()
   name: string;
 
   @ApiProperty({
     description: 'Category description',
     required: false,
-    example: 'Các loại siro dùng để pha chế đồ uống',
   })
   @IsOptional()
   @IsString()
   description?: string;
 
   @ApiProperty({
-    description: 'Parent category ID for hierarchical structure',
+    description: 'Category images (comma-separated URLs)',
     required: false,
-    example: 1,
+  })
+  @IsOptional()
+  @IsString()
+  images_url?: string;
+
+  @ApiProperty({
+    description: 'Parent category ID',
+    required: false,
   })
   @IsOptional()
   @IsNumber()
-  @Min(1)
   parent_id?: number;
 
   @ApiProperty({
-    description: 'Priority order for display',
+    description: 'Display priority',
     required: false,
-    example: 1,
   })
   @IsOptional()
   @IsNumber()
   priority?: number;
-
-  @ApiProperty({
-    description: 'Category images URLs',
-    required: false,
-    example: ['https://example.com/image1.jpg'],
-  })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  images_url?: string[];
 }
