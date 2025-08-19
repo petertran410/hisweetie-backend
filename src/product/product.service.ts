@@ -669,7 +669,7 @@ export class ProductService {
   async getProductsByCategories(params: {
     pageSize: number;
     pageNumber: number;
-    categoryId?: number;
+    categoryId?: number; // CHỈ sử dụng category_id từ schema category
     orderBy?: string;
     isDesc?: boolean;
     title?: string;
@@ -679,9 +679,9 @@ export class ProductService {
       const {
         pageSize,
         pageNumber,
-        categoryId,
+        categoryId, // Chỉ sử dụng category_id
         orderBy = 'id',
-        isDesc = false,
+        isDesc = true,
         title,
         includeHidden = false,
       } = params;
@@ -691,14 +691,12 @@ export class ProductService {
 
       const where: Prisma.productWhereInput = {};
 
+      // Visibility filter
       if (!includeHidden) {
         where.is_visible = true;
       }
 
-      if (categoryId) {
-        where.category_id = BigInt(categoryId);
-      }
-
+      // Title search
       if (title) {
         where.OR = [
           { title: { contains: title } },
@@ -706,7 +704,13 @@ export class ProductService {
         ];
       }
 
-      let orderByClause: Prisma.productOrderByWithRelationInput = {};
+      // Category filter - CHỈ sử dụng category_id
+      if (categoryId) {
+        where.category_id = BigInt(categoryId);
+      }
+
+      // Order by
+      const orderByClause: Prisma.productOrderByWithRelationInput = {};
       if (orderBy === 'title') {
         orderByClause.title = isDesc ? 'desc' : 'asc';
       } else if (orderBy === 'price') {
@@ -722,15 +726,49 @@ export class ProductService {
           take,
           orderBy: orderByClause,
           include: {
-            category: { select: { id: true, name: true } },
+            // CHỈ include category từ schema category
+            category: {
+              select: {
+                id: true,
+                name: true,
+                description: true,
+                parent_id: true,
+              },
+            },
           },
         }),
         this.prisma.product.count({ where }),
       ]);
 
-      const transformedProducts = products.map((product) =>
-        this.transformProduct(product),
-      );
+      const transformedProducts = products.map((product) => ({
+        id: Number(product.id),
+        title: product.title || product.kiotviet_name || 'Untitled Product',
+        price: product.kiotviet_price ? Number(product.kiotviet_price) : null,
+        general_description: product.general_description,
+        description: product.description,
+        instruction: product.instruction,
+        rate: product.rate,
+        isFeatured: product.is_featured === true,
+        isVisible: product.is_visible === true,
+        imagesUrl: product.kiotviet_images
+          ? Array.isArray(product.kiotviet_images)
+            ? product.kiotviet_images
+            : []
+          : [],
+
+        // Category information từ schema category
+        categoryId: product.category_id ? Number(product.category_id) : null,
+        category: product.category,
+        ofCategories: product.category
+          ? [
+              {
+                id: Number(product.category.id),
+                name: product.category.name,
+                description: product.category.description,
+              },
+            ]
+          : [],
+      }));
 
       return {
         content: transformedProducts,
@@ -740,8 +778,8 @@ export class ProductService {
         pageSize,
         filters: {
           includeHidden,
-          visibleCount: includeHidden ? undefined : total,
-          totalCount: includeHidden ? total : undefined,
+          categoryId,
+          totalCount: total,
         },
       };
     } catch (error) {
@@ -1136,16 +1174,18 @@ export class ProductService {
     pageSize: number;
     pageNumber: number;
     title?: string;
-    kiotviet_category_id?: number;
+    categoryId?: number; // Thay đổi từ kiotviet_category_id sang categoryId
     visibilityFilter?: boolean;
+    includeHidden?: boolean;
   }) {
     try {
       const {
         pageSize,
         pageNumber,
         title,
-        kiotviet_category_id,
+        categoryId, // Sử dụng category_id từ schema category
         visibilityFilter,
+        includeHidden = true, // Mặc định true cho CMS
       } = params;
 
       const skip = pageNumber * pageSize;
@@ -1153,10 +1193,14 @@ export class ProductService {
 
       const where: Prisma.productWhereInput = {};
 
-      if (visibilityFilter !== undefined) {
+      // Visibility filter - CMS có thể xem tất cả hoặc filter theo visibility
+      if (!includeHidden) {
+        where.is_visible = true;
+      } else if (visibilityFilter !== undefined) {
         where.is_visible = visibilityFilter;
       }
 
+      // Title search - tìm trong cả title và kiotviet_name
       if (title) {
         where.OR = [
           { title: { contains: title } },
@@ -1164,8 +1208,9 @@ export class ProductService {
         ];
       }
 
-      if (kiotviet_category_id) {
-        where.kiotviet_category_id = kiotviet_category_id;
+      // Category filter - CHỈ sử dụng category_id từ schema category
+      if (categoryId) {
+        where.category_id = BigInt(categoryId);
       }
 
       const orderByClause: Prisma.productOrderByWithRelationInput = {
@@ -1179,35 +1224,70 @@ export class ProductService {
           take,
           orderBy: orderByClause,
           include: {
-            kiotviet_category: { select: { kiotVietId: true, name: true } },
-            kiotviet_trademark: { select: { kiotviet_id: true, name: true } },
+            // CHỈ include category từ schema category, BỎ kiotviet_category
+            category: {
+              select: {
+                id: true,
+                name: true,
+                description: true,
+                parent_id: true,
+              },
+            },
           },
         }),
         this.prisma.product.count({ where }),
         this.prisma.product.count({
-          where: {
-            ...where,
-            is_visible: true,
-          },
+          where: { ...where, is_visible: true },
         }),
         this.prisma.product.count({
-          where: {
-            ...where,
-            is_visible: false,
-          },
+          where: { ...where, is_visible: false },
         }),
       ]);
 
-      const transformedProducts = products.map((product) => {
-        const transformed = this.transformProduct(product);
+      const transformedProducts = products.map((product) => ({
+        id: Number(product.id),
+        title: product.title,
+        kiotviet_name: product.kiotviet_name,
+        kiotviet_code: product.kiotviet_code,
+        kiotviet_price: product.kiotviet_price
+          ? Number(product.kiotviet_price)
+          : null,
+        kiotviet_images: product.kiotviet_images,
+        kiotviet_description: product.kiotviet_description,
 
-        return {
-          ...transformed,
-          isVisible: product.is_visible,
-        };
-      });
+        description: product.description,
+        general_description: product.general_description,
+        instruction: product.instruction,
+
+        is_visible: product.is_visible,
+        is_featured: product.is_featured,
+        rate: product.rate,
+
+        // CHỈ sử dụng category từ schema category
+        category_id: product.category_id ? Number(product.category_id) : null,
+        category: product.category
+          ? {
+              id: Number(product.category.id),
+              name: product.category.name,
+              description: product.category.description,
+              parent_id: product.category.parent_id
+                ? Number(product.category.parent_id)
+                : null,
+            }
+          : null,
+
+        // Thông tin KiotViet chỉ để reference, không dùng cho category
+        kiotviet_data: {
+          id: product.kiotviet_id ? Number(product.kiotviet_id) : null,
+          code: product.kiotviet_code,
+          name: product.kiotviet_name,
+          price: product.kiotviet_price ? Number(product.kiotviet_price) : null,
+          synced_at: product.kiotviet_synced_at,
+        },
+      }));
 
       return {
+        success: true,
         content: transformedProducts,
         totalElements: total,
         totalPages: Math.ceil(total / pageSize),
@@ -1215,10 +1295,11 @@ export class ProductService {
         pageSize,
         statistics: {
           total,
-          visible: visibilityFilter === false ? 0 : visibleCount,
-          hidden: visibilityFilter === true ? 0 : hiddenCount,
+          visible: visibleCount,
+          hidden: hiddenCount,
           visibilityFilter,
         },
+        message: 'Products fetched successfully for CMS',
       };
     } catch (error) {
       this.logger.error('Failed to search products for CMS:', error.message);

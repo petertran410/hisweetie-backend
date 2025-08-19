@@ -1,10 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsNumber } from 'class-validator';
+import { IsOptional, IsString, IsNumber, IsInt, Min } from 'class-validator';
 
 export class CreateCategoryDto {
   @ApiProperty({
     description: 'Category name',
-    example: 'Trà Sữa',
+    example: 'Nguyên Liệu Pha Chế Đặc Trà',
   })
   @IsString()
   name: string;
@@ -12,32 +12,62 @@ export class CreateCategoryDto {
   @ApiProperty({
     description: 'Category description',
     required: false,
+    example: 'Các sản phẩm nguyên liệu dành cho pha chế đặc trà',
   })
   @IsOptional()
   @IsString()
   description?: string;
 
   @ApiProperty({
-    description: 'Category images (comma-separated URLs)',
-    required: false,
-  })
-  @IsOptional()
-  @IsString()
-  images_url?: string;
-
-  @ApiProperty({
     description: 'Parent category ID',
     required: false,
+    example: 1,
   })
   @IsOptional()
   @IsNumber()
   parent_id?: number;
 
   @ApiProperty({
-    description: 'Display priority',
+    description: 'Priority/Order for sorting',
     required: false,
+    example: 1,
   })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(0)
   priority?: number;
+}
+
+export class UpdateCategoryDto extends CreateCategoryDto {}
+
+export class CategoryTreeDto {
+  @ApiProperty()
+  id: number;
+
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty({ required: false })
+  description?: string;
+
+  @ApiProperty({ required: false })
+  parent_id?: number;
+
+  @ApiProperty({ required: false })
+  priority?: number;
+
+  @ApiProperty({ type: [CategoryTreeDto], required: false })
+  children?: CategoryTreeDto[];
+
+  @ApiProperty({ required: false })
+  productCount?: number;
+}
+
+export class UpdateProductCategoryDto {
+  @ApiProperty({
+    description: 'New category ID for the product',
+    example: 5,
+  })
+  @IsNumber()
+  category_id: number;
 }

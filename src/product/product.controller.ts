@@ -11,6 +11,7 @@ import {
   BadRequestException,
   UsePipes,
   ValidationPipe,
+  NotFoundException,
 } from '@nestjs/common';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -25,6 +26,9 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { GetAllProductsResponseDto } from './dto/product-list-response.dto';
+import { CategoryService } from 'src/category/category.service';
+import { UpdateProductCategoryDto } from 'src/category/dto/create-category.dto';
+import { PrismaClient } from '@prisma/client';
 
 @ApiTags('product')
 @Controller('product')
@@ -34,6 +38,8 @@ export class ProductController {
   constructor(
     private readonly productService: ProductService,
     private readonly kiotVietService: KiotVietService,
+    private readonly categoryService: CategoryService,
+    private readonly prismaService: PrismaClient,
   ) {}
 
   @Post('products')
@@ -56,6 +62,71 @@ export class ProductController {
         timestamp: new Date().toISOString(),
       };
     }
+  }
+
+  @Patch(':id/category')
+  @ApiOperation({
+    summary: 'Update product category',
+    description:
+      'Update the category assignment of a product (using custom category schema)',
+  })
+  @ApiParam({ name: 'id', description: 'Product ID' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        category_id: {
+          type: 'number',
+          description: 'Custom category ID (from category schema)',
+          example: 5,
+        },
+      },
+      required: ['category_id'],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Product category updated successfully',
+  })
+  @ApiResponse({ status: 404, description: 'Product or category not found' })
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async updateProductCategory(
+    @Param('id') id: string,
+    @Body() body: { category_id: number },
+  ) {
+    const productId = +id;
+    const categoryId = body.category_id;
+
+    const product = await this.productService.findById(productId);
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    // Update category_id
+    const updatedProduct = await this.prismaService.product.update({
+      where: { id: BigInt(productId) },
+      data: { category_id: categoryId ? BigInt(categoryId) : null },
+      include: {
+        category: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+          },
+        },
+      },
+    });
+
+    return {
+      success: true,
+      data: {
+        productId: Number(updatedProduct.id),
+        categoryId: categoryId,
+        categoryName: updatedProduct.category?.name || null,
+        productName: updatedProduct.title || updatedProduct.kiotviet_name,
+      },
+      message: 'Product category updated successfully',
+    };
   }
 
   @Post('kiotviet/sync/trademarks')
@@ -238,21 +309,24 @@ export class ProductController {
 
   @Get('by-categories')
   @ApiOperation({
-    summary: 'Get products by categories',
+    summary: 'Get products by custom categories',
     description:
-      'Get products filtered by categories (supports visibility filter for frontend/CMS)',
+      'Get products filtered by custom categories (from category schema, not KiotViet)',
   })
   @ApiQuery({
     name: 'includeHidden',
     required: false,
     description: 'Include hidden products (for CMS only)',
   })
+  @ApiQuery({
+    name: 'categoryId',
+    required: false,
+    description: 'Filter by custom category ID',
+  })
   getProductsByCategories(
     @Query('pageSize') pageSize: string = '12',
     @Query('pageNumber') pageNumber: string = '0',
     @Query('categoryId') categoryId?: string,
-    @Query('kiotVietCategoryId') kiotVietCategoryId?: string,
-    @Query('subCategoryId') subCategoryId?: string,
     @Query('orderBy') orderBy?: string,
     @Query('isDesc') isDesc?: string,
     @Query('title') title?: string,
@@ -264,8 +338,6 @@ export class ProductController {
     };
 
     if (categoryId) params.categoryId = +categoryId;
-    if (kiotVietCategoryId) params.kiotVietCategoryId = +kiotVietCategoryId;
-    if (subCategoryId) params.subCategoryId = +subCategoryId;
     if (orderBy) params.orderBy = orderBy;
     if (isDesc !== undefined) params.isDesc = isDesc === 'true';
     if (title) params.title = title;
@@ -280,7 +352,7 @@ export class ProductController {
   @ApiOperation({
     summary: 'Get all products for CMS management',
     description:
-      'Get all products including hidden ones for CMS administration',
+      'Get all products for CMS with custom category management (not KiotViet categories)',
   })
   @ApiQuery({
     name: 'pageSize',
@@ -300,7 +372,7 @@ export class ProductController {
   @ApiQuery({
     name: 'categoryId',
     required: false,
-    description: 'Filter by category ID',
+    description: 'Filter by custom category ID (from category schema)',
   })
   @ApiQuery({
     name: 'is_visible',
@@ -309,7 +381,8 @@ export class ProductController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Returns paginated products for CMS with visibility status',
+    description:
+      'Returns paginated products for CMS with custom category information',
   })
   getCMSProducts(
     @Query('pageSize') pageSize: string = '10',
