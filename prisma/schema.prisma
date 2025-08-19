@@ -86,12 +86,7 @@ model product {
 model category {
   id           BigInt    @id @default(autoincrement())
   name         String?   @db.VarChar(255)
-  created_by   String?   @db.VarChar(255)
-  created_date DateTime? @db.DateTime(6)
-  updated_by   String?   @db.VarChar(255)
-  updated_date DateTime? @db.DateTime(6)
   description  String?   @db.LongText
-  images_url   String?   @db.LongText
   parent_id    BigInt?
   priority     Int?
   product      product[]

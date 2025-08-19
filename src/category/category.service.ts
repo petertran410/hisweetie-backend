@@ -469,10 +469,7 @@ export class CategoryService {
       const categoryData: Prisma.categoryCreateInput = {
         name: createCategoryDto.name,
         description: createCategoryDto.description,
-        images_url: createCategoryDto.images_url,
         priority: createCategoryDto.priority,
-        created_date: new Date(),
-        created_by: 'Manual',
         parent_id: createCategoryDto.parent_id
           ? BigInt(createCategoryDto.parent_id)
           : null,
@@ -501,8 +498,6 @@ export class CategoryService {
       for (const item of updateItems) {
         const updateData: Prisma.categoryUpdateInput = {
           priority: item.priority,
-          updated_date: new Date(),
-          updated_by: 'Priority_Update',
         };
 
         const category = await this.prisma.category.update({
@@ -643,13 +638,10 @@ export class CategoryService {
       const updateInput: Prisma.categoryUpdateInput = {
         name: updateData.name,
         description: updateData.description,
-        images_url: updateData.images_url,
         priority: updateData.priority,
         parent_id: updateData.parent_id
           ? BigInt(updateData.parent_id)
           : undefined,
-        updated_date: new Date(),
-        updated_by: 'Manual_Update',
       };
 
       Object.keys(updateInput).forEach((key) => {
