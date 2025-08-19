@@ -27,7 +27,7 @@ import {
 } from '@nestjs/swagger';
 
 @ApiTags('category')
-@Controller('api/category')
+@Controller('category')
 export class CategoryController {
   private readonly logger = new Logger(CategoryController.name);
 
