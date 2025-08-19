@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsOptional, IsString, IsNumber, IsInt, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateCategoryDto {
   @ApiProperty({
@@ -24,7 +25,9 @@ export class CreateCategoryDto {
     example: 1,
   })
   @IsOptional()
-  @IsNumber()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
   parent_id?: number;
 
   @ApiProperty({
@@ -33,6 +36,7 @@ export class CreateCategoryDto {
     example: 1,
   })
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(0)
   priority?: number;

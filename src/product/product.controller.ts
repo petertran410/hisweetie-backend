@@ -102,7 +102,6 @@ export class ProductController {
       throw new NotFoundException('Product not found');
     }
 
-    // Update category_id
     const updatedProduct = await this.prismaService.product.update({
       where: { id: BigInt(productId) },
       data: { category_id: categoryId ? BigInt(categoryId) : null },
