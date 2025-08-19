@@ -64,6 +64,7 @@ export class CategoryService {
             select: { id: true },
           },
         },
+        // ✅ SỬA: Array format
         orderBy: [{ priority: 'asc' }, { name: 'asc' }],
       });
 
@@ -72,7 +73,7 @@ export class CategoryService {
         name: cat.name,
         description: cat.description,
         parent_id: cat.parent_id ? Number(cat.parent_id) : null,
-        priority: cat.priority,
+        priority: cat.priority || 0,
         productCount: cat.product.length,
         children: [],
       }));
@@ -80,7 +81,9 @@ export class CategoryService {
       return this.buildCategoryTree(categoriesWithCount);
     } catch (error) {
       this.logger.error(`Error fetching categories tree: ${error.message}`);
-      throw error;
+      throw new BadRequestException(
+        `Failed to fetch categories tree: ${error.message}`,
+      );
     }
   }
 
@@ -106,6 +109,7 @@ export class CategoryService {
               select: { id: true },
             },
           },
+          // ✅ SỬA: Array format
           orderBy: [{ priority: 'asc' }, { name: 'asc' }],
           skip,
           take: pageSize,
@@ -118,7 +122,7 @@ export class CategoryService {
         name: cat.name,
         description: cat.description,
         parent_id: cat.parent_id ? Number(cat.parent_id) : null,
-        priority: cat.priority,
+        priority: cat.priority || 0,
         productCount: cat.product.length,
       }));
 
@@ -135,7 +139,9 @@ export class CategoryService {
       };
     } catch (error) {
       this.logger.error(`Error fetching categories: ${error.message}`);
-      throw error;
+      throw new BadRequestException(
+        `Failed to fetch categories: ${error.message}`,
+      );
     }
   }
 
@@ -346,14 +352,17 @@ export class CategoryService {
   async getCategoriesFlat() {
     try {
       const categories = await this.prisma.category.findMany({
+        // ✅ SỬA: Sử dụng array format cho orderBy
         orderBy: [{ priority: 'asc' }, { name: 'asc' }],
       });
 
       const flatCategories = categories.map((cat) => ({
         id: Number(cat.id),
         name: cat.name,
+        description: cat.description,
         parent_id: cat.parent_id ? Number(cat.parent_id) : null,
-        level: 0, // Will be calculated
+        priority: cat.priority || 0,
+        level: 0,
       }));
 
       // Calculate hierarchy level for display
@@ -361,7 +370,7 @@ export class CategoryService {
         categoryId: number,
         visited = new Set(),
       ): number => {
-        if (visited.has(categoryId)) return 0; // Prevent infinite loop
+        if (visited.has(categoryId)) return 0;
         visited.add(categoryId);
 
         const category = flatCategories.find((c) => c.id === categoryId);
@@ -383,63 +392,42 @@ export class CategoryService {
       };
     } catch (error) {
       this.logger.error(`Error fetching flat categories: ${error.message}`);
-      throw error;
+      throw new BadRequestException(
+        `Failed to fetch flat categories: ${error.message}`,
+      );
     }
   }
 
-  async getCategoriesForCMS(params?: {
-    pageSize?: number;
-    pageNumber?: number;
-    name?: string;
-  }) {
+  async getCategoriesForCMS() {
     try {
-      const { pageSize, pageNumber = 0, name } = params || {};
+      // ✅ SỬA: Lấy tất cả categories với đầy đủ thông tin
+      const categories = await this.prisma.category.findMany({
+        include: {
+          product: {
+            select: { id: true },
+          },
+        },
+        // ✅ SỬA: Sử dụng array format cho orderBy
+        orderBy: [{ priority: 'asc' }, { name: 'asc' }],
+      });
 
-      const where: Prisma.categoryWhereInput = {};
+      // ✅ Transform data với đầy đủ thông tin
+      const transformedCategories = categories.map((cat) => ({
+        id: Number(cat.id),
+        name: cat.name,
+        description: cat.description,
+        parent_id: cat.parent_id ? Number(cat.parent_id) : null,
+        priority: cat.priority || 0,
+        productCount: cat.product.length,
 
-      if (name) {
-        where.OR = [{ name: { contains: name } }];
-      }
-
-      const orderByClause: Prisma.categoryOrderByWithRelationInput = {
-        priority: 'asc',
-        name: 'asc',
-      };
-
-      let categories: any[];
-      let total: any;
-
-      if (pageSize && pageSize > 0) {
-        const skip = pageNumber * pageSize;
-        const take = pageSize;
-
-        [categories, total] = await Promise.all([
-          this.prisma.category.findMany({
-            where,
-            skip,
-            take,
-            orderBy: orderByClause,
-          }),
-          this.prisma.category.count({ where }),
-        ]);
-      } else {
-        [categories, total] = await Promise.all([
-          this.prisma.category.findMany({
-            where,
-            orderBy: orderByClause,
-          }),
-          this.prisma.category.count({ where }),
-        ]);
-      }
-
-      const transformedCategories = categories.map((category) => ({
-        id: Number(category.id),
-        name: category.name,
-        parent_id: category.parent_id ? Number(category.parent_id) : null,
-        description: category.description,
-        priority: category.priority,
+        // ✅ Thêm các trường cần thiết cho CMS
+        level: 0, // Sẽ được tính toán ở frontend nếu cần
+        displayName: cat.name, // Tên hiển thị đơn giản
+        hasChildren: false, // Sẽ được tính toán
+        hasProducts: cat.product.length > 0,
       }));
 
+      // ✅ Tính toán hierarchy level cho display
       const calculateLevel = (
         categoryId: number,
         visited = new Set(),
@@ -453,25 +441,29 @@ export class CategoryService {
         return 1 + calculateLevel(category.parent_id, visited);
       };
 
-      const categoriesWithLevel = transformedCategories.map((cat) => ({
-        ...cat,
-        level: calculateLevel(cat.id),
-        displayName: '  '.repeat(calculateLevel(cat.id)) + cat.name,
-        fullPath: this.getCategoryPath(cat.id, transformedCategories),
-      }));
-
-      const sortedCategories =
-        this.sortCategoriesByHierarchy(categoriesWithLevel);
+      // ✅ Tính toán hasChildren
+      const categoryMap = new Map(
+        transformedCategories.map((cat) => [cat.id, cat]),
+      );
+      transformedCategories.forEach((cat) => {
+        cat.level = calculateLevel(cat.id);
+        cat.displayName = '  '.repeat(cat.level) + cat.name;
+        cat.hasChildren = transformedCategories.some(
+          (child) => child.parent_id === cat.id,
+        );
+      });
 
       return {
         success: true,
-        data: sortedCategories,
-        total: total,
+        data: transformedCategories,
+        total: transformedCategories.length,
         message: 'Categories for CMS fetched successfully',
       };
     } catch (error) {
       this.logger.error(`Error fetching categories for CMS: ${error.message}`);
-      throw error;
+      throw new BadRequestException(
+        `Failed to fetch categories for CMS: ${error.message}`,
+      );
     }
   }
 

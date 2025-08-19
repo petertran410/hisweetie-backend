@@ -57,29 +57,41 @@ export class CategoryController {
 
   @Get('for-cms')
   @ApiOperation({
-    summary: 'Get categories for CMS dropdown/selection',
-    description: 'Get all categories in flat format for CMS product assignment',
+    summary: 'Get all categories for CMS',
+    description: 'Get all categories with full information for CMS management',
   })
-  @ApiQuery({
-    name: 'pageSize',
-    required: false,
-    description: 'Number of items per page (leave empty for all)',
+  @ApiResponse({
+    status: 200,
+    description: 'Categories for CMS fetched successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        data: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'number' },
+              name: { type: 'string' },
+              description: { type: 'string', nullable: true },
+              parent_id: { type: 'number', nullable: true },
+              priority: { type: 'number' },
+              productCount: { type: 'number' },
+              level: { type: 'number' },
+              displayName: { type: 'string' },
+              hasChildren: { type: 'boolean' },
+              hasProducts: { type: 'boolean' },
+            },
+          },
+        },
+        total: { type: 'number' },
+        message: { type: 'string' },
+      },
+    },
   })
-  @ApiQuery({
-    name: 'pageNumber',
-    required: false,
-    description: 'Page number (0-based)',
-  })
-  async getCategoriesForCMS(
-    @Query('pageSize') pageSize?: string,
-    @Query('pageNumber') pageNumber: string = '0',
-    @Query('name') name?: string,
-  ) {
-    return this.categoryService.getCategoriesForCMS({
-      pageSize: pageSize ? +pageSize : undefined,\
-      pageNumber: +pageNumber,
-      name,
-    });
+  async getCategoriesForCMS() {
+    return this.categoryService.getCategoriesForCMS();
   }
 
   @Get('paginated')
