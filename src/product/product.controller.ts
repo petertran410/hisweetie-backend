@@ -28,7 +28,7 @@ import {
 import { GetAllProductsResponseDto } from './dto/product-list-response.dto';
 import { CategoryService } from 'src/category/category.service';
 import { UpdateProductCategoryDto } from 'src/category/dto/create-category.dto';
-import { PrismaClient } from '@prisma/client';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 @ApiTags('product')
 @Controller('product')
@@ -39,7 +39,7 @@ export class ProductController {
     private readonly productService: ProductService,
     private readonly kiotVietService: KiotVietService,
     private readonly categoryService: CategoryService,
-    private readonly prismaService: PrismaClient,
+    private readonly prismaService: PrismaService,
   ) {}
 
   @Post('products')
