@@ -63,25 +63,22 @@ export class CategoryController {
   @ApiQuery({
     name: 'pageSize',
     required: false,
-    description: 'Number pf items per page',
+    description: 'Number of items per page (leave empty for all)',
   })
   @ApiQuery({
     name: 'pageNumber',
     required: false,
     description: 'Page number (0-based)',
   })
-  @ApiResponse({
-    status: 200,
-    description:
-      'Returns paginated products for CMS with custom category information',
-  })
   async getCategoriesForCMS(
-    @Query('pageSize') pageSize: string = '10',
+    @Query('pageSize') pageSize?: string,
     @Query('pageNumber') pageNumber: string = '0',
+    @Query('name') name?: string,
   ) {
     return this.categoryService.getCategoriesForCMS({
-      pageSize: +pageSize,
+      pageSize: pageSize ? +pageSize : undefined,\
       pageNumber: +pageNumber,
+      name,
     });
   }
 

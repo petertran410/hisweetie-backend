@@ -387,16 +387,13 @@ export class CategoryService {
     }
   }
 
-  async getCategoriesForCMS(params: {
-    pageSize: number;
-    pageNumber: number;
+  async getCategoriesForCMS(params?: {
+    pageSize?: number;
+    pageNumber?: number;
     name?: string;
   }) {
     try {
-      const { pageSize, pageNumber, name } = params;
-
-      const skip = pageNumber * pageSize;
-      const take = pageSize;
+      const { pageSize, pageNumber = 0, name } = params || {};
 
       const where: Prisma.categoryWhereInput = {};
 
@@ -405,23 +402,40 @@ export class CategoryService {
       }
 
       const orderByClause: Prisma.categoryOrderByWithRelationInput = {
-        id: 'desc',
+        priority: 'asc',
+        name: 'asc',
       };
 
-      const [categories, total] = await Promise.all([
-        this.prisma.category.findMany({
-          where,
-          skip,
-          take,
-          orderBy: orderByClause,
-        }),
-        this.prisma.category.count({ where }),
-      ]);
+      let categories: any[];
+      let total: any;
+
+      if (pageSize && pageSize > 0) {
+        const skip = pageNumber * pageSize;
+        const take = pageSize;
+
+        [categories, total] = await Promise.all([
+          this.prisma.category.findMany({
+            where,
+            skip,
+            take,
+            orderBy: orderByClause,
+          }),
+          this.prisma.category.count({ where }),
+        ]);
+      } else {
+        [categories, total] = await Promise.all([
+          this.prisma.category.findMany({
+            where,
+            orderBy: orderByClause,
+          }),
+          this.prisma.category.count({ where }),
+        ]);
+      }
 
       const transformedCategories = categories.map((category) => ({
         id: Number(category.id),
         name: category.name,
-        parent_id: category.parent_id,
+        parent_id: category.parent_id ? Number(category.parent_id) : null,
         description: category.description,
         priority: category.priority,
       }));
@@ -452,6 +466,7 @@ export class CategoryService {
       return {
         success: true,
         data: sortedCategories,
+        total: total,
         message: 'Categories for CMS fetched successfully',
       };
     } catch (error) {
