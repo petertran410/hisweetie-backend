@@ -1,3 +1,4 @@
+import { Prisma } from './../../node_modules/.prisma/client/index.d';
 import {
   Injectable,
   Logger,
@@ -34,7 +35,7 @@ export class CategoryService {
           name: createCategoryDto.name,
           description: createCategoryDto.description,
           parent_id: createCategoryDto.parent_id
-            ? BigInt(createCategoryDto.parent_id)
+            ? createCategoryDto.parent_id
             : null,
           priority: createCategoryDto.priority || 0,
         },
@@ -202,7 +203,7 @@ export class CategoryService {
           name: updateCategoryDto.name,
           description: updateCategoryDto.description,
           parent_id: updateCategoryDto.parent_id
-            ? BigInt(updateCategoryDto.parent_id)
+            ? updateCategoryDto.parent_id
             : null,
           priority: updateCategoryDto.priority,
         },
@@ -245,7 +246,7 @@ export class CategoryService {
       }
 
       const childCategories = await this.prisma.category.count({
-        where: { parent_id: BigInt(id) },
+        where: { parent_id: id },
       });
 
       if (childCategories > 0) {
@@ -342,9 +343,6 @@ export class CategoryService {
     return roots;
   }
 
-  /**
-   * Lấy danh sách categories dạng flat (cho dropdown)
-   */
   async getCategoriesFlat() {
     try {
       const categories = await this.prisma.category.findMany({
@@ -389,49 +387,65 @@ export class CategoryService {
     }
   }
 
-  async getCategoriesForCMS() {
+  async getCategoriesForCMS(params: {
+    pageSize: number;
+    pageNumber: number;
+    name?: string;
+  }) {
     try {
-      const categories = await this.prisma.category.findMany({
-        include: {
-          product: {
-            select: { id: true },
-          },
-        },
-        orderBy: [{ priority: 'asc' }, { name: 'asc' }],
-      });
+      const { pageSize, pageNumber, name } = params;
 
-      const flatCategories = categories.map((cat) => ({
-        id: Number(cat.id),
-        name: cat.name,
-        description: cat.description,
-        parent_id: cat.parent_id ? Number(cat.parent_id) : null,
-        priority: cat.priority,
-        productCount: cat.product.length,
-        level: 0, // Will be calculated
+      const skip = pageNumber * pageSize;
+      const take = pageSize;
+
+      const where: Prisma.categoryWhereInput = {};
+
+      if (name) {
+        where.OR = [{ name: { contains: name } }];
+      }
+
+      const orderByClause: Prisma.categoryOrderByWithRelationInput = {
+        id: 'desc',
+      };
+
+      const [categories, total] = await Promise.all([
+        this.prisma.category.findMany({
+          where,
+          skip,
+          take,
+          orderBy: orderByClause,
+        }),
+        this.prisma.category.count({ where }),
+      ]);
+
+      const transformedCategories = categories.map((category) => ({
+        id: Number(category.id),
+        name: category.name,
+        parent_id: category.parent_id,
+        description: category.description,
+        priority: category.priority,
       }));
 
-      // Calculate hierarchy level for indentation
       const calculateLevel = (
         categoryId: number,
         visited = new Set(),
       ): number => {
-        if (visited.has(categoryId)) return 0; // Prevent infinite loop
+        if (visited.has(categoryId)) return 0;
         visited.add(categoryId);
 
-        const category = flatCategories.find((c) => c.id === categoryId);
+        const category = transformedCategories.find((c) => c.id === categoryId);
         if (!category || !category.parent_id) return 0;
 
         return 1 + calculateLevel(category.parent_id, visited);
       };
 
-      const categoriesWithLevel = flatCategories.map((cat) => ({
+      const categoriesWithLevel = transformedCategories.map((cat) => ({
         ...cat,
         level: calculateLevel(cat.id),
-        displayName: '  '.repeat(calculateLevel(cat.id)) + cat.name, // Indentation for hierarchy
-        fullPath: this.getCategoryPath(cat.id, flatCategories),
+        displayName: '  '.repeat(calculateLevel(cat.id)) + cat.name,
+        fullPath: this.getCategoryPath(cat.id, transformedCategories),
       }));
 
-      // Sort by hierarchy (parents first, then children)
       const sortedCategories =
         this.sortCategoriesByHierarchy(categoriesWithLevel);
 

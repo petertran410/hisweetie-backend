@@ -60,8 +60,29 @@ export class CategoryController {
     summary: 'Get categories for CMS dropdown/selection',
     description: 'Get all categories in flat format for CMS product assignment',
   })
-  async getCategoriesForCMS() {
-    return this.categoryService.getCategoriesForCMS();
+  @ApiQuery({
+    name: 'pageSize',
+    required: false,
+    description: 'Number pf items per page',
+  })
+  @ApiQuery({
+    name: 'pageNumber',
+    required: false,
+    description: 'Page number (0-based)',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Returns paginated products for CMS with custom category information',
+  })
+  async getCategoriesForCMS(
+    @Query('pageSize') pageSize: string = '10',
+    @Query('pageNumber') pageNumber: string = '0',
+  ) {
+    return this.categoryService.getCategoriesForCMS({
+      pageSize: +pageSize,
+      pageNumber: +pageNumber,
+    });
   }
 
   @Get('paginated')
@@ -100,7 +121,6 @@ export class CategoryController {
     return this.categoryService.create(createCategoryDto);
   }
 
-  // ✅ ĐẶT ROUTE ĐỘNG (:id) CUỐI CÙNG
   @Get(':id')
   @ApiOperation({
     summary: 'Get category by ID',
@@ -108,7 +128,6 @@ export class CategoryController {
   })
   @ApiParam({ name: 'id', description: 'Category ID' })
   findOne(@Param('id') id: string) {
-    // ✅ Validate ID before converting to BigInt
     const categoryId = parseInt(id);
     if (isNaN(categoryId)) {
       throw new BadRequestException('Invalid category ID');

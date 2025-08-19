@@ -87,7 +87,7 @@ model category {
   id           BigInt    @id @default(autoincrement())
   name         String?   @db.VarChar(255)
   description  String?   @db.LongText
-  parent_id    BigInt?
+  parent_id    Int?
   priority     Int?
   product      product[]
 }

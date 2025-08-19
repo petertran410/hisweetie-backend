@@ -1174,7 +1174,7 @@ export class ProductService {
     pageSize: number;
     pageNumber: number;
     title?: string;
-    categoryId?: number; // Thay đổi từ kiotviet_category_id sang categoryId
+    categoryId?: number;
     visibilityFilter?: boolean;
     includeHidden?: boolean;
   }) {
@@ -1183,9 +1183,9 @@ export class ProductService {
         pageSize,
         pageNumber,
         title,
-        categoryId, // Sử dụng category_id từ schema category
+        categoryId,
         visibilityFilter,
-        includeHidden = true, // Mặc định true cho CMS
+        includeHidden = true,
       } = params;
 
       const skip = pageNumber * pageSize;
@@ -1193,7 +1193,6 @@ export class ProductService {
 
       const where: Prisma.productWhereInput = {};
 
-      // Visibility filter - CMS có thể xem tất cả hoặc filter theo visibility
       if (!includeHidden) {
         where.is_visible = true;
       } else if (visibilityFilter !== undefined) {
@@ -1224,7 +1223,6 @@ export class ProductService {
           take,
           orderBy: orderByClause,
           include: {
-            // CHỈ include category từ schema category, BỎ kiotviet_category
             category: {
               select: {
                 id: true,
