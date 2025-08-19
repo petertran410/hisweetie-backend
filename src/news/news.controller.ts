@@ -55,7 +55,6 @@ export class NewsController {
     return this.newsService.findAllForClient(searchDto);
   }
 
-  // THÊM MỚI: Endpoint tìm ID từ slug và type
   @Get('client/find-id-by-slug')
   @ApiOperation({
     summary: 'Find news ID by slug and type for URL mapping',

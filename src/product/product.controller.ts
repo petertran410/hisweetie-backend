@@ -24,6 +24,7 @@ import {
   ApiParam,
   ApiBody,
 } from '@nestjs/swagger';
+import { GetAllProductsResponseDto } from './dto/product-list-response.dto';
 
 @ApiTags('product')
 @Controller('product')
@@ -390,7 +391,6 @@ export class ProductController {
     return this.productService.toggleVisibility(+id);
   }
 
-  // THÊM VÀO CLASS ProductController (sau existing endpoints):
   @Patch('bulk-toggle-visibility')
   @ApiOperation({
     summary: 'Bulk toggle product visibility',
@@ -475,5 +475,24 @@ export class ProductController {
       params.kiotviet_description = kiotviet_description;
 
     return this.productService.getProductsByCategories(params);
+  }
+
+  @Get('client/get-all-product-list')
+  @ApiOperation({
+    summary: 'Get all visible products for client',
+    description:
+      'Retrieve all visible products with essential fields for frontend display',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Products retrieved successfully',
+    type: GetAllProductsResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error',
+  })
+  async getAllProductsForClient() {
+    return this.productService.getAllProductsForClient();
   }
 }

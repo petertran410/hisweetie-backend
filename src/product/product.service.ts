@@ -15,6 +15,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { async, firstValueFrom } from 'rxjs';
 import { create } from 'domain';
 import { title } from 'process';
+import { ProductListItemDto } from './dto/product-list-response.dto';
 
 interface KiotProduct {
   id: number;
@@ -1253,6 +1254,57 @@ export class ProductService {
       throw new BadRequestException(
         `Failed to get statistics: ${error.message}`,
       );
+    }
+  }
+
+  async getAllProductsForClient(): Promise<{
+    data: ProductListItemDto[];
+    total: number;
+    success: boolean;
+    message: string;
+  }> {
+    try {
+      const products = await this.prisma.product.findMany({
+        select: {
+          id: true,
+          category_id: true,
+          description: true,
+          general_description: true,
+          instruction: true,
+          title: true,
+          kiotviet_name: true,
+          kiotviet_images: true,
+          kiotviet_price: true,
+          kiotviet_description: true,
+        },
+        where: {
+          is_visible: true,
+        },
+        orderBy: {
+          id: 'desc',
+        },
+      });
+
+      const formattedProducts: ProductListItemDto[] = products.map(
+        (product) => ({
+          ...product,
+          id: Number(product.id),
+          category_id: product.category_id ? Number(product.category_id) : null,
+          kiotviet_price: product.kiotviet_price
+            ? Number(product.kiotviet_price)
+            : null,
+        }),
+      );
+
+      return {
+        data: formattedProducts,
+        total: formattedProducts.length,
+        success: true,
+        message: 'Products fetched successfully',
+      };
+    } catch (error) {
+      console.error('Error fetching products:', error);
+      throw new Error('Failed to fetch products');
     }
   }
 }

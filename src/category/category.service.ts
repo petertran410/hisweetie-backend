@@ -1,4 +1,3 @@
-// src/category/category.service.ts - FIXED FOR "NEVER" TYPE ERROR
 import {
   Injectable,
   NotFoundException,
@@ -12,6 +11,8 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { firstValueFrom } from 'rxjs';
 import { KiotVietAuthService } from 'src/auth/kiotviet-auth/auth.service';
+import { CategoryDto } from './dto/category-response.dto';
+import { UpdateCategoryDto } from './dto/update-category.dto';
 
 interface KiotVietCategory {
   categoryId: number;
@@ -437,7 +438,6 @@ export class CategoryService {
       visited.add(category.categoryId);
       flattened.push(category);
 
-      // Process children recursively
       if (category.children && category.children.length > 0) {
         for (const child of category.children) {
           processCategory(child);
@@ -467,11 +467,9 @@ export class CategoryService {
 
   async postCategory(createCategoryDto: CreateCategoryDto) {
     try {
-      // FIXED: Explicit typing for create data to avoid "never" type
       const categoryData: Prisma.categoryCreateInput = {
         name: createCategoryDto.name,
         description: createCategoryDto.description,
-        images_url: createCategoryDto.images_url,
         priority: createCategoryDto.priority,
         created_date: new Date(),
         created_by: 'Manual',
@@ -496,13 +494,11 @@ export class CategoryService {
     }
   }
 
-  // FIXED: Separate method for bulk priority updates
   async updatePriorities(updateItems: Array<{ id: string; priority: number }>) {
     try {
       const results: any[] = [];
 
       for (const item of updateItems) {
-        // FIXED: Explicit typing for update data to avoid "never" type
         const updateData: Prisma.categoryUpdateInput = {
           priority: item.priority,
           updated_date: new Date(),
@@ -612,29 +608,195 @@ export class CategoryService {
     }
   }
 
-  async findOne(id: number) {
+  async findOne(id: number): Promise<CategoryDto> {
     try {
       const category = await this.prisma.category.findUnique({
         where: { id: BigInt(id) },
+        include: {
+          _count: {
+            select: { product: true },
+          },
+        },
       });
 
       if (!category) {
         throw new NotFoundException(`Category with ID ${id} not found`);
       }
 
-      return category;
+      return this.transformCategory(category);
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
       }
-      this.logger.error(`Failed to find category ${id}:`, error.message);
       throw new BadRequestException(
-        `Failed to find category: ${error.message}`,
+        `Failed to fetch category: ${error.message}`,
       );
     }
   }
 
-  async update(id: number, updateData: Partial<CreateCategoryDto>) {
+  async findAll(): Promise<{
+    data: CategoryDto[];
+    total: number;
+    success: boolean;
+    message: string;
+  }> {
+    try {
+      const categories = await this.prisma.category.findMany({
+        include: {
+          _count: {
+            select: { product: true },
+          },
+        },
+        orderBy: [{ priority: 'asc' }, { name: 'asc' }],
+      });
+
+      // Tạo cấu trúc cây
+      const categoryMap = new Map();
+      const rootCategories: CategoryDto[] = [];
+
+      // Chuyển đổi và tạo map
+      categories.forEach((category) => {
+        const transformedCategory = this.transformCategory(category);
+        transformedCategory.children = [];
+        categoryMap.set(transformedCategory.id, transformedCategory);
+      });
+
+      // Xây dựng cấu trúc cây
+      categories.forEach((category) => {
+        const transformedCategory = categoryMap.get(Number(category.id));
+
+        if (category.parent_id) {
+          const parent = categoryMap.get(Number(category.parent_id));
+          if (parent) {
+            parent.children.push(transformedCategory);
+          } else {
+            rootCategories.push(transformedCategory);
+          }
+        } else {
+          rootCategories.push(transformedCategory);
+        }
+      });
+
+      return {
+        data: rootCategories,
+        total: categories.length,
+        success: true,
+        message: 'Categories retrieved successfully',
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to fetch categories: ${error.message}`,
+      );
+    }
+  }
+
+  async findAllFlat(): Promise<{
+    data: CategoryDto[];
+    total: number;
+    success: boolean;
+    message: string;
+  }> {
+    try {
+      const categories = await this.prisma.category.findMany({
+        include: {
+          _count: {
+            select: { product: true },
+          },
+        },
+        orderBy: [{ priority: 'asc' }, { name: 'asc' }],
+      });
+
+      const transformedCategories = categories.map((category) => {
+        const transformed = this.transformCategory(category);
+        // Thêm prefix để hiển thị level trong dropdown
+        if (category.parent_id) {
+          transformed.name = `→ ${transformed.name}`;
+        }
+        return transformed;
+      });
+
+      return {
+        data: transformedCategories,
+        total: transformedCategories.length,
+        success: true,
+        message: 'Flat categories retrieved successfully',
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to fetch flat categories: ${error.message}`,
+      );
+    }
+  }
+
+  async create(createCategoryDto: CreateCategoryDto): Promise<CategoryDto> {
+    try {
+      // Kiểm tra parent category có tồn tại không
+      if (createCategoryDto.parent_id) {
+        const parentCategory = await this.prisma.category.findUnique({
+          where: { id: BigInt(createCategoryDto.parent_id) },
+        });
+
+        if (!parentCategory) {
+          throw new BadRequestException(
+            `Parent category with ID ${createCategoryDto.parent_id} not found`,
+          );
+        }
+      }
+
+      // Kiểm tra tên danh mục đã tồn tại chưa (trong cùng parent)
+      const existingCategory = await this.prisma.category.findFirst({
+        where: {
+          name: createCategoryDto.name,
+          parent_id: createCategoryDto.parent_id
+            ? BigInt(createCategoryDto.parent_id)
+            : null,
+        },
+      });
+
+      if (existingCategory) {
+        throw new BadRequestException(
+          `Category with name "${createCategoryDto.name}" already exists in this parent category`,
+        );
+      }
+
+      const category = await this.prisma.category.create({
+        data: {
+          name: createCategoryDto.name,
+          description: createCategoryDto.description,
+          parent_id: createCategoryDto.parent_id
+            ? BigInt(createCategoryDto.parent_id)
+            : null,
+          priority: createCategoryDto.priority,
+          images_url: createCategoryDto.images_url
+            ? JSON.stringify(createCategoryDto.images_url)
+            : null,
+          created_by: 'system', // TODO: get from auth
+          created_date: new Date(),
+          updated_by: 'system',
+          updated_date: new Date(),
+        },
+        include: {
+          _count: {
+            select: { product: true },
+          },
+        },
+      });
+
+      return this.transformCategory(category);
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to create category: ${error.message}`,
+      );
+    }
+  }
+
+  async update(
+    id: number,
+    updateCategoryDto: UpdateCategoryDto,
+  ): Promise<CategoryDto> {
     try {
       const existingCategory = await this.prisma.category.findUnique({
         where: { id: BigInt(id) },
@@ -644,63 +806,120 @@ export class CategoryService {
         throw new NotFoundException(`Category with ID ${id} not found`);
       }
 
-      const updateInput: Prisma.categoryUpdateInput = {
-        name: updateData.name,
-        description: updateData.description,
-        images_url: updateData.images_url,
-        priority: updateData.priority,
-        parent_id: updateData.parent_id
-          ? BigInt(updateData.parent_id)
-          : undefined,
-        updated_date: new Date(),
-        updated_by: 'Manual_Update',
-      };
-
-      Object.keys(updateInput).forEach((key) => {
-        if (updateInput[key] === undefined) {
-          delete updateInput[key];
+      // Kiểm tra parent category nếu có thay đổi
+      if (updateCategoryDto.parent_id) {
+        if (updateCategoryDto.parent_id === id) {
+          throw new BadRequestException('Category cannot be its own parent');
         }
-      });
+
+        const parentCategory = await this.prisma.category.findUnique({
+          where: { id: BigInt(updateCategoryDto.parent_id) },
+        });
+
+        if (!parentCategory) {
+          throw new BadRequestException(
+            `Parent category with ID ${updateCategoryDto.parent_id} not found`,
+          );
+        }
+
+        // Kiểm tra circular reference
+        const isCircular = await this.checkCircularReference(
+          id,
+          updateCategoryDto.parent_id,
+        );
+        if (isCircular) {
+          throw new BadRequestException(
+            'Cannot set parent: this would create a circular reference',
+          );
+        }
+      }
 
       const category = await this.prisma.category.update({
         where: { id: BigInt(id) },
-        data: updateInput,
+        data: {
+          name: updateCategoryDto.name,
+          description: updateCategoryDto.description,
+          parent_id: updateCategoryDto.parent_id
+            ? BigInt(updateCategoryDto.parent_id)
+            : undefined,
+          priority: updateCategoryDto.priority,
+          images_url: updateCategoryDto.images_url
+            ? JSON.stringify(updateCategoryDto.images_url)
+            : undefined,
+          updated_by: 'system', // TODO: get from auth
+          updated_date: new Date(),
+        },
+        include: {
+          _count: {
+            select: { product: true },
+          },
+        },
       });
 
-      this.logger.log(`Updated category: ${category.name} (ID: ${id})`);
-      return category;
+      return this.transformCategory(category);
     } catch (error) {
-      if (error instanceof NotFoundException) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
         throw error;
       }
-      this.logger.error(`Failed to update category ${id}:`, error.message);
       throw new BadRequestException(
         `Failed to update category: ${error.message}`,
       );
     }
   }
 
-  async remove(id: number) {
+  async remove(id: number): Promise<{ success: boolean; message: string }> {
     try {
-      const existingCategory = await this.prisma.category.findUnique({
+      const category = await this.prisma.category.findUnique({
         where: { id: BigInt(id) },
+        include: {
+          _count: {
+            select: {
+              product: true,
+            },
+          },
+        },
       });
 
-      if (!existingCategory) {
+      if (!category) {
         throw new NotFoundException(`Category with ID ${id} not found`);
+      }
+
+      // Kiểm tra có sản phẩm nào đang sử dụng category này không
+      if (category._count.product > 0) {
+        throw new BadRequestException(
+          `Cannot delete category: ${category._count.product} products are using this category`,
+        );
+      }
+
+      // Kiểm tra có danh mục con nào không
+      const childCategories = await this.prisma.category.findMany({
+        where: { parent_id: BigInt(id) },
+      });
+
+      if (childCategories.length > 0) {
+        throw new BadRequestException(
+          `Cannot delete category: it has ${childCategories.length} child categories`,
+        );
       }
 
       await this.prisma.category.delete({
         where: { id: BigInt(id) },
       });
 
-      this.logger.log(`Deleted category: ${existingCategory.name} (ID: ${id})`);
-      return { message: `Category ${id} deleted successfully` };
+      return {
+        success: true,
+        message: `Category "${category.name}" deleted successfully`,
+      };
     } catch (error) {
-      if (error instanceof NotFoundException) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
         throw error;
       }
-      this.logger.error(`Failed to delete category ${id}:`, error.message);
       throw new BadRequestException(
         `Failed to delete category: ${error.message}`,
       );
@@ -736,5 +955,89 @@ export class CategoryService {
     }
   }
 
-  async;
+  async updateProductCategory(
+    productId: number,
+    categoryId: number | null,
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      // Kiểm tra product tồn tại
+      const product = await this.prisma.product.findUnique({
+        where: { id: BigInt(productId) },
+      });
+
+      if (!product) {
+        throw new NotFoundException(`Product with ID ${productId} not found`);
+      }
+
+      // Kiểm tra category tồn tại (nếu không null)
+      if (categoryId) {
+        const category = await this.prisma.category.findUnique({
+          where: { id: BigInt(categoryId) },
+        });
+
+        if (!category) {
+          throw new NotFoundException(
+            `Category with ID ${categoryId} not found`,
+          );
+        }
+      }
+
+      await this.prisma.product.update({
+        where: { id: BigInt(productId) },
+        data: {
+          category_id: categoryId ? BigInt(categoryId) : null,
+        },
+      });
+
+      return {
+        success: true,
+        message: categoryId
+          ? `Product assigned to category successfully`
+          : `Product removed from category successfully`,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to update product category: ${error.message}`,
+      );
+    }
+  }
+
+  private transformCategory(category: any): CategoryDto {
+    return {
+      id: Number(category.id),
+      name: category.name,
+      description: category.description,
+      parent_id: category.parent_id ? Number(category.parent_id) : null,
+      priority: category.priority,
+      images_url: category.images_url ? JSON.parse(category.images_url) : null,
+      created_date: category.created_date,
+      updated_date: category.updated_date,
+      product_count: category._count?.product || 0,
+    };
+  }
+
+  private async checkCircularReference(
+    categoryId: number,
+    parentId: number,
+  ): Promise<boolean> {
+    let currentParentId = parentId;
+
+    while (currentParentId) {
+      if (currentParentId === categoryId) {
+        return true;
+      }
+
+      const parent = await this.prisma.category.findUnique({
+        where: { id: BigInt(currentParentId) },
+        select: { parent_id: true },
+      });
+
+      currentParentId = Number(parent.parent_id);
+    }
+
+    return false;
+  }
 }
