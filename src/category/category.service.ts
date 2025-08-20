@@ -87,47 +87,54 @@ export class CategoryService {
     }
   }
 
-  async getAllCategories(params?: {
-    pageSize: number;
+  async getAllCategories(params: {
     pageNumber: number;
+    pageSize: number;
     name?: string;
   }) {
-    const { pageSize = 10, pageNumber = 0, name } = params || {};
+    const { pageNumber, pageSize, name } = params;
+    const skip = pageNumber * pageSize;
 
-    const where: any = {};
+    const whereClause = name
+      ? {
+          name: { contains: name, mode: 'insensitive' },
+        }
+      : {};
 
-    if (name) {
-      where.name = { contains: name };
-    }
-
-    const [categories, totalElements] = await Promise.all([
+    const [categories, totalCount] = await Promise.all([
       this.prisma.category.findMany({
-        where,
-        skip: pageNumber * pageSize,
+        where: whereClause,
+        include: { product: { select: { id: true } } },
+        orderBy: [{ priority: 'asc' }, { name: 'asc' }],
+        skip,
         take: pageSize,
-        orderBy: [{ id: 'desc' }],
       }),
-      this.prisma.category.count({ where }),
+      this.prisma.category.count({ where: whereClause }),
     ]);
 
+    const transformedCategories = categories.map((cat) => ({
+      id: Number(cat.id),
+      name: cat.name,
+      description: cat.description,
+      parent_id: cat.parent_id ? Number(cat.parent_id) : null,
+      priority: cat.priority || 0,
+      productCount: cat.product.length,
+      level: 0,
+      displayName: cat.name,
+      hasChildren: false,
+      hasProducts: cat.product.length > 0,
+    }));
+
     return {
-      content: categories.map(this.formatCategoriesForResponse),
-      totalElements,
-      totalPages: Math.ceil(totalElements / pageSize),
+      success: true,
+      content: transformedCategories,
+      totalElements: totalCount,
+      totalPages: Math.ceil(totalCount / pageSize),
       number: pageNumber,
       size: pageSize,
+      message: 'Categories for CMS fetched successfully',
     };
   }
-
-  private formatCategoriesForResponse = (categories: any) => {
-    return {
-      id: categories.id.toString(),
-      name: categories.name,
-      description: categories.description,
-      parent_id: categories.parent_id,
-      priority: categories.priority,
-    };
-  };
 
   async findOne(id: number) {
     try {

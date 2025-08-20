@@ -95,12 +95,8 @@ export class CategoryController {
   }
 
   @Get('paginated')
-  @ApiOperation({
-    summary: 'Get categories with pagination',
-    description:
-      'Get categories with pagination support and optional parent filter',
-  })
-  getAllCategories(
+  @ApiOperation({ summary: 'Get paginated categories for CMS' })
+  getCategoriesForCMSPaginated(
     @Query('pageSize') pageSize: string = '10',
     @Query('pageNumber') pageNumber: string = '0',
     @Query('name') name?: string,
