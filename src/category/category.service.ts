@@ -179,6 +179,7 @@ export class CategoryService {
         throw new NotFoundException('Category not found');
       }
 
+      // Validation logic (existing code unchanged)
       if (updateCategoryDto.parent_id) {
         if (updateCategoryDto.parent_id === id) {
           throw new BadRequestException('Category cannot be its own parent');
@@ -191,8 +192,17 @@ export class CategoryService {
         if (!parentCategory) {
           throw new BadRequestException('Parent category not found');
         }
+
+        // Check for circular reference
+        await this.validateNoCircularReference(id, updateCategoryDto.parent_id);
       }
 
+      const oldParentId = existingCategory.parent_id
+        ? Number(existingCategory.parent_id)
+        : null;
+      const newParentId = updateCategoryDto.parent_id || null;
+
+      // Update category
       const updatedCategory = await this.prisma.category.update({
         where: { id: BigInt(id) },
         data: {
@@ -204,6 +214,11 @@ export class CategoryService {
           priority: updateCategoryDto.priority,
         },
       });
+
+      // ✅ CRITICAL: Recalculate hierarchy if parent changed
+      if (oldParentId !== newParentId) {
+        await this.recalculateHierarchy();
+      }
 
       return {
         success: true,
@@ -220,6 +235,175 @@ export class CategoryService {
       this.logger.error(`Error updating category ${id}: ${error.message}`);
       throw error;
     }
+  }
+
+  private async validateNoCircularReference(
+    categoryId: number,
+    newParentId: number,
+  ): Promise<void> {
+    const ancestors = await this.getAncestorIds(newParentId);
+    if (ancestors.includes(categoryId)) {
+      throw new BadRequestException(
+        'Cannot create circular reference in category hierarchy',
+      );
+    }
+  }
+
+  private async getAncestorIds(categoryId: number): Promise<number[]> {
+    const ancestors: number[] = [];
+    let currentId = categoryId;
+
+    while (currentId) {
+      const category = await this.prisma.category.findUnique({
+        where: { id: BigInt(currentId) },
+        select: { parent_id: true },
+      });
+
+      if (!category?.parent_id) break;
+
+      const parentId = Number(category.parent_id);
+      if (ancestors.includes(parentId)) break; // Prevent infinite loop
+
+      ancestors.push(parentId);
+      currentId = parentId;
+    }
+
+    return ancestors;
+  }
+
+  async recalculateHierarchy(): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      // Update levels and paths
+      await this.updateLevelsAndPaths(tx);
+
+      // Update child counts
+      await this.updateChildCounts(tx);
+
+      // Update product counts
+      await this.updateProductCounts(tx);
+    });
+  }
+
+  private async updateLevelsAndPaths(tx: any): Promise<void> {
+    // Get all categories ordered by hierarchy
+    const categories = await tx.category.findMany({
+      orderBy: { id: 'asc' },
+    });
+
+    // Process in order to ensure parents are processed before children
+    for (const category of categories) {
+      const level = await this.calculateLevel(Number(category.id), tx);
+      const path = await this.calculatePath(Number(category.id), tx);
+
+      await tx.category.update({
+        where: { id: category.id },
+        data: { level, path },
+      });
+    }
+  }
+
+  private async calculateLevel(categoryId: number, tx: any): Promise<number> {
+    const category = await tx.category.findUnique({
+      where: { id: BigInt(categoryId) },
+      select: { parent_id: true },
+    });
+
+    if (!category?.parent_id) return 0;
+
+    const parentLevel = await this.calculateLevel(
+      Number(category.parent_id),
+      tx,
+    );
+    return parentLevel + 1;
+  }
+
+  private async calculatePath(categoryId: number, tx: any): Promise<string> {
+    const ancestors: number[] = [];
+    let currentId: number | null = categoryId;
+
+    // Build path from current to root
+    while (currentId) {
+      ancestors.unshift(currentId);
+
+      const category = await tx.category.findUnique({
+        where: { id: BigInt(currentId) },
+        select: { parent_id: true },
+      });
+
+      currentId = category?.parent_id ? Number(category.parent_id) : null;
+    }
+
+    return `/${ancestors.join('/')}/`;
+  }
+
+  private async updateChildCounts(tx: any): Promise<void> {
+    const categories = await tx.category.findMany();
+
+    for (const category of categories) {
+      const childCount = await tx.category.count({
+        where: { parent_id: Number(category.id) },
+      });
+
+      await tx.category.update({
+        where: { id: category.id },
+        data: { child_count: childCount },
+      });
+    }
+  }
+
+  private async updateProductCounts(tx: any): Promise<void> {
+    const categories = await tx.category.findMany();
+
+    for (const category of categories) {
+      // Direct product count
+      const directCount = await tx.product.count({
+        where: { category_id: category.id },
+      });
+
+      // Total product count (including descendants)
+      const descendantIds = await this.getDescendantIds(
+        Number(category.id),
+        tx,
+      );
+      const allCategoryIds = [
+        category.id,
+        ...descendantIds.map((id) => BigInt(id)),
+      ];
+
+      const totalCount = await tx.product.count({
+        where: { category_id: { in: allCategoryIds } },
+      });
+
+      await tx.category.update({
+        where: { id: category.id },
+        data: {
+          direct_product_count: directCount,
+          product_count: totalCount,
+        },
+      });
+    }
+  }
+
+  private async getDescendantIds(
+    categoryId: number,
+    tx: any,
+  ): Promise<number[]> {
+    const descendants: number[] = [];
+
+    const children = await tx.category.findMany({
+      where: { parent_id: categoryId },
+      select: { id: true },
+    });
+
+    for (const child of children) {
+      const childId = Number(child.id);
+      descendants.push(childId);
+
+      const grandChildren = await this.getDescendantIds(childId, tx);
+      descendants.push(...grandChildren);
+    }
+
+    return descendants;
   }
 
   async remove(id: number) {

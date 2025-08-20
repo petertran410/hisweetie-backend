@@ -873,18 +873,14 @@ export class ProductService {
     try {
       const existingProduct = await this.prisma.product.findUnique({
         where: { id: BigInt(id) },
+        select: { id: true, category_id: true, is_from_kiotviet: true },
       });
 
       if (!existingProduct) {
         throw new NotFoundException(`Product with ID ${id} not found`);
       }
 
-      if (existingProduct.is_from_kiotviet) {
-        this.logger.warn(
-          `Updating KiotViet product ${id}. KiotViet fields will be preserved.`,
-        );
-      }
-
+      // Extract category from categoryIds array if provided
       if (
         updateProductDto.categoryIds &&
         updateProductDto.categoryIds.length > 0
@@ -892,6 +888,12 @@ export class ProductService {
         updateProductDto.category_id = updateProductDto.categoryIds[0];
       }
 
+      const oldCategoryId = existingProduct.category_id
+        ? Number(existingProduct.category_id)
+        : null;
+      const newCategoryId = updateProductDto.category_id || null;
+
+      // Existing update logic (unchanged)
       let imagesUrlString: string | null | undefined = undefined;
       if (updateProductDto.images_url !== undefined) {
         if (updateProductDto.images_url === null) {
@@ -931,18 +933,28 @@ export class ProductService {
         }
       });
 
-      const product = await this.prisma.product.update({
-        where: { id: BigInt(id) },
-        data: updateData,
-        include: {
-          category: true,
-        },
+      // ✅ CRITICAL: Use transaction for data consistency
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Update product
+        const product = await tx.product.update({
+          where: { id: BigInt(id) },
+          data: updateData,
+          include: { category: true },
+        });
+
+        // Update category counts if category changed
+        if (oldCategoryId !== newCategoryId) {
+          await this.updateCategoryCounts(tx, oldCategoryId, newCategoryId);
+        }
+
+        return product;
       });
 
       this.logger.log(
-        `Updated product: ${product.title || product.kiotviet_name} || ${product.description} || ${product.instruction} || ${product.general_description} (ID: ${product.id})`,
+        `Updated product: ${result.title || result.kiotviet_name} (ID: ${result.id}) - Category: ${oldCategoryId} → ${newCategoryId}`,
       );
-      return this.transformProduct(product);
+
+      return this.transformProduct(result);
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
@@ -951,6 +963,65 @@ export class ProductService {
       throw new BadRequestException(
         `Failed to update product: ${error.message}`,
       );
+    }
+  }
+
+  private async updateCategoryCounts(
+    tx: any,
+    oldCategoryId: number | null,
+    newCategoryId: number | null,
+  ): Promise<void> {
+    // Decrement old category counts
+    if (oldCategoryId) {
+      await tx.category.update({
+        where: { id: BigInt(oldCategoryId) },
+        data: {
+          direct_product_count: { decrement: 1 },
+          product_count: { decrement: 1 },
+        },
+      });
+
+      // Update ancestor counts
+      await this.updateAncestorCounts(tx, oldCategoryId, -1);
+    }
+
+    // Increment new category counts
+    if (newCategoryId) {
+      await tx.category.update({
+        where: { id: BigInt(newCategoryId) },
+        data: {
+          direct_product_count: { increment: 1 },
+          product_count: { increment: 1 },
+        },
+      });
+
+      // Update ancestor counts
+      await this.updateAncestorCounts(tx, newCategoryId, 1);
+    }
+  }
+
+  private async updateAncestorCounts(
+    tx: any,
+    categoryId: number,
+    delta: number,
+  ): Promise<void> {
+    let currentId = categoryId;
+
+    while (currentId) {
+      const category = await tx.category.findUnique({
+        where: { id: BigInt(currentId) },
+        select: { parent_id: true },
+      });
+
+      if (!category?.parent_id) break;
+
+      const parentId = Number(category.parent_id);
+      await tx.category.update({
+        where: { id: BigInt(parentId) },
+        data: { product_count: { increment: delta } },
+      });
+
+      currentId = parentId;
     }
   }
 

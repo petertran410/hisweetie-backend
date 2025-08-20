@@ -194,4 +194,17 @@ export class CategoryController {
     }
     return this.categoryService.remove(categoryId);
   }
+
+  @Post('recalculate-hierarchy')
+  @ApiOperation({
+    summary: 'Recalculate category hierarchy',
+    description: 'Manual trigger to recalculate all hierarchy fields',
+  })
+  async recalculateHierarchy() {
+    await this.categoryService.recalculateHierarchy();
+    return {
+      success: true,
+      message: 'Category hierarchy recalculated successfully',
+    };
+  }
 }
