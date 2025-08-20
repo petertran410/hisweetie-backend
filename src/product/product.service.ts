@@ -885,6 +885,13 @@ export class ProductService {
         );
       }
 
+      if (
+        updateProductDto.categoryIds &&
+        updateProductDto.categoryIds.length > 0
+      ) {
+        updateProductDto.category_id = updateProductDto.categoryIds[0];
+      }
+
       let imagesUrlString: string | null | undefined = undefined;
       if (updateProductDto.images_url !== undefined) {
         if (updateProductDto.images_url === null) {
@@ -910,11 +917,12 @@ export class ProductService {
         kiotviet_price: updateProductDto.kiotviet_price
           ? new Prisma.Decimal(updateProductDto.kiotviet_price)
           : undefined,
-        category: updateProductDto.category_id
-          ? {
-              connect: { id: BigInt(updateProductDto.category_id) },
-            }
-          : undefined,
+        category:
+          updateProductDto.category_id !== undefined
+            ? updateProductDto.category_id
+              ? { connect: { id: BigInt(updateProductDto.category_id) } }
+              : { disconnect: true }
+            : undefined,
       };
 
       Object.keys(updateData).forEach((key) => {
