@@ -113,7 +113,6 @@ export class CategoryService {
         }
       }
 
-      // 🔍 GET PAGINATED CATEGORIES WITH PRODUCT COUNT
       const [categories, total] = await Promise.all([
         this.prisma.category.findMany({
           where,
@@ -122,7 +121,7 @@ export class CategoryService {
           orderBy: [{ priority: 'asc' }, { name: 'asc' }],
           include: {
             product: {
-              select: { id: true }, // Chỉ lấy ID để đếm
+              select: { id: true },
             },
           },
         }),
@@ -172,23 +171,15 @@ export class CategoryService {
         }),
       );
 
-      const result = {
+      return {
         success: true,
-        data: transformedCategories,
-        pagination: {
-          total,
-          pageSize,
-          pageNumber,
-          totalPages: Math.ceil(total / pageSize),
-        },
+        content: transformedCategories,
+        totalElements: total,
+        totalPages: Math.ceil(total / pageSize),
+        pageNumber,
+        pageSize,
         message: 'Categories fetched successfully',
       };
-
-      this.logger.log(
-        `✅ Successfully fetched ${transformedCategories.length}/${total} categories with computed fields`,
-      );
-
-      return result;
     } catch (error) {
       this.logger.error(
         `❌ Failed to get paginated categories:`,
