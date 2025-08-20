@@ -27,7 +27,6 @@ import {
 } from '@nestjs/swagger';
 import { GetAllProductsResponseDto } from './dto/product-list-response.dto';
 import { CategoryService } from 'src/category/category.service';
-import { UpdateProductCategoryDto } from 'src/category/dto/create-category.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
 
 @ApiTags('product')

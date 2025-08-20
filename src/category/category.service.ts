@@ -64,7 +64,6 @@ export class CategoryService {
             select: { id: true },
           },
         },
-        // ✅ SỬA: Array format
         orderBy: [{ priority: 'asc' }, { name: 'asc' }],
       });
 

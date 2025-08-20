@@ -34,7 +34,6 @@ export class CategoryController {
 
   constructor(private readonly categoryService: CategoryService) {}
 
-  // ✅ ĐẶT CÁC ROUTE CỐ ĐỊNH TRƯỚC ROUTE ĐỘNG
   @Get('tree')
   @ApiOperation({
     summary: 'Get all categories in tree structure',

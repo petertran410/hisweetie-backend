@@ -15,7 +15,6 @@ model kiotviet_trademark {
   modified_date DateTime? @db.DateTime(6)
   synced_at     DateTime  @default(now()) @db.DateTime(6)
   is_active     Boolean   @default(dbgenerated("b'1'")) @db.Bit(1)
-  products      product[]
 
   @@index([kiotviet_id])
   @@index([name])
@@ -35,7 +34,6 @@ model kiotviet_category {
   retailerId   Int?
   parent       kiotviet_category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
   children     kiotviet_category[] @relation("CategoryHierarchy")
-  products     product[]
 
   @@index([kiotVietId])
   @@index([parentId])
@@ -43,39 +41,39 @@ model kiotviet_category {
 }
 
 model product {
-  id                    BigInt              @id @default(autoincrement())
-  category_id           BigInt?
-  description           String?             @db.LongText
-  general_description   String?             @db.LongText
-  images_url            String?             @db.LongText
-  instruction           String?             @db.LongText
-  is_featured           Boolean?            @db.Bit(1)
-  is_visible            Boolean?            @default(dbgenerated("b'0'")) @db.Bit(1)
-  rate                  Float?
-  title                 String?             @db.VarChar(255)
-  featured_thumbnail    String?             @db.VarChar(255)
-  recipe_thumbnail      String?             @db.VarChar(255)
-  kiotviet_id           BigInt?             @unique
-  kiotviet_code         String?             @unique @db.VarChar(255)
-  kiotviet_name         String?             @db.VarChar(500)
-  kiotviet_images       Json?
-  kiotviet_price        Decimal?            @db.Decimal(15, 2)
-  kiotviet_type         Int?
-  kiotviet_category_id  Int?
-  kiotviet_category_name String?
-  kiotviet_trademark_id Int?
-  kiotviet_trademark_name String?
-  is_from_kiotviet      Boolean             @default(dbgenerated("b'0'")) @db.Bit(1)
-  kiotviet_synced_at    DateTime?           @db.DateTime(6)
-  kiotviet_description  String?
-  orders                orders[]
-  category              category?           @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  kiotviet_category     kiotviet_category?  @relation(fields: [kiotviet_category_id], references: [kiotVietId])
-  kiotviet_trademark    kiotviet_trademark? @relation(fields: [kiotviet_trademark_id], references: [kiotviet_id])
-  review                review[]
-
+  id                      BigInt              @id @default(autoincrement())
+  title                   String?             @db.VarChar(255)
+  description             String?             @db.LongText
+  general_description     String?             @db.LongText
+  images_url              String?             @db.LongText
+  instruction             String?             @db.LongText
+  is_featured             Boolean?            @db.Bit(1)
+  is_visible              Boolean?            @default(dbgenerated("b'0'")) @db.Bit(1)
+  rate                    Float?
+  featured_thumbnail      String?             @db.VarChar(255)
+  recipe_thumbnail        String?             @db.VarChar(255)
+  
+  category_id             BigInt?
+  category                category?           @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  
+  kiotviet_id             BigInt?             @unique
+  kiotviet_code           String?             @unique @db.VarChar(255)
+  kiotviet_name           String?             @db.VarChar(500)
+  kiotviet_images         Json?
+  kiotviet_price          Decimal?            @db.Decimal(15, 2)
+  kiotviet_type           Int?
+  kiotviet_category_id    Int?
+  kiotviet_category_name  String?
+  kiotviet_trademark_id   Int?
+  is_from_kiotviet        Boolean             @default(dbgenerated("b'0'")) @db.Bit(1)
+  kiotviet_synced_at      DateTime?           @db.DateTime(6)
+  kiotviet_description    String?
+  
+  orders                  orders[]
+  review                  review[]
+  
+  @@index([category_id, is_visible])
   @@index([is_visible])
-  @@index([category_id])
   @@index([kiotviet_id])
   @@index([kiotviet_code])
   @@index([kiotviet_category_id])
@@ -84,12 +82,28 @@ model product {
 }
 
 model category {
-  id           BigInt    @id @default(autoincrement())
-  name         String?   @db.VarChar(255)
-  description  String?   @db.LongText
-  parent_id    Int?
-  priority     Int?
-  product      product[]
+  id                   BigInt      @id @default(autoincrement())
+  name                 String?     @db.VarChar(255)
+  description          String?     @db.LongText
+  
+  parent_id            BigInt?
+  level                Int         @default(0)
+  path                 String?     @db.VarChar(100)
+  
+  priority             Int?
+  
+  product_count        Int         @default(0)
+  direct_product_count Int         @default(0)
+  child_count          Int         @default(0)
+  
+  parent               category?   @relation("CategoryHierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
+  children             category[]  @relation("CategoryHierarchy")
+  
+  product              product[]
+  
+  @@index([parent_id, priority])
+  @@index([path])
+  @@index([level])
 }
 
 model kiotviet_sync_log {
@@ -201,8 +215,8 @@ model orders {
   quantity         Int?
   product_id       BigInt?
   product_order_id BigInt?
-  product          product?       @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   product_order    product_order? @relation(fields: [product_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  product          product? @relation(fields: [product_id], references: [id])
 
   @@index([product_id])
   @@index([product_order_id])
@@ -239,8 +253,8 @@ model review {
   rate         Int?
   product_id   BigInt?
   user_id      String?   @db.VarChar(255)
-  product      product?  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  product      product? @relation(fields: [product_id], references: [id])
 
   @@index([user_id])
   @@index([product_id])

@@ -461,27 +461,14 @@ export class ProductService {
 
     for (const productData of products) {
       try {
-        const category = await this.prismaService.kiotviet_category.findFirst({
-          where: { kiotVietId: productData.categoryId },
-          select: { kiotVietId: true, name: true },
-        });
-
-        const tradeMark = await this.prismaService.kiotviet_trademark.findFirst(
-          {
-            where: { kiotviet_id: productData.tradeMarkId },
-            select: { kiotviet_id: true, name: true },
-          },
-        );
-
         const product = await this.prismaService.product.upsert({
           where: { kiotviet_id: BigInt(productData.id) },
           update: {
             kiotviet_code: productData.code.trim(),
             kiotviet_name: productData.name.trim(),
-            kiotviet_category_id: category?.kiotVietId,
-            kiotviet_category_name: category?.name,
-            kiotviet_trademark_id: tradeMark?.kiotviet_id,
-            kiotviet_trademark_name: tradeMark?.name,
+            kiotviet_category_id: productData.categoryId,
+            kiotviet_category_name: productData.categoryName,
+            kiotviet_trademark_id: productData.tradeMarkId,
             kiotviet_type: productData.type ?? 1,
             kiotviet_price: productData.basePrice
               ? new Prisma.Decimal(productData.basePrice)
@@ -494,8 +481,9 @@ export class ProductService {
             kiotviet_id: BigInt(productData.id),
             kiotviet_code: productData.code.trim(),
             kiotviet_name: productData.name.trim(),
-            kiotviet_category_id: category?.kiotVietId,
-            kiotviet_trademark_id: tradeMark?.kiotviet_id,
+            kiotviet_category_id: productData.categoryId,
+            kiotviet_category_name: productData.categoryName,
+            kiotviet_trademark_id: productData.tradeMarkId,
             kiotviet_type: productData.type ?? 1,
             kiotviet_price: productData.basePrice
               ? new Prisma.Decimal(productData.basePrice)
@@ -579,8 +567,6 @@ export class ProductService {
           orderBy: orderByClause,
           include: {
             category: { select: { id: true, name: true } },
-            kiotviet_category: { select: { kiotVietId: true, name: true } },
-            kiotviet_trademark: { select: { kiotviet_id: true, name: true } },
           },
         }),
         this.prisma.product.count({ where }),
@@ -635,12 +621,6 @@ export class ProductService {
           category: {
             select: { id: true, name: true, description: true },
           },
-          kiotviet_category: {
-            select: { kiotVietId: true, name: true, parentId: true },
-          },
-          kiotviet_trademark: {
-            select: { kiotviet_id: true, name: true },
-          },
           review: {
             select: {
               id: true,
@@ -669,7 +649,7 @@ export class ProductService {
   async getProductsByCategories(params: {
     pageSize: number;
     pageNumber: number;
-    categoryId?: number; // CHỈ sử dụng category_id từ schema category
+    categoryId?: number;
     orderBy?: string;
     isDesc?: boolean;
     title?: string;
@@ -952,8 +932,6 @@ export class ProductService {
         data: updateData,
         include: {
           category: true,
-          kiotviet_category: true,
-          kiotviet_trademark: true,
         },
       });
 
@@ -1049,10 +1027,6 @@ export class ProductService {
           is_from_kiotviet: true,
         },
         take: limit,
-        include: {
-          kiotviet_category: true,
-          kiotviet_trademark: true,
-        },
       });
 
       return products.map((product) => this.transformProduct(product));
@@ -1274,7 +1248,6 @@ export class ProductService {
             }
           : null,
 
-        // Thông tin KiotViet chỉ để reference, không dùng cho category
         kiotviet_data: {
           id: product.kiotviet_id ? Number(product.kiotviet_id) : null,
           code: product.kiotviet_code,
