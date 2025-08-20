@@ -94,41 +94,87 @@ export class CategoryService {
   }) {
     try {
       const { pageSize, pageNumber, parentId } = params;
-      const skip = pageNumber * pageSize;
 
-      const whereCondition: any = {};
-      if (parentId) {
-        whereCondition.parent_id = BigInt(parentId);
+      this.logger.log(
+        `🔍 Getting categories with pagination - Page: ${pageNumber}, Size: ${pageSize}`,
+      );
+
+      const skip = pageNumber * pageSize;
+      const take = pageSize;
+
+      // 📊 WHERE CONDITION
+      const where: Prisma.categoryWhereInput = {};
+
+      if (parentId && parentId !== '') {
+        if (parentId === 'null' || parentId === '0') {
+          where.parent_id = null;
+        } else {
+          where.parent_id = parseInt(parentId);
+        }
       }
 
+      // 🔍 GET PAGINATED CATEGORIES WITH PRODUCT COUNT
       const [categories, total] = await Promise.all([
         this.prisma.category.findMany({
-          where: whereCondition,
+          where,
+          skip,
+          take,
+          orderBy: [{ priority: 'asc' }, { name: 'asc' }],
           include: {
             product: {
-              select: { id: true },
+              select: { id: true }, // Chỉ lấy ID để đếm
             },
           },
-          // ✅ SỬA: Array format
-          orderBy: [{ priority: 'asc' }, { name: 'asc' }],
-          skip,
-          take: pageSize,
         }),
-        this.prisma.category.count({ where: whereCondition }),
+        this.prisma.category.count({ where }),
       ]);
 
-      const formattedCategories = categories.map((cat) => ({
-        id: Number(cat.id),
-        name: cat.name,
-        description: cat.description,
-        parent_id: cat.parent_id ? Number(cat.parent_id) : null,
-        priority: cat.priority || 0,
-        productCount: cat.product.length,
-      }));
+      const allCategories = await this.prisma.category.findMany({
+        orderBy: [{ priority: 'asc' }, { name: 'asc' }],
+        include: {
+          product: {
+            select: { id: true },
+          },
+        },
+      });
 
-      return {
+      const categoryMap = new Map(
+        allCategories.map((cat) => [Number(cat.id), cat]),
+      );
+
+      const transformedCategories = await Promise.all(
+        categories.map(async (category) => {
+          const categoryId = Number(category.id);
+
+          const level = this.calculateCategoryLevel(categoryId, categoryMap);
+
+          const displayName = this.generateDisplayName(category.name, level);
+
+          const productCount = category.product.length;
+
+          const hasChildren = await this.checkHasChildren(categoryId);
+
+          const hasProducts = productCount > 0;
+
+          return {
+            id: categoryId,
+            name: category.name,
+            description: category.description,
+            parent_id: category.parent_id,
+            priority: category.priority || 0,
+
+            productCount,
+            level,
+            displayName,
+            hasChildren,
+            hasProducts,
+          };
+        }),
+      );
+
+      const result = {
         success: true,
-        data: formattedCategories,
+        data: transformedCategories,
         pagination: {
           total,
           pageSize,
@@ -137,12 +183,53 @@ export class CategoryService {
         },
         message: 'Categories fetched successfully',
       };
+
+      this.logger.log(
+        `✅ Successfully fetched ${transformedCategories.length}/${total} categories with computed fields`,
+      );
+
+      return result;
     } catch (error) {
-      this.logger.error(`Error fetching categories: ${error.message}`);
+      this.logger.error(
+        `❌ Failed to get paginated categories:`,
+        error.message,
+      );
       throw new BadRequestException(
-        `Failed to fetch categories: ${error.message}`,
+        `Failed to get categories: ${error.message}`,
       );
     }
+  }
+
+  private calculateCategoryLevel(
+    categoryId: number,
+    categoryMap: Map<number, any>,
+  ): number {
+    let level = 0;
+    let currentCategory = categoryMap.get(categoryId);
+
+    while (currentCategory?.parent_id) {
+      level++;
+      currentCategory = categoryMap.get(currentCategory.parent_id);
+
+      if (level > 10) break;
+    }
+
+    return level;
+  }
+
+  private generateDisplayName(name: string | null, level: number): string {
+    const safeName = name || 'Unnamed Category';
+    const indent = '  '.repeat(level);
+    const prefix = level > 0 ? '└ ' : '';
+    return `${indent}${prefix}${safeName}`;
+  }
+
+  private async checkHasChildren(categoryId: number): Promise<boolean> {
+    const childCount = await this.prisma.category.count({
+      where: { parent_id: categoryId },
+    });
+
+    return childCount > 0;
   }
 
   async findOne(id: number) {
