@@ -1,6 +1,7 @@
 import { PartialType, ApiProperty } from '@nestjs/swagger';
 import { CreateProductDto } from './create-product.dto';
 import { IsOptional, IsNumber, IsArray, IsInt } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class UpdateProductDto extends PartialType(CreateProductDto) {
   @ApiProperty({
@@ -21,4 +22,19 @@ export class UpdateProductDto extends PartialType(CreateProductDto) {
   @IsArray()
   @IsInt({ each: true })
   categoryIds?: number[];
+
+  @ApiProperty({
+    description: 'Direct category ID',
+    example: 1,
+    required: false,
+  })
+  @IsOptional()
+  @IsInt()
+  @Transform(({ value }) => {
+    if (typeof value === 'object' && value?.value) {
+      return parseInt(value.value);
+    }
+    return value ? parseInt(value) : null;
+  })
+  category_id?: number;
 }

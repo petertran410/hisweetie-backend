@@ -880,7 +880,8 @@ export class ProductService {
         throw new NotFoundException(`Product with ID ${id} not found`);
       }
 
-      // Extract category from categoryIds array if provided
+      const extractedCategoryId = this.extractCategoryId(updateProductDto);
+
       if (
         updateProductDto.categoryIds &&
         updateProductDto.categoryIds.length > 0
@@ -920,9 +921,9 @@ export class ProductService {
           ? new Prisma.Decimal(updateProductDto.kiotviet_price)
           : undefined,
         category:
-          updateProductDto.category_id !== undefined
-            ? updateProductDto.category_id
-              ? { connect: { id: BigInt(updateProductDto.category_id) } }
+          extractedCategoryId !== undefined
+            ? extractedCategoryId
+              ? { connect: { id: BigInt(extractedCategoryId) } }
               : { disconnect: true }
             : undefined,
       };
@@ -933,16 +934,13 @@ export class ProductService {
         }
       });
 
-      // ✅ CRITICAL: Use transaction for data consistency
       const result = await this.prisma.$transaction(async (tx) => {
-        // Update product
         const product = await tx.product.update({
           where: { id: BigInt(id) },
           data: updateData,
           include: { category: true },
         });
 
-        // Update category counts if category changed
         if (oldCategoryId !== newCategoryId) {
           await this.updateCategoryCounts(tx, oldCategoryId, newCategoryId);
         }
@@ -964,6 +962,20 @@ export class ProductService {
         `Failed to update product: ${error.message}`,
       );
     }
+  }
+
+  private extractCategoryId(
+    dto: UpdateProductDto | CreateProductDto,
+  ): number | null | undefined {
+    if (dto.category_id !== undefined) {
+      return dto.category_id;
+    }
+
+    if (dto.categoryIds?.length) {
+      return dto.categoryIds[0];
+    }
+
+    return undefined;
   }
 
   private async updateCategoryCounts(
@@ -995,7 +1007,6 @@ export class ProductService {
         },
       });
 
-      // Update ancestor counts
       await this.updateAncestorCounts(tx, newCategoryId, 1);
     }
   }

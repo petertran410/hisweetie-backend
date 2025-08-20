@@ -1,9 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
-  IsString,
   IsOptional,
-  IsNumber,
+  IsInt,
+  IsArray,
   IsBoolean,
+  IsNumber,
+  IsString,
   Min,
 } from 'class-validator';
 
@@ -109,4 +112,21 @@ export class CreateProductDto {
   @IsOptional()
   @IsNumber()
   rate?: number;
+
+  @ApiProperty({
+    description: 'Category IDs array (legacy support)',
+    example: [1],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Transform(({ value }) => {
+    if (!value) return [];
+    if (!Array.isArray(value)) return [value];
+    return value.map((v) =>
+      typeof v === 'object' && v?.value ? parseInt(v.value) : parseInt(v),
+    );
+  })
+  categoryIds?: number[];
 }

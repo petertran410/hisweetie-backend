@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsOptional, IsString, IsNumber, IsInt, Min } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 export class CreateCategoryDto {
   @ApiProperty({
@@ -20,17 +20,6 @@ export class CreateCategoryDto {
   description?: string;
 
   @ApiProperty({
-    description: 'Parent category ID',
-    required: false,
-    example: 1,
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  parent_id?: number;
-
-  @ApiProperty({
     description: 'Priority/Order for sorting',
     required: false,
     example: 1,
@@ -40,6 +29,22 @@ export class CreateCategoryDto {
   @IsInt()
   @Min(0)
   priority?: number;
+
+  @ApiProperty({
+    description: 'Parent category ID',
+    required: false,
+    example: 1,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Transform(({ value }) => {
+    if (!value) return null;
+    if (typeof value === 'object' && value?.value) return parseInt(value.value);
+    return parseInt(value);
+  })
+  parent_id?: number;
 }
 
 export class UpdateCategoryDto extends CreateCategoryDto {}
