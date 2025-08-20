@@ -103,12 +103,12 @@ export class CategoryController {
   getAllCategories(
     @Query('pageSize') pageSize: string = '10',
     @Query('pageNumber') pageNumber: string = '0',
-    @Query('parentId') parentId?: string,
+    @Query('name') name?: string,
   ) {
     return this.categoryService.getAllCategories({
       pageSize: parseInt(pageSize),
       pageNumber: parseInt(pageNumber),
-      parentId,
+      name,
     });
   }
 

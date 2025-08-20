@@ -71,7 +71,6 @@ export class NewsService {
     }
   }
 
-  // FIXED: Handle images_url parsing properly
   async getArticleSections() {
     try {
       const articleTypes = [
@@ -122,7 +121,6 @@ export class NewsService {
     }
   }
 
-  // EXISTING METHODS - với fix images parsing
   private formatNewsForResponse = (news: any) => {
     let imagesUrl = [];
     try {

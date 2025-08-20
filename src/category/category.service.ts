@@ -87,141 +87,47 @@ export class CategoryService {
     }
   }
 
-  async getAllCategories(params: {
+  async getAllCategories(params?: {
     pageSize: number;
     pageNumber: number;
-    parentId?: string;
+    name?: string;
   }) {
-    try {
-      const { pageSize, pageNumber, parentId } = params;
+    const { pageSize = 10, pageNumber = 0, name } = params || {};
 
-      this.logger.log(
-        `🔍 Getting categories with pagination - Page: ${pageNumber}, Size: ${pageSize}`,
-      );
+    const where: any = {};
 
-      const skip = pageNumber * pageSize;
-      const take = pageSize;
-
-      // 📊 WHERE CONDITION
-      const where: Prisma.categoryWhereInput = {};
-
-      if (parentId && parentId !== '') {
-        if (parentId === 'null' || parentId === '0') {
-          where.parent_id = null;
-        } else {
-          where.parent_id = parseInt(parentId);
-        }
-      }
-
-      const [categories, total] = await Promise.all([
-        this.prisma.category.findMany({
-          where,
-          skip,
-          take,
-          orderBy: [{ priority: 'asc' }, { name: 'asc' }],
-          include: {
-            product: {
-              select: { id: true },
-            },
-          },
-        }),
-        this.prisma.category.count({ where }),
-      ]);
-
-      const allCategories = await this.prisma.category.findMany({
-        orderBy: [{ priority: 'asc' }, { name: 'asc' }],
-        include: {
-          product: {
-            select: { id: true },
-          },
-        },
-      });
-
-      const categoryMap = new Map(
-        allCategories.map((cat) => [Number(cat.id), cat]),
-      );
-
-      const transformedCategories = await Promise.all(
-        categories.map(async (category) => {
-          const categoryId = Number(category.id);
-
-          const level = this.calculateCategoryLevel(categoryId, categoryMap);
-
-          const displayName = this.generateDisplayName(category.name, level);
-
-          const productCount = category.product.length;
-
-          const hasChildren = await this.checkHasChildren(categoryId);
-
-          const hasProducts = productCount > 0;
-
-          return {
-            id: categoryId,
-            name: category.name,
-            description: category.description,
-            parent_id: category.parent_id,
-            priority: category.priority || 0,
-
-            productCount,
-            level,
-            displayName,
-            hasChildren,
-            hasProducts,
-          };
-        }),
-      );
-
-      return {
-        success: true,
-        content: transformedCategories,
-        totalElements: total,
-        totalPages: Math.ceil(total / pageSize),
-        pageNumber,
-        pageSize,
-        message: 'Categories fetched successfully',
-      };
-    } catch (error) {
-      this.logger.error(
-        `❌ Failed to get paginated categories:`,
-        error.message,
-      );
-      throw new BadRequestException(
-        `Failed to get categories: ${error.message}`,
-      );
-    }
-  }
-
-  private calculateCategoryLevel(
-    categoryId: number,
-    categoryMap: Map<number, any>,
-  ): number {
-    let level = 0;
-    let currentCategory = categoryMap.get(categoryId);
-
-    while (currentCategory?.parent_id) {
-      level++;
-      currentCategory = categoryMap.get(currentCategory.parent_id);
-
-      if (level > 10) break;
+    if (name) {
+      where.name = { contains: name };
     }
 
-    return level;
+    const [categories, totalElements] = await Promise.all([
+      this.prisma.category.findMany({
+        where,
+        skip: pageNumber * pageSize,
+        take: pageSize,
+        orderBy: [{ id: 'desc' }],
+      }),
+      this.prisma.category.count({ where }),
+    ]);
+
+    return {
+      content: categories.map(this.formatCategoriesForResponse),
+      totalElements,
+      totalPages: Math.ceil(totalElements / pageSize),
+      number: pageNumber,
+      size: pageSize,
+    };
   }
 
-  private generateDisplayName(name: string | null, level: number): string {
-    const safeName = name || 'Unnamed Category';
-    const indent = '  '.repeat(level);
-    const prefix = level > 0 ? '└ ' : '';
-    return `${indent}${prefix}${safeName}`;
-  }
-
-  private async checkHasChildren(categoryId: number): Promise<boolean> {
-    const childCount = await this.prisma.category.count({
-      where: { parent_id: categoryId },
-    });
-
-    return childCount > 0;
-  }
+  private formatCategoriesForResponse = (categories: any) => {
+    return {
+      id: categories.id.toString(),
+      name: categories.name,
+      description: categories.description,
+      parent_id: categories.parent_id,
+      priority: categories.priority,
+    };
+  };
 
   async findOne(id: number) {
     try {
