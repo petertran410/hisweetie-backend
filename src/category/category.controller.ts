@@ -12,6 +12,7 @@ import {
   UsePipes,
   ValidationPipe,
   BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { CategoryService } from './category.service';
 import {
@@ -52,6 +53,23 @@ export class CategoryController {
   })
   getCategoriesFlat() {
     return this.categoryService.getCategoriesFlat();
+  }
+
+  @Get('dropdown')
+  @ApiOperation({
+    summary: 'Get categories for dropdown components',
+    description: 'Returns array format directly for UI dropdowns',
+  })
+  async getCategoriesForDropdown() {
+    const result = await this.categoryService.getCategoriesForCMS();
+
+    return result.data.map((cat) => ({
+      id: cat.id,
+      name: cat.name,
+      displayName: cat.displayName || cat.name,
+      level: cat.level || 0,
+      parent_id: cat.parent_id,
+    }));
   }
 
   @Get('for-cms')

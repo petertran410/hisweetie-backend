@@ -265,7 +265,7 @@ export class CategoryService {
     }
   }
 
-  async updateProductCategory(productId: number, categoryId: number) {
+  async updateCategory(productId: number, categoryId: number) {
     try {
       const product = await this.prisma.product.findUnique({
         where: { id: BigInt(productId) },

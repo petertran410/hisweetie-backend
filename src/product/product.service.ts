@@ -554,7 +554,6 @@ export class ProductService {
         where.is_from_kiotviet = isFromKiotViet;
       }
 
-      // Default order by latest
       const orderByClause: Prisma.productOrderByWithRelationInput = {
         id: 'desc',
       };
@@ -684,12 +683,10 @@ export class ProductService {
         ];
       }
 
-      // Category filter - CHỈ sử dụng category_id
       if (categoryId) {
         where.category_id = BigInt(categoryId);
       }
 
-      // Order by
       const orderByClause: Prisma.productOrderByWithRelationInput = {};
       if (orderBy === 'title') {
         orderByClause.title = isDesc ? 'desc' : 'asc';
@@ -706,7 +703,6 @@ export class ProductService {
           take,
           orderBy: orderByClause,
           include: {
-            // CHỈ include category từ schema category
             category: {
               select: {
                 id: true,
@@ -1173,7 +1169,6 @@ export class ProductService {
         where.is_visible = visibilityFilter;
       }
 
-      // Title search - tìm trong cả title và kiotviet_name
       if (title) {
         where.OR = [
           { title: { contains: title } },
@@ -1181,7 +1176,6 @@ export class ProductService {
         ];
       }
 
-      // Category filter - CHỈ sử dụng category_id từ schema category
       if (categoryId) {
         where.category_id = BigInt(categoryId);
       }
@@ -1235,7 +1229,6 @@ export class ProductService {
         is_featured: product.is_featured,
         rate: product.rate,
 
-        // CHỈ sử dụng category từ schema category
         category_id: product.category_id ? Number(product.category_id) : null,
         category: product.category
           ? {
@@ -1357,6 +1350,70 @@ export class ProductService {
     } catch (error) {
       console.error('Error fetching products:', error);
       throw new Error('Failed to fetch products');
+    }
+  }
+
+  async updateProductCategory(
+    productId: number,
+    categoryId: number | null,
+  ): Promise<{
+    success: boolean;
+    data: {
+      productId: number;
+      categoryId: number | null;
+      categoryName: string | null;
+    };
+    message: string;
+  }> {
+    try {
+      const product = await this.prisma.product.findUnique({
+        where: { id: BigInt(productId) },
+      });
+
+      if (!product) {
+        throw new NotFoundException(`Product with ID ${productId} not found`);
+      }
+
+      if (categoryId) {
+        const category = await this.prisma.category.findUnique({
+          where: { id: BigInt(categoryId) },
+        });
+
+        if (!category) {
+          throw new NotFoundException(
+            `Category with ID ${categoryId} not found`,
+          );
+        }
+      }
+
+      const updated = await this.prisma.product.update({
+        where: { id: BigInt(productId) },
+        data: {
+          category_id: categoryId ? BigInt(categoryId) : null,
+        },
+        include: {
+          category: {
+            select: { id: true, name: true },
+          },
+        },
+      });
+
+      this.logger.log(
+        `Product ${productId} category updated to ${categoryId || 'none'}`,
+      );
+
+      return {
+        success: true,
+        data: {
+          productId: Number(updated.id),
+          categoryId: updated.category_id ? Number(updated.category_id) : null,
+          categoryName: updated.category?.name || null,
+        },
+        message: 'Product category updated successfully',
+      };
+    } catch (error) {
+      this.logger.error(`Failed to update product category: ${error.message}`);
+      throw error;
     }
   }
 }

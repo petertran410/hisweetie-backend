@@ -12,6 +12,7 @@ import {
   UsePipes,
   ValidationPipe,
   NotFoundException,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -28,6 +29,7 @@ import {
 import { GetAllProductsResponseDto } from './dto/product-list-response.dto';
 import { CategoryService } from 'src/category/category.service';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { UpdateProductCategoryDto } from 'src/category/dto/create-category.dto';
 
 @ApiTags('product')
 @Controller('product')
@@ -67,17 +69,21 @@ export class ProductController {
   @ApiOperation({
     summary: 'Update product category',
     description:
-      'Update the category assignment of a product (using custom category schema)',
+      'Assign a product to a custom category or remove category assignment',
   })
-  @ApiParam({ name: 'id', description: 'Product ID' })
+  @ApiParam({
+    name: 'id',
+    description: 'Product ID',
+    type: 'number',
+  })
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
         category_id: {
           type: 'number',
-          description: 'Custom category ID (from category schema)',
-          example: 5,
+          nullable: true,
+          description: 'Category ID (null to remove assignment)',
         },
       },
       required: ['category_id'],
@@ -87,44 +93,16 @@ export class ProductController {
     status: 200,
     description: 'Product category updated successfully',
   })
-  @ApiResponse({ status: 404, description: 'Product or category not found' })
+  @ApiResponse({
+    status: 404,
+    description: 'Product or category not found',
+  })
   @UsePipes(new ValidationPipe({ transform: true }))
   async updateProductCategory(
-    @Param('id') id: string,
-    @Body() body: { category_id: number },
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateDto: UpdateProductCategoryDto,
   ) {
-    const productId = +id;
-    const categoryId = body.category_id;
-
-    const product = await this.productService.findById(productId);
-    if (!product) {
-      throw new NotFoundException('Product not found');
-    }
-
-    const updatedProduct = await this.prismaService.product.update({
-      where: { id: BigInt(productId) },
-      data: { category_id: categoryId ? BigInt(categoryId) : null },
-      include: {
-        category: {
-          select: {
-            id: true,
-            name: true,
-            description: true,
-          },
-        },
-      },
-    });
-
-    return {
-      success: true,
-      data: {
-        productId: Number(updatedProduct.id),
-        categoryId: categoryId,
-        categoryName: updatedProduct.category?.name || null,
-        productName: updatedProduct.title || updatedProduct.kiotviet_name,
-      },
-      message: 'Product category updated successfully',
-    };
+    return this.productService.updateProductCategory(id, updateDto.category_id);
   }
 
   @Post('kiotviet/sync/trademarks')
