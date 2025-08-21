@@ -894,7 +894,6 @@ export class ProductService {
         : null;
       const newCategoryId = updateProductDto.category_id || null;
 
-      // Existing update logic (unchanged)
       let imagesUrlString: string | null | undefined = undefined;
       if (updateProductDto.images_url !== undefined) {
         if (updateProductDto.images_url === null) {
@@ -983,7 +982,6 @@ export class ProductService {
     oldCategoryId: number | null,
     newCategoryId: number | null,
   ): Promise<void> {
-    // Decrement old category counts
     if (oldCategoryId) {
       await tx.category.update({
         where: { id: BigInt(oldCategoryId) },
@@ -993,11 +991,9 @@ export class ProductService {
         },
       });
 
-      // Update ancestor counts
       await this.updateAncestorCounts(tx, oldCategoryId, -1);
     }
 
-    // Increment new category counts
     if (newCategoryId) {
       await tx.category.update({
         where: { id: BigInt(newCategoryId) },
