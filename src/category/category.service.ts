@@ -87,8 +87,8 @@ export class CategoryService {
   }
 
   async getAllCategories(params: {
-    pageNumber: number;
     pageSize: number;
+    pageNumber: number;
     name?: string;
   }) {
     const { pageNumber, pageSize, name } = params;
@@ -103,7 +103,10 @@ export class CategoryService {
     const [categories, totalCount] = await Promise.all([
       this.prisma.category.findMany({
         where: whereClause,
-        include: { product: { select: { id: true } } },
+        include: {
+          product: { select: { id: true } },
+          parent: { select: { id: true, name: true } },
+        },
         orderBy: [{ priority: 'asc' }, { name: 'asc' }],
         skip,
         take: pageSize,
@@ -116,6 +119,7 @@ export class CategoryService {
       name: cat.name,
       description: cat.description,
       parent_id: cat.parent_id ? Number(cat.parent_id) : null,
+      parent_name: cat.parent?.name || null,
       priority: cat.priority || 0,
       productCount: cat.product.length,
       level: 0,
@@ -273,24 +277,19 @@ export class CategoryService {
 
   async recalculateHierarchy(): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
-      // Update levels and paths
       await this.updateLevelsAndPaths(tx);
 
-      // Update child counts
       await this.updateChildCounts(tx);
 
-      // Update product counts
       await this.updateProductCounts(tx);
     });
   }
 
   private async updateLevelsAndPaths(tx: any): Promise<void> {
-    // Get all categories ordered by hierarchy
     const categories = await tx.category.findMany({
       orderBy: { id: 'asc' },
     });
 
-    // Process in order to ensure parents are processed before children
     for (const category of categories) {
       const level = await this.calculateLevel(Number(category.id), tx);
       const path = await this.calculatePath(Number(category.id), tx);
@@ -321,7 +320,6 @@ export class CategoryService {
     const ancestors: number[] = [];
     let currentId: number | null = categoryId;
 
-    // Build path from current to root
     while (currentId) {
       ancestors.unshift(currentId);
 
@@ -355,12 +353,10 @@ export class CategoryService {
     const categories = await tx.category.findMany();
 
     for (const category of categories) {
-      // Direct product count
       const directCount = await tx.product.count({
         where: { category_id: category.id },
       });
 
-      // Total product count (including descendants)
       const descendantIds = await this.getDescendantIds(
         Number(category.id),
         tx,
@@ -411,7 +407,8 @@ export class CategoryService {
       const category = await this.prisma.category.findUnique({
         where: { id: BigInt(id) },
         include: {
-          product: { select: { id: true } },
+          product: { select: { id: true, title: true, kiotviet_name: true } },
+          children: { select: { id: true, name: true } },
         },
       });
 
@@ -419,19 +416,24 @@ export class CategoryService {
         throw new NotFoundException('Category not found');
       }
 
-      if (category.product.length > 0) {
+      if (category.children.length > 0) {
         throw new BadRequestException(
-          `Cannot delete category. It has ${category.product.length} products assigned to it.`,
+          `Cannot delete category. It has ${category.children.length} child categories: ${category.children.map((c) => c.name).join(', ')}`,
         );
       }
 
-      const childCategories = await this.prisma.category.count({
-        where: { parent_id: id },
-      });
+      if (category.product.length > 0) {
+        const productNames = category.product
+          .map((p) => p.title || p.kiotviet_name)
+          .slice(0, 3);
+        const displayNames =
+          productNames.join(', ') +
+          (category.product.length > 3
+            ? `... và ${category.product.length - 3} sản phẩm khác`
+            : '');
 
-      if (childCategories > 0) {
         throw new BadRequestException(
-          `Cannot delete category. It has ${childCategories} child categories.`,
+          `Cannot delete category "${category.name}". It has ${category.product.length} products assigned: ${displayNames}. Please reassign these products to another category first.`,
         );
       }
 
@@ -445,6 +447,48 @@ export class CategoryService {
       };
     } catch (error) {
       this.logger.error(`Error deleting category ${id}: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async reassignProducts(fromCategoryId: number, toCategoryId: number | null) {
+    try {
+      const fromCategory = await this.prisma.category.findUnique({
+        where: { id: BigInt(fromCategoryId) },
+        select: { name: true },
+      });
+
+      if (!fromCategory) {
+        throw new NotFoundException('Source category not found');
+      }
+
+      if (toCategoryId) {
+        const toCategory = await this.prisma.category.findUnique({
+          where: { id: BigInt(toCategoryId) },
+          select: { name: true },
+        });
+
+        if (!toCategory) {
+          throw new NotFoundException('Destination category not found');
+        }
+      }
+
+      const result = await this.prisma.product.updateMany({
+        where: { category_id: BigInt(fromCategoryId) },
+        data: { category_id: toCategoryId ? BigInt(toCategoryId) : null },
+      });
+
+      return {
+        success: true,
+        data: {
+          reassignedCount: result.count,
+          fromCategory: fromCategory.name,
+          toCategory: toCategoryId ? 'specified category' : 'uncategorized',
+        },
+        message: `Successfully reassigned ${result.count} products`,
+      };
+    } catch (error) {
+      this.logger.error(`Error reassigning products: ${error.message}`);
       throw error;
     }
   }

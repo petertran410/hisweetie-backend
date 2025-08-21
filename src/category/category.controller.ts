@@ -207,4 +207,30 @@ export class CategoryController {
       message: 'Category hierarchy recalculated successfully',
     };
   }
+
+  // @Patch(':fromId/reassign/:toId?')
+  // @ApiOperation({
+  //   summary: 'Reassign products from one category to another',
+  //   description:
+  //     'Move all products from source category to destination category (or uncategorized)',
+  // })
+  // @ApiParam({ name: 'fromId', description: 'Source category ID' })
+  // @ApiParam({
+  //   name: 'toId',
+  //   description: 'Destination category ID (optional)',
+  //   required: false,
+  // })
+  // async reassignProducts(
+  //   @Param('fromId') fromId: string,
+  //   @Param('toId') toId?: string,
+  // ) {
+  //   const fromCategoryId = parseInt(fromId);
+  //   const toCategoryId: number | null = toId ? parseInt(toId) : null;
+
+  //   if (isNaN(fromCategoryId) || (toId && isNaN(toCategoryId!))) {
+  //     throw new BadRequestException('Invalid category ID');
+  //   }
+
+  //   return this.categoryService.reassignProducts(fromCategoryId, toCategoryId);
+  // }
 }
