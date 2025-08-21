@@ -208,29 +208,46 @@ export class CategoryController {
     };
   }
 
-  // @Patch(':fromId/reassign/:toId?')
-  // @ApiOperation({
-  //   summary: 'Reassign products from one category to another',
-  //   description:
-  //     'Move all products from source category to destination category (or uncategorized)',
-  // })
-  // @ApiParam({ name: 'fromId', description: 'Source category ID' })
-  // @ApiParam({
-  //   name: 'toId',
-  //   description: 'Destination category ID (optional)',
-  //   required: false,
-  // })
-  // async reassignProducts(
-  //   @Param('fromId') fromId: string,
-  //   @Param('toId') toId?: string,
-  // ) {
-  //   const fromCategoryId = parseInt(fromId);
-  //   const toCategoryId: number | null = toId ? parseInt(toId) : null;
+  @Post('reassign-products')
+  @ApiOperation({
+    summary: 'Reassign products from one category to another',
+    description:
+      'Move all products from source category to destination category (or uncategorized)',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        fromCategoryId: { type: 'number', description: 'Source category ID' },
+        toCategoryId: {
+          type: 'number',
+          nullable: true,
+          description: 'Destination category ID (null for uncategorized)',
+        },
+      },
+      required: ['fromCategoryId'],
+    },
+  })
+  async reassignProducts(
+    @Body() body: { fromCategoryId: number; toCategoryId?: number | null },
+  ) {
+    const { fromCategoryId, toCategoryId } = body;
 
-  //   if (isNaN(fromCategoryId) || (toId && isNaN(toCategoryId!))) {
-  //     throw new BadRequestException('Invalid category ID');
-  //   }
+    if (!fromCategoryId || isNaN(fromCategoryId)) {
+      throw new BadRequestException('Invalid fromCategoryId');
+    }
 
-  //   return this.categoryService.reassignProducts(fromCategoryId, toCategoryId);
-  // }
+    if (
+      toCategoryId !== null &&
+      toCategoryId !== undefined &&
+      isNaN(toCategoryId)
+    ) {
+      throw new BadRequestException('Invalid toCategoryId');
+    }
+
+    return this.categoryService.reassignProducts(
+      fromCategoryId,
+      toCategoryId || null,
+    );
+  }
 }
