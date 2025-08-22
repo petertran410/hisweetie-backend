@@ -1,4 +1,3 @@
-// src/category/category.controller.ts - SỬA ROUTE ORDER
 import {
   Controller,
   Get,

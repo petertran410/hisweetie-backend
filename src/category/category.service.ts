@@ -147,6 +147,9 @@ export class CategoryService {
           product: {
             select: { id: true, title: true, kiotviet_name: true },
           },
+          parent: {
+            select: { id: true, name: true },
+          },
         },
       });
 
@@ -160,6 +163,7 @@ export class CategoryService {
           ...category,
           id: Number(category.id),
           parent_id: category.parent_id ? Number(category.parent_id) : null,
+          parent_name: category.parent?.name,
           products: category.product.map((p) => ({
             id: Number(p.id),
             name: p.title || p.kiotviet_name,
@@ -183,7 +187,6 @@ export class CategoryService {
         throw new NotFoundException('Category not found');
       }
 
-      // Validation logic (existing code unchanged)
       if (updateCategoryDto.parent_id) {
         if (updateCategoryDto.parent_id === id) {
           throw new BadRequestException('Category cannot be its own parent');
@@ -197,7 +200,6 @@ export class CategoryService {
           throw new BadRequestException('Parent category not found');
         }
 
-        // Check for circular reference
         await this.validateNoCircularReference(id, updateCategoryDto.parent_id);
       }
 
@@ -206,7 +208,6 @@ export class CategoryService {
         : null;
       const newParentId = updateCategoryDto.parent_id || null;
 
-      // Update category
       const updatedCategory = await this.prisma.category.update({
         where: { id: BigInt(id) },
         data: {
@@ -219,7 +220,6 @@ export class CategoryService {
         },
       });
 
-      // ✅ CRITICAL: Recalculate hierarchy if parent changed
       if (oldParentId !== newParentId) {
         await this.recalculateHierarchy();
       }
