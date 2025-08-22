@@ -780,12 +780,24 @@ export class ProductService {
           },
         ]
       : [];
+
+    const categoryInfo = product.category
+      ? {
+          id: Number(product.category.id),
+          name: product.category.name,
+          path: product.category.path || null,
+          displayName: product.category.displayName || product.category.name,
+        }
+      : null;
     return {
       id: Number(product.id),
       title: productTitle,
       price: productPrice,
       quantity: product.quantity || 0,
       general_description: product.general_description,
+
+      categoryId: product.category_id ? Number(product.category_id) : null,
+      category: categoryInfo,
       ofCategories: ofCategories,
 
       description: product.description,
@@ -797,9 +809,6 @@ export class ProductService {
       imagesUrl: product.images_url ? JSON.parse(product.images_url) : [],
       featuredThumbnail: product.featured_thumbnail,
       recipeThumbnail: product.recipe_thumbnail,
-
-      categoryId: product.category_id ? product.category_id.toString() : null,
-      category: product.category,
 
       kiotViet: {
         id: product.kiotviet_id ? product.kiotviet_id.toString() : null,
