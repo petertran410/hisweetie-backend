@@ -486,44 +486,50 @@ export class ProductController {
 
   @Get('client/get-all')
   @ApiOperation({
-    summary: 'Get products for client (public view)',
-    description: 'Get visible products only for public viewing',
+    summary: 'Get all products for client with advanced filtering',
   })
-  @ApiQuery({ name: 'pageSize', required: false })
-  @ApiQuery({ name: 'pageNumber', required: false })
-  @ApiQuery({ name: 'title', required: false })
-  @ApiQuery({ name: 'categoryId', required: false })
-  @ApiQuery({ name: 'subCategoryId', required: false })
-  @ApiQuery({ name: 'orderBy', required: false })
-  @ApiQuery({ name: 'isDesc', required: false })
-  @ApiQuery({ name: 'is_visible', required: false })
-  @ApiQuery({ name: 'kiotviet_description', required: false })
-  getProductsForClient(
-    @Query('pageSize') pageSize: string = '12',
+  async searchForClient(
+    @Query('pageSize') pageSize: string = '15',
     @Query('pageNumber') pageNumber: string = '0',
     @Query('title') title?: string,
     @Query('categoryId') categoryId?: string,
-    @Query('subCategoryId') subCategoryId?: string,
+    @Query('categoryIds') categoryIds?: string,
+    @Query('is_visible') is_visible?: string,
     @Query('orderBy') orderBy?: string,
     @Query('isDesc') isDesc?: string,
-    @Query('is_visible') is_visible?: string,
-    @Query('kiotviet_description') kiotviet_description?: string,
   ) {
-    const params: any = {
-      pageSize: +pageSize,
-      pageNumber: +pageNumber,
-      is_visible: is_visible !== undefined ? is_visible === 'true' : true,
+    const filters: any = {
+      includeHidden: false,
     };
 
-    if (categoryId) params.categoryId = +categoryId;
-    if (subCategoryId) params.subCategoryId = +subCategoryId;
-    if (orderBy) params.orderBy = orderBy;
-    if (isDesc !== undefined) params.isDesc = isDesc === 'true';
-    if (title) params.title = title;
-    if (kiotviet_description)
-      params.kiotviet_description = kiotviet_description;
+    if (title) filters.title = title;
 
-    return this.productService.getProductsByCategories(params);
+    if (categoryIds) {
+      const categoryIdArray = categoryIds
+        .split(',')
+        .map((id) => parseInt(id.trim()))
+        .filter((id) => !isNaN(id));
+      if (categoryIdArray.length > 0) {
+        filters.categoryIds = categoryIdArray;
+      }
+    } else if (categoryId) {
+      filters.categoryId = +categoryId;
+    }
+
+    if (is_visible !== undefined) {
+      filters.visibilityFilter = is_visible === 'true';
+    }
+
+    if (orderBy) {
+      filters.orderBy = orderBy;
+      filters.isDesc = isDesc === 'true';
+    }
+
+    return this.productService.searchForCMS({
+      pageSize: +pageSize,
+      pageNumber: +pageNumber,
+      ...filters,
+    });
   }
 
   @Get('client/get-all-product-list')
