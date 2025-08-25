@@ -285,50 +285,43 @@ export class ProductController {
 
   @Get('by-categories')
   @ApiOperation({
-    summary: 'Get products by categories with hierarchy support',
-    description: 'Get products from specified categories and their children',
+    summary: 'Get products by custom categories',
+    description:
+      'Get products filtered by custom categories (from category schema, not KiotViet)',
   })
-  async getProductsByCategories(
-    @Query('pageSize') pageSize: string = '15',
+  @ApiQuery({
+    name: 'includeHidden',
+    required: false,
+    description: 'Include hidden products (for CMS only)',
+  })
+  @ApiQuery({
+    name: 'categoryId',
+    required: false,
+    description: 'Filter by custom category ID',
+  })
+  getProductsByCategories(
+    @Query('pageSize') pageSize: string = '12',
     @Query('pageNumber') pageNumber: string = '0',
     @Query('categoryId') categoryId?: string,
-    @Query('categoryIds') categoryIds?: string,
-    @Query('includeHidden') includeHidden?: string,
-    @Query('title') title?: string,
     @Query('orderBy') orderBy?: string,
     @Query('isDesc') isDesc?: string,
+    @Query('title') title?: string,
+    @Query('includeHidden') includeHidden?: string,
   ) {
-    const filters: any = {
-      includeHidden: includeHidden === 'true',
-    };
-
-    if (categoryIds) {
-      const categoryIdArray = categoryIds
-        .split(',')
-        .map((id) => parseInt(id.trim()))
-        .filter((id) => !isNaN(id));
-
-      if (categoryIdArray.length > 0) {
-        filters.categoryIds = categoryIdArray;
-      }
-    } else if (categoryId) {
-      filters.categoryId = +categoryId;
-    }
-
-    if (title) filters.title = title;
-
-    if (orderBy) {
-      filters.orderBy = orderBy;
-      filters.isDesc = isDesc === 'true';
-    }
-
-    console.log('🔍 getProductsByCategories filters:', filters);
-
-    return this.productService.searchForCMS({
+    const params: any = {
       pageSize: +pageSize,
       pageNumber: +pageNumber,
-      ...filters,
-    });
+    };
+
+    if (categoryId) params.categoryId = +categoryId;
+    if (orderBy) params.orderBy = orderBy;
+    if (isDesc !== undefined) params.isDesc = isDesc === 'true';
+    if (title) params.title = title;
+    if (includeHidden !== undefined) {
+      params.includeHidden = includeHidden === 'true';
+    }
+
+    return this.productService.getProductsByCategories(params);
   }
 
   @Get('cms/get-all')
