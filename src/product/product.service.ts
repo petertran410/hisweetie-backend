@@ -1239,11 +1239,9 @@ export class ProductService {
     pageSize: number;
     pageNumber: number;
     title?: string;
-    categoryId?: number[];
+    categoryId?: number;
     visibilityFilter?: boolean;
     includeHidden?: boolean;
-    orderBy?: string;
-    isDesc?: boolean;
   }) {
     try {
       const {
@@ -1253,8 +1251,6 @@ export class ProductService {
         categoryId,
         visibilityFilter,
         includeHidden = true,
-        orderBy,
-        isDesc,
       } = params;
 
       const skip = pageNumber * pageSize;
@@ -1275,23 +1271,13 @@ export class ProductService {
         ];
       }
 
-      if (categoryId && Array.isArray(categoryId)) {
-        where.category_id = { in: categoryId.map((id) => BigInt(id)) };
-      } else if (categoryId) {
+      if (categoryId) {
         where.category_id = BigInt(categoryId);
       }
 
-      let orderByClause: Prisma.productOrderByWithRelationInput = {
+      const orderByClause: Prisma.productOrderByWithRelationInput = {
         id: 'desc',
       };
-
-      if (orderBy) {
-        if (orderBy === 'kiotviet_name') {
-          orderByClause = { kiotviet_name: isDesc ? 'desc' : 'asc' };
-        } else if (orderBy === 'kiotviet_price') {
-          orderByClause = { kiotviet_price: isDesc ? 'desc' : 'asc' };
-        }
-      }
 
       const [products, total, visibleCount, hiddenCount] = await Promise.all([
         this.prisma.product.findMany({
