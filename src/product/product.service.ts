@@ -1271,8 +1271,8 @@ export class ProductService {
         ];
       }
 
-      if (categoryId) {
-        where.category_id = BigInt(categoryId);
+      if (categoryId && Array.isArray(categoryId)) {
+        where.category_id = { in: categoryId.map((id) => BigInt(id)) };
       }
 
       const orderByClause: Prisma.productOrderByWithRelationInput = {
