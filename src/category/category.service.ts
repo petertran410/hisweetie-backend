@@ -676,10 +676,9 @@ export class CategoryService {
         priority: cat.priority || 0,
         productCount: cat.product.length,
 
-        // ✅ Thêm các trường cần thiết cho CMS
-        level: 0, // Sẽ được tính toán ở frontend nếu cần
-        displayName: cat.name, // Tên hiển thị đơn giản
-        hasChildren: false, // Sẽ được tính toán
+        level: 0,
+        displayName: cat.name,
+        hasChildren: false,
         hasProducts: cat.product.length > 0,
       }));
 
@@ -703,7 +702,7 @@ export class CategoryService {
       );
       transformedCategories.forEach((cat) => {
         cat.level = calculateLevel(cat.id);
-        cat.displayName = '  '.repeat(cat.level) + cat.name;
+        cat.displayName = ''.repeat(cat.level) + cat.name;
         cat.hasChildren = transformedCategories.some(
           (child) => child.parent_id === cat.id,
         );
