@@ -525,22 +525,11 @@ export class ProductController {
       filters.isDesc = isDesc === 'true';
     }
 
-    const result = await this.productService.searchForCMS({
+    return this.productService.searchForCMS({
       pageSize: +pageSize,
       pageNumber: +pageNumber,
       ...filters,
     });
-
-    console.log('📦 Backend returning:', {
-      contentLength: result.content?.length,
-      totalElements: result.totalElements,
-      firstFewPrices: result.content?.slice(0, 3).map((p) => ({
-        title: p.title,
-        kiotviet_price: p.kiotviet_price,
-      })),
-    });
-
-    return result;
   }
 
   @Get('client/get-all-product-list')
