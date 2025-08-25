@@ -485,9 +485,6 @@ export class ProductController {
   }
 
   @Get('client/get-all')
-  @ApiOperation({
-    summary: 'Get all products for client with advanced filtering',
-  })
   async searchForClient(
     @Query('pageSize') pageSize: string = '15',
     @Query('pageNumber') pageNumber: string = '0',

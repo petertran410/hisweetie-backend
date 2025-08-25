@@ -1240,8 +1240,11 @@ export class ProductService {
     pageNumber: number;
     title?: string;
     categoryId?: number;
+    categoryIds?: number[]; // ✅ ADD: Support multiple categories
     visibilityFilter?: boolean;
     includeHidden?: boolean;
+    orderBy?: string; // ✅ ADD: Sorting support
+    isDesc?: boolean; // ✅ ADD: Sort direction
   }) {
     try {
       const {
@@ -1249,21 +1252,25 @@ export class ProductService {
         pageNumber,
         title,
         categoryId,
+        categoryIds,
         visibilityFilter,
         includeHidden = true,
+        orderBy = 'id',
+        isDesc = true,
       } = params;
 
       const skip = pageNumber * pageSize;
       const take = pageSize;
-
       const where: Prisma.productWhereInput = {};
 
+      // ✅ Visibility logic
       if (!includeHidden) {
         where.is_visible = true;
       } else if (visibilityFilter !== undefined) {
         where.is_visible = visibilityFilter;
       }
 
+      // ✅ Search logic
       if (title) {
         where.OR = [
           { title: { contains: title } },
@@ -1271,13 +1278,20 @@ export class ProductService {
         ];
       }
 
-      if (categoryId) {
+      // ✅ ENHANCED: Category filtering logic
+      if (categoryIds && categoryIds.length > 0) {
+        // Multiple categories - for hierarchy filtering
+        where.category_id = {
+          in: categoryIds.map((id) => BigInt(id)),
+        };
+      } else if (categoryId) {
+        // Single category - backward compatibility
         where.category_id = BigInt(categoryId);
       }
 
-      const orderByClause: Prisma.productOrderByWithRelationInput = {
-        id: 'desc',
-      };
+      // ✅ ENHANCED: Dynamic sorting
+      const orderByClause: Prisma.productOrderByWithRelationInput =
+        this.buildSortClause(orderBy, isDesc);
 
       const [products, total, visibleCount, hiddenCount] = await Promise.all([
         this.prisma.product.findMany({
@@ -1292,6 +1306,7 @@ export class ProductService {
                 name: true,
                 description: true,
                 parent_id: true,
+                path: true, // ✅ Include path for debugging
               },
             },
           },
@@ -1305,45 +1320,7 @@ export class ProductService {
         }),
       ]);
 
-      const transformedProducts = products.map((product) => ({
-        id: Number(product.id),
-        title: product.title,
-        kiotviet_name: product.kiotviet_name,
-        kiotviet_code: product.kiotviet_code,
-        kiotviet_price: product.kiotviet_price
-          ? Number(product.kiotviet_price)
-          : null,
-        kiotviet_images: product.kiotviet_images,
-        kiotviet_description: product.kiotviet_description,
-
-        description: product.description,
-        general_description: product.general_description,
-        instruction: product.instruction,
-
-        is_visible: product.is_visible,
-        is_featured: product.is_featured,
-        rate: product.rate,
-
-        category_id: product.category_id ? Number(product.category_id) : null,
-        category: product.category
-          ? {
-              id: Number(product.category.id),
-              name: product.category.name,
-              description: product.category.description,
-              parent_id: product.category.parent_id
-                ? Number(product.category.parent_id)
-                : null,
-            }
-          : null,
-
-        kiotviet_data: {
-          id: product.kiotviet_id ? Number(product.kiotviet_id) : null,
-          code: product.kiotviet_code,
-          name: product.kiotviet_name,
-          price: product.kiotviet_price ? Number(product.kiotviet_price) : null,
-          synced_at: product.kiotviet_synced_at,
-        },
-      }));
+      const transformedProducts = products.map(this.transformProductForCMS);
 
       return {
         success: true,
@@ -1352,6 +1329,13 @@ export class ProductService {
         totalPages: Math.ceil(total / pageSize),
         pageNumber,
         pageSize,
+        filters: {
+          categoryId,
+          categoryIds,
+          title,
+          includeHidden,
+          visibilityFilter,
+        },
         statistics: {
           total,
           visible: visibleCount,
@@ -1366,6 +1350,68 @@ export class ProductService {
         `Failed to search products for CMS: ${error.message}`,
       );
     }
+  }
+
+  // ✅ Sorting logic extraction
+  private buildSortClause(
+    orderBy: string = 'id',
+    isDesc: boolean = true,
+  ): Prisma.productOrderByWithRelationInput {
+    const direction = isDesc ? 'desc' : 'asc';
+
+    switch (orderBy) {
+      case 'title':
+        return { title: direction };
+      case 'kiotviet_price':
+        return { kiotviet_price: direction };
+      case 'id':
+      default:
+        return { id: direction };
+    }
+  }
+
+  // ✅ Product transformation extraction
+  private transformProductForCMS(product: any) {
+    return {
+      id: Number(product.id),
+      title: product.title,
+      kiotviet_name: product.kiotviet_name,
+      kiotviet_code: product.kiotviet_code,
+      kiotviet_price: product.kiotviet_price
+        ? Number(product.kiotviet_price)
+        : null,
+      kiotviet_images: product.kiotviet_images,
+      kiotviet_description: product.kiotviet_description,
+
+      description: product.description,
+      general_description: product.general_description,
+      instruction: product.instruction,
+
+      is_visible: product.is_visible,
+      is_featured: product.is_featured,
+      rate: product.rate,
+
+      category_id: product.category_id ? Number(product.category_id) : null,
+      category: product.category
+        ? {
+            id: Number(product.category.id),
+            name: product.category.name,
+            description: product.category.description,
+            parent_id: product.category.parent_id
+              ? Number(product.category.parent_id)
+              : null,
+            path: product.category.path,
+          }
+        : null,
+
+      kiotviet_data: {
+        id: product.kiotviet_id ? Number(product.kiotviet_id) : null,
+        code: product.kiotviet_code,
+        name: product.kiotviet_name,
+        price: product.kiotviet_price ? Number(product.kiotviet_price) : null,
+        synced_at: product.kiotviet_synced_at,
+      },
+    };
   }
 
   async getVisibilityStatistics() {
