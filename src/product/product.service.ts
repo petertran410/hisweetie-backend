@@ -1240,130 +1240,132 @@ export class ProductService {
     pageNumber: number;
     title?: string;
     categoryId?: number;
-    visibilityFilter?: boolean;
+    categoryIds?: number[];
     includeHidden?: boolean;
+    visibilityFilter?: boolean;
+    orderBy?: string;
+    isDesc?: boolean;
   }) {
+    const {
+      pageSize,
+      pageNumber,
+      title,
+      categoryId,
+      categoryIds,
+      includeHidden = false,
+      visibilityFilter,
+      orderBy = 'created_date',
+      isDesc = true,
+    } = params;
+
     try {
-      const {
-        pageSize,
-        pageNumber,
-        title,
-        categoryId,
-        visibilityFilter,
-        includeHidden = true,
-      } = params;
+      console.log('🔍 searchForCMS params:', params);
 
       const skip = pageNumber * pageSize;
-      const take = pageSize;
 
-      const where: Prisma.productWhereInput = {};
+      const whereClause: any = {};
 
-      if (!includeHidden) {
-        where.is_visible = true;
-      } else if (visibilityFilter !== undefined) {
-        where.is_visible = visibilityFilter;
+      if (visibilityFilter !== undefined) {
+        whereClause.is_visible = visibilityFilter;
+      } else if (!includeHidden) {
+        whereClause.is_visible = true;
       }
 
+      // Title search
       if (title) {
-        where.OR = [
-          { title: { contains: title } },
-          { kiotviet_name: { contains: title } },
+        whereClause.OR = [
+          { title: { contains: title, mode: 'insensitive' } },
+          { kiotviet_name: { contains: title, mode: 'insensitive' } },
         ];
       }
 
-      if (categoryId) {
-        where.category_id = BigInt(categoryId);
+      if (categoryIds && categoryIds.length > 0) {
+        whereClause.category_id = {
+          in: categoryIds.map((id) => BigInt(id)),
+        };
+      } else if (categoryId) {
+        whereClause.category_id = BigInt(categoryId);
       }
 
-      const orderByClause: Prisma.productOrderByWithRelationInput = {
-        id: 'desc',
-      };
+      console.log('📝 WHERE clause:', JSON.stringify(whereClause, null, 2));
 
-      const [products, total, visibleCount, hiddenCount] = await Promise.all([
+      let orderByClause: any = {};
+      switch (orderBy) {
+        case 'title':
+          orderByClause.title = isDesc ? 'desc' : 'asc';
+          break;
+        case 'price':
+          orderByClause.kiotviet_price = isDesc ? 'desc' : 'asc';
+          break;
+        case 'created_date':
+        default:
+          orderByClause.created_date = isDesc ? 'desc' : 'asc';
+          break;
+      }
+
+      const [products, total] = await Promise.all([
         this.prisma.product.findMany({
-          where,
-          skip,
-          take,
-          orderBy: orderByClause,
+          where: whereClause,
           include: {
             category: {
-              select: {
-                id: true,
-                name: true,
-                description: true,
-                parent_id: true,
-              },
+              select: { id: true, name: true, path: true, description: true },
             },
           },
+          orderBy: orderByClause,
+          skip,
+          take: pageSize,
         }),
-        this.prisma.product.count({ where }),
-        this.prisma.product.count({
-          where: { ...where, is_visible: true },
-        }),
-        this.prisma.product.count({
-          where: { ...where, is_visible: false },
-        }),
+        this.prisma.product.count({ where: whereClause }),
       ]);
+
+      console.log(`📊 Found ${products.length}/${total} products`);
 
       const transformedProducts = products.map((product) => ({
         id: Number(product.id),
-        title: product.title,
-        kiotviet_name: product.kiotviet_name,
-        kiotviet_code: product.kiotviet_code,
-        kiotviet_price: product.kiotviet_price
-          ? Number(product.kiotviet_price)
-          : null,
-        kiotviet_images: product.kiotviet_images,
-        kiotviet_description: product.kiotviet_description,
-
-        description: product.description,
+        title: product.title || product.kiotviet_name || 'Untitled Product',
+        price: product.kiotviet_price ? Number(product.kiotviet_price) : null,
         general_description: product.general_description,
+        description: product.description,
         instruction: product.instruction,
-
-        is_visible: product.is_visible,
-        is_featured: product.is_featured,
         rate: product.rate,
+        isFeatured: product.is_featured === true,
+        isVisible: product.is_visible === true,
+        imagesUrl: product.kiotviet_images
+          ? Array.isArray(product.kiotviet_images)
+            ? product.kiotviet_images
+            : []
+          : [],
 
-        category_id: product.category_id ? Number(product.category_id) : null,
-        category: product.category
-          ? {
-              id: Number(product.category.id),
-              name: product.category.name,
-              description: product.category.description,
-              parent_id: product.category.parent_id
-                ? Number(product.category.parent_id)
-                : null,
-            }
-          : null,
-
-        kiotviet_data: {
-          id: product.kiotviet_id ? Number(product.kiotviet_id) : null,
-          code: product.kiotviet_code,
-          name: product.kiotviet_name,
-          price: product.kiotviet_price ? Number(product.kiotviet_price) : null,
-          synced_at: product.kiotviet_synced_at,
-        },
+        categoryId: product.category_id ? Number(product.category_id) : null,
+        category: product.category,
+        ofCategories: product.category
+          ? [
+              {
+                id: Number(product.category.id),
+                name: product.category.name,
+                description: product.category.description || null,
+              },
+            ]
+          : [],
       }));
 
       return {
-        success: true,
         content: transformedProducts,
         totalElements: total,
         totalPages: Math.ceil(total / pageSize),
         pageNumber,
         pageSize,
-        statistics: {
-          total,
-          visible: visibleCount,
-          hidden: hiddenCount,
-          visibilityFilter,
+        filters: {
+          includeHidden,
+          categoryId,
+          categoryIds,
+          totalCount: total,
         },
-        message: 'Products fetched successfully for CMS',
       };
     } catch (error) {
-      this.logger.error('Failed to search products for CMS:', error.message);
+      this.logger.error('Failed to search products:', error.message);
       throw new BadRequestException(
-        `Failed to search products for CMS: ${error.message}`,
+        `Failed to search products: ${error.message}`,
       );
     }
   }
