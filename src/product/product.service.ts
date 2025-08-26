@@ -1551,4 +1551,56 @@ export class ProductService {
       throw error;
     }
   }
+
+  async findBySlug(slug: string): Promise<any> {
+    try {
+      const products = await this.prisma.product.findMany({
+        where: {
+          is_visible: true,
+          OR: [{ title: { not: null } }, { kiotviet_name: { not: null } }],
+        },
+        include: {
+          category: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              parent_id: true,
+            },
+          },
+        },
+      });
+
+      const exactMatch = products.find((product) => {
+        const productTitle = product.title || product.kiotviet_name;
+        return productTitle && this.convertToSlug(productTitle) === slug;
+      });
+
+      if (exactMatch) {
+        return this.transformProduct(exactMatch);
+      }
+
+      throw new NotFoundException(`Product not found: ${slug}`);
+    } catch (error) {
+      this.logger.error(`Failed to find product by slug: ${slug}`, error);
+      throw error;
+    }
+  }
+
+  private convertToSlug(title: string): string {
+    return title
+      .toLowerCase()
+      .trim()
+      .replace(/[áàảãạâấầẩẫậăắằẳẵặ]/g, 'a')
+      .replace(/[éèẻẽẹêếềểễệ]/g, 'e')
+      .replace(/[íìỉĩị]/g, 'i')
+      .replace(/[óòỏõọôốồổỗộơớờởỡợ]/g, 'o')
+      .replace(/[úùủũụưứừửữự]/g, 'u')
+      .replace(/[ýỳỷỹỵ]/g, 'y')
+      .replace(/đ/g, 'd')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+  }
 }
