@@ -1,3 +1,4 @@
+import { category } from './../../node_modules/.prisma/client/index.d';
 import {
   Injectable,
   NotFoundException,
@@ -12,6 +13,8 @@ import { ConfigService } from '@nestjs/config';
 import { KiotVietAuthService } from 'src/auth/kiotviet-auth/auth.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { async, firstValueFrom } from 'rxjs';
+import { create } from 'domain';
+import { title } from 'process';
 import { ProductListItemDto } from './dto/product-list-response.dto';
 
 interface KiotProduct {
@@ -50,6 +53,7 @@ interface KiotProduct {
   modifiedDate?: string;
   createdDate?: string;
 
+  // Detailed fields from enrichment
   attributes?: Array<{
     productId: number;
     attributeName: string;
