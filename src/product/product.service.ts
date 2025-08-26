@@ -29,7 +29,7 @@ interface KiotProduct {
   tradeMarkName?: string;
   type?: number;
   title?: string;
-  generate_description?: string;
+  general_description?: string;
   description?: string;
   instruction?: string;
   is_featured?: boolean;
@@ -795,21 +795,17 @@ export class ProductService {
       price: productPrice,
       quantity: product.quantity || 0,
       general_description: product.general_description,
-
       categoryId: product.category_id ? Number(product.category_id) : null,
       category: categoryInfo,
       ofCategories: ofCategories,
-
       description: product.description,
       instruction: product.instruction,
       rate: product.rate,
       isFeatured: product.is_featured === true,
       isVisible: product.is_visible === true,
-
       imagesUrl: product.images_url ? JSON.parse(product.images_url) : [],
       featuredThumbnail: product.featured_thumbnail,
       recipeThumbnail: product.recipe_thumbnail,
-
       kiotViet: {
         id: product.kiotviet_id ? product.kiotviet_id.toString() : null,
         code: product.kiotviet_code,
@@ -819,9 +815,7 @@ export class ProductService {
         images: product.kiotviet_images,
         kiotviet_description: product.kiotviet_description,
       },
-
       isFromKiotViet: product.is_from_kiotviet === true,
-
       reviews: product.review || [],
     };
   }
