@@ -547,13 +547,4 @@ export class ProductController {
   async getAllProductsForClient() {
     return this.productService.getAllProductsForClient();
   }
-
-  @Get('client/find-by-slug/:slug')
-  @ApiOperation({
-    summary: 'Find product by slug',
-    description: 'Find product by title slug without ID',
-  })
-  async findProductBySlug(@Param('slug') slug: string) {
-    return this.productService.findBySlug(slug);
-  }
 }
