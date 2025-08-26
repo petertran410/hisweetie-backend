@@ -13,7 +13,6 @@ import { KiotVietAuthService } from 'src/auth/kiotviet-auth/auth.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { async, firstValueFrom } from 'rxjs';
 import { ProductListItemDto } from './dto/product-list-response.dto';
-import { SlugUtils } from '../utils/slug.util';
 
 interface KiotProduct {
   id: number;
@@ -829,14 +828,8 @@ export class ProductService {
         }
       }
 
-      const slug = await SlugUtils.generateUniqueProductSlug(
-        this.prisma,
-        createProductDto.title || 'untitled',
-      );
-
       const productData: Prisma.productCreateInput = {
         title: createProductDto.title,
-        slug,
         description: createProductDto.description,
         general_description: createProductDto.general_description,
         instruction: createProductDto.instruction,
@@ -865,7 +858,7 @@ export class ProductService {
       });
 
       this.logger.log(
-        `Created custom product: ${product.title} (ID: ${product.id}, Slug: ${slug})`,
+        `Created custom product: ${product.title} (ID: ${product.id})`,
       );
       return this.transformProduct(product);
     } catch (error) {
@@ -880,12 +873,7 @@ export class ProductService {
     try {
       const existingProduct = await this.prisma.product.findUnique({
         where: { id: BigInt(id) },
-        select: {
-          id: true,
-          category_id: true,
-          is_from_kiotviet: true,
-          title: true,
-        },
+        select: { id: true, category_id: true, is_from_kiotviet: true },
       });
 
       if (!existingProduct) {
@@ -917,21 +905,8 @@ export class ProductService {
         }
       }
 
-      let newSlug: string | undefined = undefined;
-      if (
-        updateProductDto.title &&
-        updateProductDto.title !== existingProduct.title
-      ) {
-        newSlug = await SlugUtils.generateUniqueProductSlug(
-          this.prisma,
-          updateProductDto.title,
-          id,
-        );
-      }
-
       const updateData: Prisma.productUpdateInput = {
         title: updateProductDto.title,
-        slug: newSlug,
         description: updateProductDto.description,
         general_description: updateProductDto.general_description,
         instruction: updateProductDto.instruction,
@@ -973,7 +948,7 @@ export class ProductService {
       });
 
       this.logger.log(
-        `Updated product: ${result.title || result.kiotviet_name} (ID: ${result.id}${newSlug ? `, New Slug: ${newSlug}` : ''}) - Category: ${oldCategoryId} → ${newCategoryId}`,
+        `Updated product: ${result.title || result.kiotviet_name} (ID: ${result.id}) - Category: ${oldCategoryId} → ${newCategoryId}`,
       );
 
       return this.transformProduct(result);
@@ -986,47 +961,6 @@ export class ProductService {
         `Failed to update product: ${error.message}`,
       );
     }
-  }
-
-  async populateProductSlugs() {
-    const products = await this.prisma.product.findMany({
-      where: { slug: null },
-      select: { id: true, title: true, kiotviet_name: true },
-    });
-
-    let updated = 0;
-    for (const product of products) {
-      try {
-        const title =
-          product.title || product.kiotviet_name || `product-${product.id}`;
-        const slug = await SlugUtils.generateUniqueProductSlug(
-          this.prisma,
-          title,
-          Number(product.id),
-        );
-
-        await this.prisma.product.update({
-          where: { id: product.id },
-          data: { slug },
-        });
-
-        updated++;
-        this.logger.log(
-          `Generated slug for product ${product.id}: ${title} → ${slug}`,
-        );
-      } catch (error) {
-        this.logger.error(
-          `Failed to generate slug for product ${product.id}:`,
-          error.message,
-        );
-      }
-    }
-
-    return {
-      message: `Successfully generated slugs for ${updated}/${products.length} products`,
-      updated,
-      total: products.length,
-    };
   }
 
   private extractCategoryId(
@@ -1613,19 +1547,5 @@ export class ProductService {
       this.logger.error(`Failed to update product category: ${error.message}`);
       throw error;
     }
-  }
-
-  async findBySlug(slug: string) {
-    return this.prisma.product.findUnique({
-      where: { slug },
-      include: {
-        category: {
-          include: {
-            parent: true,
-            children: true,
-          },
-        },
-      },
-    });
   }
 }
