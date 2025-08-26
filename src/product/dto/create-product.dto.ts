@@ -8,6 +8,7 @@ import {
   IsNumber,
   IsString,
   Min,
+  MaxLength,
 } from 'class-validator';
 
 export class CreateProductDto {
@@ -129,4 +130,14 @@ export class CreateProductDto {
     );
   })
   categoryIds?: number[];
+
+  @ApiProperty({
+    description: 'Product slug for SEO-friendly URLs',
+    required: false,
+    example: 'gau-lermao-mut-quyt-1kg',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  slug?: string;
 }

@@ -1,6 +1,13 @@
 import { PartialType, ApiProperty } from '@nestjs/swagger';
 import { CreateProductDto } from './create-product.dto';
-import { IsOptional, IsNumber, IsArray, IsInt } from 'class-validator';
+import {
+  IsOptional,
+  IsNumber,
+  IsArray,
+  IsInt,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class UpdateProductDto extends PartialType(CreateProductDto) {
@@ -37,4 +44,14 @@ export class UpdateProductDto extends PartialType(CreateProductDto) {
     return value ? parseInt(value) : null;
   })
   category_id?: number;
+
+  @ApiProperty({
+    description: 'Product slug for SEO-friendly URLs',
+    required: false,
+    example: 'gau-lermao-mut-quyt-1kg',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  slug?: string;
 }

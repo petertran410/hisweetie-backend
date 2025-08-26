@@ -547,4 +547,50 @@ export class ProductController {
   async getAllProductsForClient() {
     return this.productService.getAllProductsForClient();
   }
+
+  @Get('client/find-by-slug/:slug')
+  @ApiOperation({
+    summary: 'Find product by slug for clean URLs',
+    description:
+      'Get product details using slug instead of ID for SEO-friendly URLs',
+  })
+  @ApiParam({
+    name: 'slug',
+    description: 'Product slug (e.g., gau-lermao-mut-quyt-1kg)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Product found successfully',
+  })
+  async findBySlug(@Param('slug') slug: string) {
+    const product = await this.productService.findBySlug(slug);
+
+    if (!product) {
+      throw new NotFoundException(`Product with slug "${slug}" not found`);
+    }
+
+    return product;
+  }
+
+  @Post('admin/populate-slugs')
+  @ApiOperation({
+    summary: 'Generate slugs for existing products',
+    description:
+      'One-time migration to populate slug field for existing products',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Slug population completed',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string' },
+        updated: { type: 'number' },
+        total: { type: 'number' },
+      },
+    },
+  })
+  async populateProductSlugs() {
+    return this.productService.populateProductSlugs();
+  }
 }

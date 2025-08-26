@@ -68,11 +68,13 @@ model product {
   is_from_kiotviet        Boolean             @default(dbgenerated("b'0'")) @db.Bit(1)
   kiotviet_synced_at      DateTime?           @db.DateTime(6)
   kiotviet_description    String?
+  slug                    String?             @unique @db.VarChar(255)
   
   orders                  orders[]
   review                  review[]
   
   @@index([category_id, is_visible])
+  @@index([slug])
   @@index([is_visible])
   @@index([kiotviet_id])
   @@index([kiotviet_code])
@@ -89,6 +91,7 @@ model category {
   parent_id            BigInt?
   level                Int         @default(0)
   path                 String?     @db.VarChar(100)
+  slug                    String?             @unique @db.VarChar(255)
   
   priority             Int?
   
@@ -104,6 +107,7 @@ model category {
   @@index([parent_id, priority])
   @@index([path])
   @@index([level])
+  @@index([slug])
 }
 
 model kiotviet_sync_log {
