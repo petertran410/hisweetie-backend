@@ -50,7 +50,6 @@ interface KiotProduct {
   modifiedDate?: string;
   createdDate?: string;
 
-  // Detailed fields from enrichment
   attributes?: Array<{
     productId: number;
     attributeName: string;
