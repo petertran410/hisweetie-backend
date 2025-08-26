@@ -41,6 +41,8 @@ export class CategoryService {
         },
       });
 
+      await this.recalculateHierarchy();
+
       return {
         success: true,
         data: {
@@ -573,19 +575,14 @@ export class CategoryService {
     }
   }
 
-  /**
-   * Xây dựng cấu trúc tree từ danh sách categories
-   */
   private buildCategoryTree(categories: any[]): CategoryTreeDto[] {
     const categoryMap = new Map();
     const roots: CategoryTreeDto[] = [];
 
-    // Tạo map để tra cứu nhanh
     categories.forEach((cat) => {
       categoryMap.set(cat.id, { ...cat, children: [] });
     });
 
-    // Xây dựng tree
     categories.forEach((cat) => {
       const categoryNode = categoryMap.get(cat.id);
 
@@ -594,7 +591,6 @@ export class CategoryService {
         if (parent) {
           parent.children.push(categoryNode);
         } else {
-          // Parent không tồn tại, coi như root
           roots.push(categoryNode);
         }
       } else {
@@ -608,7 +604,6 @@ export class CategoryService {
   async getCategoriesFlat() {
     try {
       const categories = await this.prisma.category.findMany({
-        // ✅ SỬA: Sử dụng array format cho orderBy
         orderBy: [{ priority: 'asc' }, { name: 'asc' }],
       });
 
@@ -621,7 +616,6 @@ export class CategoryService {
         level: 0,
       }));
 
-      // Calculate hierarchy level for display
       const calculateLevel = (
         categoryId: number,
         visited = new Set(),
@@ -656,18 +650,15 @@ export class CategoryService {
 
   async getCategoriesForCMS() {
     try {
-      // ✅ SỬA: Lấy tất cả categories với đầy đủ thông tin
       const categories = await this.prisma.category.findMany({
         include: {
           product: {
             select: { id: true },
           },
         },
-        // ✅ SỬA: Sử dụng array format cho orderBy
         orderBy: [{ priority: 'asc' }, { name: 'asc' }],
       });
 
-      // ✅ Transform data với đầy đủ thông tin
       const transformedCategories = categories.map((cat) => ({
         id: Number(cat.id),
         name: cat.name,
@@ -682,7 +673,6 @@ export class CategoryService {
         hasProducts: cat.product.length > 0,
       }));
 
-      // ✅ Tính toán hierarchy level cho display
       const calculateLevel = (
         categoryId: number,
         visited = new Set(),
@@ -696,7 +686,6 @@ export class CategoryService {
         return 1 + calculateLevel(category.parent_id, visited);
       };
 
-      // ✅ Tính toán hasChildren
       const categoryMap = new Map(
         transformedCategories.map((cat) => [cat.id, cat]),
       );
@@ -738,12 +727,10 @@ export class CategoryService {
     const categoryMap = new Map();
     const result: any[] = [];
 
-    // Create map for quick lookup
     categories.forEach((cat) => {
       categoryMap.set(cat.id, { ...cat, children: [] });
     });
 
-    // Build tree structure
     const roots: any[] = [];
     categories.forEach((cat) => {
       const categoryNode = categoryMap.get(cat.id);
@@ -760,7 +747,6 @@ export class CategoryService {
       }
     });
 
-    // Flatten tree in hierarchical order
     const flattenTree = (nodes: any[]) => {
       nodes.forEach((node) => {
         result.push(node);
