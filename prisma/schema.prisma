@@ -41,37 +41,34 @@ model kiotviet_category {
 }
 
 model product {
-  id                      BigInt              @id @default(autoincrement())
-  title                   String?             @db.VarChar(255)
-  description             String?             @db.LongText
-  general_description     String?             @db.LongText
-  images_url              String?             @db.LongText
-  instruction             String?             @db.LongText
-  is_featured             Boolean?            @db.Bit(1)
-  is_visible              Boolean?            @default(dbgenerated("b'0'")) @db.Bit(1)
-  rate                    Float?
-  featured_thumbnail      String?             @db.VarChar(255)
-  recipe_thumbnail        String?             @db.VarChar(255)
-  
-  category_id             BigInt?
-  category                category?           @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  
-  kiotviet_id             BigInt?             @unique
-  kiotviet_code           String?             @unique @db.VarChar(255)
-  kiotviet_name           String?             @db.VarChar(500)
-  kiotviet_images         Json?
-  kiotviet_price          Decimal?            @db.Decimal(15, 2)
-  kiotviet_type           Int?
-  kiotviet_category_id    Int?
-  kiotviet_category_name  String?
-  kiotviet_trademark_id   Int?
-  is_from_kiotviet        Boolean             @default(dbgenerated("b'0'")) @db.Bit(1)
-  kiotviet_synced_at      DateTime?           @db.DateTime(6)
-  kiotviet_description    String?
-  
-  orders                  orders[]
-  review                  review[]
-  
+  id                     BigInt    @id @default(autoincrement())
+  title                  String?   @db.VarChar(255)
+  description            String?   @db.LongText
+  general_description    String?   @db.LongText
+  instruction            String?   @db.LongText
+  images_url             String?   @db.LongText
+  category_id            BigInt?
+  is_featured            Boolean?  @db.Bit(1)
+  is_visible             Boolean?  @default(dbgenerated("b'0'")) @db.Bit(1)
+  rate                   Float?
+  featured_thumbnail     String?   @db.VarChar(255)
+  recipe_thumbnail       String?   @db.VarChar(255)
+  kiotviet_id            BigInt?   @unique
+  kiotviet_code          String?   @unique @db.VarChar(255)
+  kiotviet_name          String?   @db.VarChar(500)
+  kiotviet_images        Json?
+  kiotviet_price         Decimal?  @db.Decimal(15, 2)
+  kiotviet_type          Int?
+  kiotviet_category_id   Int?
+  kiotviet_category_name String?
+  kiotviet_trademark_id  Int?
+  is_from_kiotviet       Boolean   @default(dbgenerated("b'0'")) @db.Bit(1)
+  kiotviet_synced_at     DateTime? @db.DateTime(6)
+  kiotviet_description   String?
+  orders                 orders[]
+  category               category? @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  review                 review[]
+
   @@index([category_id, is_visible])
   @@index([is_visible])
   @@index([kiotviet_id])
@@ -82,28 +79,26 @@ model product {
 }
 
 model category {
-  id                   BigInt      @id @default(autoincrement())
-  name                 String?     @db.VarChar(255)
-  description          String?     @db.LongText
-  
+  id                   BigInt     @id @default(autoincrement())
+  name                 String?    @db.VarChar(255)
+  description          String?    @db.LongText
   parent_id            BigInt?
-  level                Int         @default(0)
-  path                 String?     @db.VarChar(100)
-  
+  level                Int        @default(0)
+  path                 String?    @db.VarChar(100)
+  product_count        Int        @default(0)
+  child_count          Int        @default(0)
   priority             Int?
-  
-  product_count        Int         @default(0)
-  direct_product_count Int         @default(0)
-  child_count          Int         @default(0)
-  
-  parent               category?   @relation("CategoryHierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
-  children             category[]  @relation("CategoryHierarchy")
-  
+  direct_product_count Int        @default(0)
+  slug                 String?    @db.VarChar(255)
+  full_path            String?    @db.Text
+  parent               category?  @relation("CategoryHierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
+  children             category[] @relation("CategoryHierarchy")
   product              product[]
-  
+
   @@index([parent_id, priority])
   @@index([path])
   @@index([level])
+  @@index([slug], map: "idx_category_slug")
 }
 
 model kiotviet_sync_log {
@@ -215,8 +210,8 @@ model orders {
   quantity         Int?
   product_id       BigInt?
   product_order_id BigInt?
+  product          product?       @relation(fields: [product_id], references: [id])
   product_order    product_order? @relation(fields: [product_order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  product          product? @relation(fields: [product_id], references: [id])
 
   @@index([product_id])
   @@index([product_order_id])
@@ -253,8 +248,8 @@ model review {
   rate         Int?
   product_id   BigInt?
   user_id      String?   @db.VarChar(255)
+  product      product?  @relation(fields: [product_id], references: [id])
   user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  product      product? @relation(fields: [product_id], references: [id])
 
   @@index([user_id])
   @@index([product_id])

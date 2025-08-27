@@ -759,4 +759,211 @@ export class CategoryService {
     flattenTree(roots);
     return result;
   }
+
+  private generateSlug(name: string): string {
+    return name
+      .toLowerCase()
+      .trim()
+      .replace(/[áàảãạâấầẩẫậăắằẳẵặ]/g, 'a')
+      .replace(/[éèẻẽẹêếềểễệ]/g, 'e')
+      .replace(/[íìỉĩị]/g, 'i')
+      .replace(/[óòỏõọôốồổỗộơớờởỡợ]/g, 'o')
+      .replace(/[úùủũụưứừửữự]/g, 'u')
+      .replace(/[ýỳỷỹỵ]/g, 'y')
+      .replace(/đ/g, 'd')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+  }
+
+  private async buildCategoryPath(categoryId: number): Promise<string> {
+    const pathParts: string[] = [];
+
+    const buildPath = async (id: number): Promise<void> => {
+      const category = await this.prisma.category.findUnique({
+        where: { id: BigInt(id) },
+        select: { id: true, name: true, slug: true, parent_id: true },
+      });
+
+      if (category) {
+        const slug = category.slug || this.generateSlug(category.name);
+        pathParts.unshift(slug);
+
+        if (category.parent_id) {
+          await buildPath(Number(category.parent_id));
+        }
+      }
+    };
+
+    await buildPath(categoryId);
+    return pathParts.join('/');
+  }
+
+  async updateCategorySlugAndPath(id: number) {
+    try {
+      const category = await this.prisma.category.findUnique({
+        where: { id: BigInt(id) },
+        select: { id: true, name: true, slug: true, parent_id: true },
+      });
+
+      if (!category) {
+        throw new NotFoundException(`Category with ID ${id} not found`);
+      }
+
+      const slug = category.slug || this.generateSlug(category.name);
+      const fullPath = await this.buildCategoryPath(id);
+
+      const updated = await this.prisma.category.update({
+        where: { id: BigInt(id) },
+        data: {
+          slug,
+          full_path: fullPath,
+        },
+      });
+
+      return {
+        success: true,
+        data: {
+          id: Number(updated.id),
+          slug: updated.slug,
+          fullPath: updated.full_path,
+        },
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to update category slug and path: ${error.message}`,
+      );
+      throw error;
+    }
+  }
+
+  async findCategoryByPath(path: string): Promise<any> {
+    try {
+      const category = await this.prisma.category.findFirst({
+        where: {
+          full_path: path,
+        },
+        include: {
+          parent: true,
+          children: true,
+        },
+      });
+
+      if (!category) {
+        throw new NotFoundException(`Category not found for path: ${path}`);
+      }
+
+      return {
+        success: true,
+        data: {
+          id: Number(category.id),
+          name: category.name,
+          slug: category.slug,
+          fullPath: category.full_path,
+          description: category.description,
+          parentId: category.parent_id ? Number(category.parent_id) : null,
+          parent: category.parent
+            ? {
+                id: Number(category.parent.id),
+                name: category.parent.name,
+                slug: category.parent.slug,
+              }
+            : null,
+          children: category.children.map((child) => ({
+            id: Number(child.id),
+            name: child.name,
+            slug: child.slug,
+            fullPath: child.full_path,
+          })),
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Failed to find category by path: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async getCategoryHierarchyForProduct(categoryId: number): Promise<string[]> {
+    const hierarchy: string[] = [];
+
+    const buildHierarchy = async (id: number): Promise<void> => {
+      const category = await this.prisma.category.findUnique({
+        where: { id: BigInt(id) },
+        select: { id: true, name: true, slug: true, parent_id: true },
+      });
+
+      if (category) {
+        const slug = category.slug || this.generateSlug(category.name);
+        hierarchy.unshift(slug);
+
+        if (category.parent_id) {
+          await buildHierarchy(Number(category.parent_id));
+        }
+      }
+    };
+
+    if (categoryId) {
+      await buildHierarchy(categoryId);
+    }
+
+    return hierarchy;
+  }
+
+  async rebuildAllCategoryPaths(): Promise<any> {
+    try {
+      const categories = await this.prisma.category.findMany({
+        select: { id: true, name: true },
+      });
+
+      const results = [];
+
+      for (const category of categories) {
+        try {
+          const result = await this.updateCategorySlugAndPath(
+            Number(category.id),
+          );
+          results.push(result);
+        } catch (error) {
+          results.push({
+            success: false,
+            id: Number(category.id),
+            error: error.message,
+          });
+        }
+      }
+
+      return {
+        success: true,
+        message: `Processed ${categories.length} categories`,
+        results,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to rebuild category paths: ${error.message}`);
+      throw new BadRequestException(
+        `Failed to rebuild category paths: ${error.message}`,
+      );
+    }
+  }
+
+  parseProductPath(pathSegments: string[]): {
+    categoryPath: string | null;
+    productSlug: string | null;
+    isProduct: boolean;
+  } {
+    if (pathSegments.length === 0) {
+      return { categoryPath: null, productSlug: null, isProduct: false };
+    }
+
+    // If last segment looks like a product (no hyphens at end, common product name patterns)
+    const lastSegment = pathSegments[pathSegments.length - 1];
+    const categorySegments = pathSegments.slice(0, -1);
+
+    return {
+      categoryPath:
+        categorySegments.length > 0 ? categorySegments.join('/') : null,
+      productSlug: lastSegment,
+      isProduct: pathSegments.length > 0,
+    };
+  }
 }
