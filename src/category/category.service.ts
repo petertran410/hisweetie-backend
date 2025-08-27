@@ -761,4 +761,73 @@ export class CategoryService {
     flattenTree(roots);
     return result;
   }
+
+  async resolveCategoryPathByNames(slugArray: string[]): Promise<any[]> {
+    try {
+      const allCategories = await this.prisma.category.findMany({
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          parent_id: true,
+          title_meta: true,
+        },
+      });
+
+      const categoryPath: any[] = [];
+      let currentParentId: bigint | null = null;
+
+      for (const slug of slugArray) {
+        // Tìm category có parent_id = currentParentId và name match slug
+        const availableCategories = allCategories.filter(
+          (cat) => cat.parent_id === currentParentId,
+        );
+
+        const targetCategory = availableCategories.find(
+          (cat) => this.convertNameToSlug(cat.name) === slug,
+        );
+
+        if (!targetCategory) {
+          throw new NotFoundException(`Category not found for slug: ${slug}`);
+        }
+
+        categoryPath.push({
+          id: Number(targetCategory.id),
+          name: targetCategory.name,
+          slug: this.convertNameToSlug(targetCategory.name),
+          description: targetCategory.description,
+          parent_id: targetCategory.parent_id
+            ? Number(targetCategory.parent_id)
+            : null,
+          title_meta: targetCategory.title_meta,
+        });
+
+        currentParentId = targetCategory.id;
+      }
+
+      return categoryPath;
+    } catch (error) {
+      this.logger.error('Failed to resolve category path by names:', error);
+      throw error;
+    }
+  }
+
+  private convertNameToSlug(name: string): string {
+    if (!name) return '';
+
+    return name
+      .toLowerCase()
+      .trim()
+      .replace(/[áàảãạâấầẩẫậăắằẳẵặ]/g, 'a')
+      .replace(/[éèẻẽẹêếềểễệ]/g, 'e')
+      .replace(/[íìỉĩị]/g, 'i')
+      .replace(/[óòỏõọôốồổỗộơớờởỡợ]/g, 'o')
+      .replace(/[úùủũụưứừửữự]/g, 'u')
+      .replace(/[ýỳỷỹỵ]/g, 'y')
+      .replace(/đ/g, 'd')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+  }
 }

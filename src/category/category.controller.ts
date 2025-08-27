@@ -249,4 +249,13 @@ export class CategoryController {
       toCategoryId || null,
     );
   }
+
+  @Post('resolve-by-slugs')
+  @ApiOperation({
+    summary: 'Resolve category path by slug array',
+    description: 'Find category hierarchy from slug path',
+  })
+  async resolveCategoryPathByNames(@Body() body: { slugs: string[] }) {
+    return this.categoryService.resolveCategoryPathByNames(body.slugs);
+  }
 }
