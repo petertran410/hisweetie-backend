@@ -10,6 +10,11 @@ import {
   CreateCategoryDto,
   UpdateCategoryDto,
 } from './dto/create-category.dto';
+import {
+  CategoryPathResponse,
+  CategoryPathItem,
+  ResolvedCategory,
+} from './interfaces/category-path.interface';
 
 @Injectable()
 export class CategoryService {
@@ -30,19 +35,21 @@ export class CategoryService {
       }
 
       let slug = createCategoryDto.slug;
-      if (!slug) {
+      if (!slug && createCategoryDto.name) {
         slug = this.generateSlug(createCategoryDto.name);
       }
 
-      slug = await this.ensureUniqueSlug(
-        slug,
-        createCategoryDto.parent_id || null,
-      );
+      if (slug) {
+        slug = await this.ensureUniqueSlug(
+          slug,
+          createCategoryDto.parent_id || null,
+        );
+      }
 
       const category = await this.prisma.category.create({
         data: {
           name: createCategoryDto.name,
-          slug: slug,
+          slug: slug || null,
           description: createCategoryDto.description,
           title_meta: createCategoryDto.title_meta,
           parent_id: createCategoryDto.parent_id
@@ -196,10 +203,13 @@ export class CategoryService {
         slug = this.generateSlug(updateCategoryDto.name);
       }
 
-      if (slug) {
+      if (slug && slug !== existingCategory.slug) {
         slug = await this.ensureUniqueSlug(
           slug,
-          updateCategoryDto.parent_id || null,
+          updateCategoryDto.parent_id ||
+            (existingCategory.parent_id
+              ? Number(existingCategory.parent_id)
+              : null),
           id,
         );
       }
@@ -237,10 +247,12 @@ export class CategoryService {
     }
   }
 
-  async resolveCategoryPathBySlugs(slugs: string[]) {
+  async resolveCategoryPathBySlugs(
+    slugs: string[],
+  ): Promise<CategoryPathResponse> {
     try {
-      const categoryPath = [];
-      let currentParentId = null;
+      const categoryPath: CategoryPathItem[] = [];
+      let currentParentId: bigint | null = null;
 
       for (const slug of slugs) {
         const category = await this.prisma.category.findFirst({
@@ -261,14 +273,14 @@ export class CategoryService {
 
         categoryPath.push({
           id: Number(category.id),
-          name: category.name,
-          slug: category.slug,
+          name: category.name || '',
+          slug: category.slug || '',
           description: category.description,
           parent_id: category.parent_id ? Number(category.parent_id) : null,
           children: category.children.map((child) => ({
             id: Number(child.id),
-            name: child.name,
-            slug: child.slug,
+            name: child.name || '',
+            slug: child.slug || '',
           })),
         });
 
@@ -286,10 +298,12 @@ export class CategoryService {
     }
   }
 
-  async getCategoryBySlugPath(slugPath: string[]) {
+  async getCategoryBySlugPath(
+    slugPath: string[],
+  ): Promise<ResolvedCategory[] | null> {
     try {
-      let currentParentId = null;
-      const resolvedCategories = [];
+      let currentParentId: bigint | null = null;
+      const resolvedCategories: ResolvedCategory[] = [];
 
       for (const slug of slugPath) {
         const category = await this.prisma.category.findFirst({
@@ -305,8 +319,8 @@ export class CategoryService {
 
         resolvedCategories.push({
           id: Number(category.id),
-          name: category.name,
-          slug: category.slug,
+          name: category.name || '',
+          slug: category.slug || '',
         });
 
         currentParentId = category.id;
@@ -316,6 +330,32 @@ export class CategoryService {
     } catch (error) {
       this.logger.error('Error getting category by slug path:', error);
       return null;
+    }
+  }
+
+  async getCategorySlugPathById(categoryId: number): Promise<string[]> {
+    try {
+      const slugPath: string[] = [];
+      let currentId: number | null = categoryId;
+
+      while (currentId) {
+        const category = await this.prisma.category.findUnique({
+          where: { id: BigInt(currentId) },
+          select: { slug: true, parent_id: true },
+        });
+
+        if (!category || !category.slug) {
+          break;
+        }
+
+        slugPath.unshift(category.slug);
+        currentId = category.parent_id ? Number(category.parent_id) : null;
+      }
+
+      return slugPath;
+    } catch (error) {
+      this.logger.error('Error getting slug path by ID:', error);
+      return [];
     }
   }
 
@@ -712,7 +752,9 @@ export class CategoryService {
     }
   }
 
-  private generateSlug(name: string): string {
+  private generateSlug(name: string | null): string {
+    if (!name || name.trim() === '') return '';
+
     return name
       .toLowerCase()
       .trim()
@@ -752,6 +794,10 @@ export class CategoryService {
 
       counter++;
       uniqueSlug = `${slug}-${counter}`;
+
+      if (counter > 100) {
+        throw new BadRequestException('Unable to generate unique slug');
+      }
     }
 
     return uniqueSlug;
