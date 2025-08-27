@@ -90,8 +90,6 @@ model category {
   child_count          Int        @default(0)
   priority             Int?
   direct_product_count Int        @default(0)
-  slug                 String?    @db.VarChar(255)
-  full_path            String?    @db.Text
   parent               category?  @relation("CategoryHierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
   children             category[] @relation("CategoryHierarchy")
   product              product[]
@@ -99,7 +97,6 @@ model category {
   @@index([parent_id, priority])
   @@index([path])
   @@index([level])
-  @@index([slug], map: "idx_category_slug")
 }
 
 model kiotviet_sync_log {
