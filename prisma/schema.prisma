@@ -81,6 +81,7 @@ model product {
 model category {
   id                   BigInt     @id @default(autoincrement())
   name                 String?    @db.VarChar(255)
+  slug                 String?    @db.VarChar(255)
   description          String?    @db.LongText
   parent_id            BigInt?
   level                Int        @default(0)
@@ -97,6 +98,8 @@ model category {
   @@index([parent_id, priority])
   @@index([path])
   @@index([level])
+  @@index([slug])
+  @@unique([slug, parent_id])
 }
 
 model kiotviet_sync_log {

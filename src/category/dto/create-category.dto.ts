@@ -1,5 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString, IsNumber, IsInt, Min } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsNumber,
+  IsInt,
+  Min,
+  Matches,
+} from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
 export class CreateCategoryDto {
@@ -9,6 +16,18 @@ export class CreateCategoryDto {
   })
   @IsString()
   name: string;
+
+  @ApiProperty({
+    description: 'Category slug (auto-generated if not provided)',
+    required: false,
+    example: 'nguyen-lieu-pha-che-dac-tra',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-z0-9-]+$/, {
+    message: 'Slug must contain only lowercase letters, numbers, and hyphens',
+  })
+  slug?: string;
 
   @ApiProperty({
     description: 'Category description',
@@ -56,32 +75,6 @@ export class CreateCategoryDto {
 }
 
 export class UpdateCategoryDto extends CreateCategoryDto {}
-
-export class CategoryTreeDto {
-  @ApiProperty()
-  id: number;
-
-  @ApiProperty()
-  name: string;
-
-  @ApiProperty({ required: false })
-  description?: string;
-
-  @ApiProperty({ required: false })
-  title_meta?: string;
-
-  @ApiProperty({ required: false })
-  parent_id?: number;
-
-  @ApiProperty({ required: false })
-  priority?: number;
-
-  @ApiProperty({ type: [CategoryTreeDto], required: false })
-  children?: CategoryTreeDto[];
-
-  @ApiProperty({ required: false })
-  productCount?: number;
-}
 
 export class UpdateProductCategoryDto {
   @ApiProperty({

@@ -34,26 +34,6 @@ export class CategoryController {
 
   constructor(private readonly categoryService: CategoryService) {}
 
-  @Get('tree')
-  @ApiOperation({
-    summary: 'Get all categories in tree structure',
-    description:
-      'Retrieve all categories organized in hierarchical tree structure',
-  })
-  getAllCategoriesTree() {
-    return this.categoryService.getAllCategoriesTree();
-  }
-
-  @Get('flat')
-  @ApiOperation({
-    summary: 'Get all categories in flat list',
-    description:
-      'Retrieve all categories as flat list with hierarchy levels (for dropdowns)',
-  })
-  getCategoriesFlat() {
-    return this.categoryService.getCategoriesFlat();
-  }
-
   @Get('dropdown')
   @ApiOperation({
     summary: 'Get categories for dropdown components',
@@ -255,7 +235,18 @@ export class CategoryController {
     summary: 'Resolve category path by slug array',
     description: 'Find category hierarchy from slug path',
   })
-  async resolveCategoryPathByNames(@Body() body: { slugs: string[] }) {
-    return this.categoryService.resolveCategoryPathByNames(body.slugs);
+  async resolveCategoryPathBySlugs(@Body() body: { slugs: string[] }) {
+    return this.categoryService.resolveCategoryPathBySlugs(body.slugs);
+  }
+
+  @Get('by-slug-path/:slugPath')
+  @ApiOperation({
+    summary: 'Get category by slug path',
+    description:
+      'Find category by hierarchical slug path (e.g., parent-slug/child-slug)',
+  })
+  async getCategoryBySlugPath(@Param('slugPath') slugPath: string) {
+    const slugs = slugPath.split('/').filter(Boolean);
+    return this.categoryService.getCategoryBySlugPath(slugs);
   }
 }
