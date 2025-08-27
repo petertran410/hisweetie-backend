@@ -772,20 +772,25 @@ export class CategoryService {
           parent_id: true,
           title_meta: true,
         },
+        where: {
+          name: { not: null }, // Chỉ lấy categories có name
+        },
       });
 
       const categoryPath: any[] = [];
       let currentParentId: bigint | null = null;
 
       for (const slug of slugArray) {
-        // Tìm category có parent_id = currentParentId và name match slug
+        // Filter available categories với parent_id match
         const availableCategories = allCategories.filter(
-          (cat) => cat.parent_id === currentParentId,
+          (cat) => cat.parent_id === currentParentId && cat.name !== null,
         );
 
-        const targetCategory = availableCategories.find(
-          (cat) => this.convertNameToSlug(cat.name) === slug,
-        );
+        // Tìm category match slug
+        const targetCategory = availableCategories.find((cat) => {
+          const categorySlug = this.convertNameToSlug(cat.name);
+          return categorySlug === slug;
+        });
 
         if (!targetCategory) {
           throw new NotFoundException(`Category not found for slug: ${slug}`);
@@ -793,7 +798,7 @@ export class CategoryService {
 
         categoryPath.push({
           id: Number(targetCategory.id),
-          name: targetCategory.name,
+          name: targetCategory.name!, // Assert non-null vì đã filter
           slug: this.convertNameToSlug(targetCategory.name),
           description: targetCategory.description,
           parent_id: targetCategory.parent_id
@@ -812,8 +817,8 @@ export class CategoryService {
     }
   }
 
-  private convertNameToSlug(name: string): string {
-    if (!name) return '';
+  private convertNameToSlug(name: string | null): string {
+    if (!name || name.trim() === '') return '';
 
     return name
       .toLowerCase()

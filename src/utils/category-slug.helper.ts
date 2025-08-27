@@ -1,5 +1,7 @@
 export class CategorySlugHelper {
-  static convertToSlug(name: string): string {
+  static convertToSlug(name: string | null): string {
+    if (!name || name.trim() === '') return '';
+
     return name
       .toLowerCase()
       .trim()
@@ -17,8 +19,9 @@ export class CategorySlugHelper {
   }
 
   static findCategoryBySlug(categories: any[], targetSlug: string): any | null {
-    return categories.find(
-      (cat) => this.convertToSlug(cat.name) === targetSlug,
-    );
+    return categories.find((cat) => {
+      if (!cat.name) return false;
+      return this.convertToSlug(cat.name) === targetSlug;
+    });
   }
 }
