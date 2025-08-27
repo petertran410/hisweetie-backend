@@ -26,10 +26,6 @@ import {
   ApiQuery,
   ApiBody,
 } from '@nestjs/swagger';
-import {
-  CategoryPathResponse,
-  ResolvedCategory,
-} from './interfaces/category-path.interface';
 
 @ApiTags('category')
 @Controller('category')
@@ -232,46 +228,5 @@ export class CategoryController {
       fromCategoryId,
       toCategoryId || null,
     );
-  }
-
-  @Post('resolve-by-slugs')
-  @ApiOperation({
-    summary: 'Resolve category path by slug array',
-    description: 'Find category hierarchy from slug path',
-  })
-  async resolveCategoryPathBySlugs(
-    @Body() body: { slugs: string[] },
-  ): Promise<CategoryPathResponse> {
-    return this.categoryService.resolveCategoryPathBySlugs(body.slugs);
-  }
-
-  @Get('by-slug-path/:slugPath')
-  @ApiOperation({
-    summary: 'Get category by slug path',
-    description: 'Find category by hierarchical slug path',
-  })
-  async getCategoryBySlugPath(
-    @Param('slugPath') slugPath: string,
-  ): Promise<ResolvedCategory[] | null> {
-    const slugs = slugPath.split('/').filter(Boolean);
-    return this.categoryService.getCategoryBySlugPath(slugs);
-  }
-
-  @Get('slug-path/:id')
-  @ApiOperation({
-    summary: 'Get slug path by category ID',
-    description: 'Get hierarchical slug path for URL generation',
-  })
-  async getSlugPathById(
-    @Param('id') id: string,
-  ): Promise<{ slugPath: string[] }> {
-    const categoryId = parseInt(id);
-    if (isNaN(categoryId)) {
-      throw new BadRequestException('Invalid category ID');
-    }
-
-    const slugPath =
-      await this.categoryService.getCategorySlugPathById(categoryId);
-    return { slugPath };
   }
 }

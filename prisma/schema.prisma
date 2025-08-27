@@ -43,6 +43,7 @@ model kiotviet_category {
 model product {
   id                     BigInt    @id @default(autoincrement())
   title                  String?   @db.VarChar(255)
+  slug                   String?   @unique @db.VarChar(255)
   description            String?   @db.LongText
   general_description    String?   @db.LongText
   instruction            String?   @db.LongText
@@ -76,6 +77,7 @@ model product {
   @@index([kiotviet_category_id])
   @@index([kiotviet_trademark_id])
   @@index([is_from_kiotviet])
+  @@index([slug])
 }
 
 model category {

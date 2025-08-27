@@ -10,11 +10,6 @@ import {
   CreateCategoryDto,
   UpdateCategoryDto,
 } from './dto/create-category.dto';
-import {
-  CategoryPathResponse,
-  CategoryPathItem,
-  ResolvedCategory,
-} from './interfaces/category-path.interface';
 
 @Injectable()
 export class CategoryService {
@@ -34,26 +29,13 @@ export class CategoryService {
         }
       }
 
-      let slug = createCategoryDto.slug;
-      if (!slug && createCategoryDto.name) {
-        slug = this.generateSlug(createCategoryDto.name);
-      }
-
-      if (slug) {
-        slug = await this.ensureUniqueSlug(
-          slug,
-          createCategoryDto.parent_id || null,
-        );
-      }
-
       const category = await this.prisma.category.create({
         data: {
           name: createCategoryDto.name,
-          slug: slug || null,
           description: createCategoryDto.description,
           title_meta: createCategoryDto.title_meta,
           parent_id: createCategoryDto.parent_id
-            ? BigInt(createCategoryDto.parent_id)
+            ? createCategoryDto.parent_id
             : null,
           priority: createCategoryDto.priority || 0,
         },
@@ -193,32 +175,19 @@ export class CategoryService {
         await this.validateNoCircularReference(id, updateCategoryDto.parent_id);
       }
 
-      let slug = updateCategoryDto.slug;
+      const oldParentId = existingCategory.parent_id
+        ? Number(existingCategory.parent_id)
+        : null;
+      const newParentId = updateCategoryDto.parent_id || null;
 
-      if (
-        updateCategoryDto.name &&
-        updateCategoryDto.name !== existingCategory.name &&
-        !slug
-      ) {
-        slug = this.generateSlug(updateCategoryDto.name);
-      }
-
-      if (slug && slug !== existingCategory.slug) {
-        slug = await this.ensureUniqueSlug(
-          slug,
-          updateCategoryDto.parent_id ||
-            (existingCategory.parent_id
-              ? Number(existingCategory.parent_id)
-              : null),
-          id,
-        );
-      }
+      console.log(
+        `🔄 Updating category ${id}: ${oldParentId} → ${newParentId}`,
+      );
 
       const updatedCategory = await this.prisma.category.update({
         where: { id: BigInt(id) },
         data: {
           name: updateCategoryDto.name,
-          slug: slug || existingCategory.slug,
           description: updateCategoryDto.description,
           title_meta: updateCategoryDto.title_meta,
           parent_id: updateCategoryDto.parent_id
@@ -242,120 +211,8 @@ export class CategoryService {
         message: 'Category updated successfully',
       };
     } catch (error) {
-      this.logger.error(`Error updating category: ${error.message}`);
+      this.logger.error(`Error updating category ${id}: ${error.message}`);
       throw error;
-    }
-  }
-
-  async resolveCategoryPathBySlugs(
-    slugs: string[],
-  ): Promise<CategoryPathResponse> {
-    try {
-      const categoryPath: CategoryPathItem[] = [];
-      let currentParentId: bigint | null = null;
-
-      for (const slug of slugs) {
-        const category = await this.prisma.category.findFirst({
-          where: {
-            slug: slug,
-            parent_id: currentParentId,
-          },
-          include: {
-            children: {
-              select: { id: true, name: true, slug: true },
-            },
-          },
-        });
-
-        if (!category) {
-          throw new NotFoundException(`Category not found for slug: ${slug}`);
-        }
-
-        categoryPath.push({
-          id: Number(category.id),
-          name: category.name || '',
-          slug: category.slug || '',
-          description: category.description,
-          parent_id: category.parent_id ? Number(category.parent_id) : null,
-          children: category.children.map((child) => ({
-            id: Number(child.id),
-            name: child.name || '',
-            slug: child.slug || '',
-          })),
-        });
-
-        currentParentId = category.id;
-      }
-
-      return {
-        success: true,
-        data: categoryPath,
-        message: 'Category path resolved successfully',
-      };
-    } catch (error) {
-      this.logger.error('Failed to resolve category path:', error);
-      throw error;
-    }
-  }
-
-  async getCategoryBySlugPath(
-    slugPath: string[],
-  ): Promise<ResolvedCategory[] | null> {
-    try {
-      let currentParentId: bigint | null = null;
-      const resolvedCategories: ResolvedCategory[] = [];
-
-      for (const slug of slugPath) {
-        const category = await this.prisma.category.findFirst({
-          where: {
-            slug: slug,
-            parent_id: currentParentId,
-          },
-        });
-
-        if (!category) {
-          return null;
-        }
-
-        resolvedCategories.push({
-          id: Number(category.id),
-          name: category.name || '',
-          slug: category.slug || '',
-        });
-
-        currentParentId = category.id;
-      }
-
-      return resolvedCategories;
-    } catch (error) {
-      this.logger.error('Error getting category by slug path:', error);
-      return null;
-    }
-  }
-
-  async getCategorySlugPathById(categoryId: number): Promise<string[]> {
-    try {
-      const slugPath: string[] = [];
-      let currentId: number | null = categoryId;
-
-      while (currentId) {
-        const category = await this.prisma.category.findUnique({
-          where: { id: BigInt(currentId) },
-          select: { slug: true, parent_id: true },
-        });
-
-        if (!category || !category.slug) {
-          break;
-        }
-
-        slugPath.unshift(category.slug);
-        currentId = category.parent_id ? Number(category.parent_id) : null;
-      }
-
-      return slugPath;
-    } catch (error) {
-      this.logger.error('Error getting slug path by ID:', error);
-      return [];
     }
   }
 
@@ -750,56 +607,5 @@ export class CategoryService {
         `Failed to fetch categories for CMS: ${error.message}`,
       );
     }
-  }
-
-  private generateSlug(name: string | null): string {
-    if (!name || name.trim() === '') return '';
-
-    return name
-      .toLowerCase()
-      .trim()
-      .replace(/[áàảãạâấầẩẫậăắằẳẵặ]/g, 'a')
-      .replace(/[éèẻẽẹêếềểễệ]/g, 'e')
-      .replace(/[íìỉĩị]/g, 'i')
-      .replace(/[óòỏõọôốồổỗộơớờởỡợ]/g, 'o')
-      .replace(/[úùủũụưứừửữự]/g, 'u')
-      .replace(/[ýỳỷỹỵ]/g, 'y')
-      .replace(/đ/g, 'd')
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
-  }
-
-  private async ensureUniqueSlug(
-    slug: string,
-    parentId: number | null,
-    excludeId?: number,
-  ): Promise<string> {
-    let uniqueSlug = slug;
-    let counter = 1;
-
-    while (true) {
-      const existing = await this.prisma.category.findFirst({
-        where: {
-          slug: uniqueSlug,
-          parent_id: parentId ? BigInt(parentId) : null,
-          ...(excludeId && { id: { not: BigInt(excludeId) } }),
-        },
-      });
-
-      if (!existing) {
-        break;
-      }
-
-      counter++;
-      uniqueSlug = `${slug}-${counter}`;
-
-      if (counter > 100) {
-        throw new BadRequestException('Unable to generate unique slug');
-      }
-    }
-
-    return uniqueSlug;
   }
 }
