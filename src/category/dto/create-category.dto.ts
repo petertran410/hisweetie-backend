@@ -20,6 +20,14 @@ export class CreateCategoryDto {
   description?: string;
 
   @ApiProperty({
+    description: 'Category title meta',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  title_meta?: string;
+
+  @ApiProperty({
     description: 'Priority/Order for sorting',
     required: false,
     example: 1,
@@ -58,6 +66,9 @@ export class CategoryTreeDto {
 
   @ApiProperty({ required: false })
   description?: string;
+
+  @ApiProperty({ required: false })
+  title_meta?: string;
 
   @ApiProperty({ required: false })
   parent_id?: number;

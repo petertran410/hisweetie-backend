@@ -86,6 +86,7 @@ model category {
   level                Int        @default(0)
   path                 String?    @db.VarChar(100)
   product_count        Int        @default(0)
+  title_meta           String?
   child_count          Int        @default(0)
   priority             Int?
   direct_product_count Int        @default(0)

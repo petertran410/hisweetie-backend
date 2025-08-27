@@ -1552,99 +1552,99 @@ export class ProductService {
     }
   }
 
-  async findByPathAndSlug(
-    categoryPath: string,
-    productSlug: string,
-  ): Promise<any> {
-    try {
-      // First find the category by path
-      let categoryId: number | null = null;
+  // async findByPathAndSlug(
+  //   categoryPath: string,
+  //   productSlug: string,
+  // ): Promise<any> {
+  //   try {
+  //     // First find the category by path
+  //     let categoryId: number | null = null;
 
-      if (categoryPath) {
-        const category = await this.prisma.category.findFirst({
-          where: { full_path: categoryPath },
-        });
+  //     if (categoryPath) {
+  //       const category = await this.prisma.category.findFirst({
+  //         where: { full_path: categoryPath },
+  //       });
 
-        if (category) {
-          categoryId = Number(category.id);
-        }
-      }
+  //       if (category) {
+  //         categoryId = Number(category.id);
+  //       }
+  //     }
 
-      // Find products that match the slug and category
-      const products = await this.prisma.product.findMany({
-        where: {
-          is_visible: true,
-          AND: [
-            {
-              OR: [{ title: { not: null } }, { kiotviet_name: { not: null } }],
-            },
-            categoryId ? { category_id: BigInt(categoryId) } : {},
-          ],
-        },
-        include: {
-          category: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-              full_path: true,
-              parent_id: true,
-            },
-          },
-        },
-      });
+  //     // Find products that match the slug and category
+  //     const products = await this.prisma.product.findMany({
+  //       where: {
+  //         is_visible: true,
+  //         AND: [
+  //           {
+  //             OR: [{ title: { not: null } }, { kiotviet_name: { not: null } }],
+  //           },
+  //           categoryId ? { category_id: BigInt(categoryId) } : {},
+  //         ],
+  //       },
+  //       include: {
+  //         category: {
+  //           select: {
+  //             id: true,
+  //             name: true,
+  //             slug: true,
+  //             full_path: true,
+  //             parent_id: true,
+  //           },
+  //         },
+  //       },
+  //     });
 
-      const exactMatch = products.find((product) => {
-        const productTitle = product.title || product.kiotviet_name;
-        return productTitle && this.convertToSlug(productTitle) === productSlug;
-      });
+  //     const exactMatch = products.find((product) => {
+  //       const productTitle = product.title || product.kiotviet_name;
+  //       return productTitle && this.convertToSlug(productTitle) === productSlug;
+  //     });
 
-      if (exactMatch) {
-        return this.transformProduct(exactMatch);
-      }
+  //     if (exactMatch) {
+  //       return this.transformProduct(exactMatch);
+  //     }
 
-      throw new NotFoundException(
-        `Product not found: ${categoryPath}/${productSlug}`,
-      );
-    } catch (error) {
-      this.logger.error(
-        `Failed to find product by path and slug: ${error.message}`,
-      );
-      throw error;
-    }
-  }
+  //     throw new NotFoundException(
+  //       `Product not found: ${categoryPath}/${productSlug}`,
+  //     );
+  //   } catch (error) {
+  //     this.logger.error(
+  //       `Failed to find product by path and slug: ${error.message}`,
+  //     );
+  //     throw error;
+  //   }
+  // }
 
-  async generateProductUrl(productId: number): Promise<string> {
-    try {
-      const product = await this.prisma.product.findUnique({
-        where: { id: BigInt(productId) },
-        include: {
-          category: {
-            select: {
-              id: true,
-              full_path: true,
-            },
-          },
-        },
-      });
+  // async generateProductUrl(productId: number): Promise<string> {
+  //   try {
+  //     const product = await this.prisma.product.findUnique({
+  //       where: { id: BigInt(productId) },
+  //       include: {
+  //         category: {
+  //           select: {
+  //             id: true,
+  //             full_path: true,
+  //           },
+  //         },
+  //       },
+  //     });
 
-      if (!product) {
-        throw new NotFoundException(`Product with ID ${productId} not found`);
-      }
+  //     if (!product) {
+  //       throw new NotFoundException(`Product with ID ${productId} not found`);
+  //     }
 
-      const productTitle = product.title || product.kiotviet_name;
-      const productSlug = this.convertToSlug(productTitle);
+  //     const productTitle = product.title || product.kiotviet_name;
+  //     const productSlug = this.convertToSlug(productTitle);
 
-      if (product.category && product.category.full_path) {
-        return `/san-pham/${product.category.full_path}/${productSlug}`;
-      }
+  //     if (product.category && product.category.full_path) {
+  //       return `/san-pham/${product.category.full_path}/${productSlug}`;
+  //     }
 
-      return `/san-pham/${productSlug}`;
-    } catch (error) {
-      this.logger.error(`Failed to generate product URL: ${error.message}`);
-      throw error;
-    }
-  }
+  //     return `/san-pham/${productSlug}`;
+  //   } catch (error) {
+  //     this.logger.error(`Failed to generate product URL: ${error.message}`);
+  //     throw error;
+  //   }
+  // }
 
   // async getProductsByCategoryPath(
   //   categoryPath: string,
@@ -1852,66 +1852,66 @@ export class ProductService {
     }
   }
 
-  async resolveUrlPath(pathSegments: string[]): Promise<{
-    type: 'category' | 'product' | 'not_found';
-    data: any;
-  }> {
-    try {
-      if (pathSegments.length === 0) {
-        return { type: 'not_found', data: null };
-      }
+  // async resolveUrlPath(pathSegments: string[]): Promise<{
+  //   type: 'category' | 'product' | 'not_found';
+  //   data: any;
+  // }> {
+  //   try {
+  //     if (pathSegments.length === 0) {
+  //       return { type: 'not_found', data: null };
+  //     }
 
-      const fullPath = pathSegments.join('/');
+  //     const fullPath = pathSegments.join('/');
 
-      // Try to find as category first
-      try {
-        const category = await this.prisma.category.findFirst({
-          where: { full_path: fullPath },
-          include: {
-            parent: true,
-            children: true,
-          },
-        });
+  //     // Try to find as category first
+  //     try {
+  //       const category = await this.prisma.category.findFirst({
+  //         where: { full_path: fullPath },
+  //         include: {
+  //           parent: true,
+  //           children: true,
+  //         },
+  //       });
 
-        if (category) {
-          return {
-            type: 'category',
-            data: {
-              id: Number(category.id),
-              name: category.name,
-              slug: category.slug,
-              fullPath: category.full_path,
-              description: category.description,
-            },
-          };
-        }
-      } catch (error) {
-        // Continue to check for product
-      }
+  //       if (category) {
+  //         return {
+  //           type: 'category',
+  //           data: {
+  //             id: Number(category.id),
+  //             name: category.name,
+  //             slug: category.slug,
+  //             fullPath: category.full_path,
+  //             description: category.description,
+  //           },
+  //         };
+  //       }
+  //     } catch (error) {
+  //       // Continue to check for product
+  //     }
 
-      // Try to find as product
-      if (pathSegments.length >= 1) {
-        const productSlug = pathSegments[pathSegments.length - 1];
-        const categoryPath = pathSegments.slice(0, -1).join('/');
+  //     // Try to find as product
+  //     if (pathSegments.length >= 1) {
+  //       const productSlug = pathSegments[pathSegments.length - 1];
+  //       const categoryPath = pathSegments.slice(0, -1).join('/');
 
-        try {
-          const product = await this.findByPathAndSlug(
-            categoryPath,
-            productSlug,
-          );
-          return {
-            type: 'product',
-            data: product,
-          };
-        } catch (error) {
-          // Product not found
-        }
-      }
+  //       try {
+  //         const product = await this.findByPathAndSlug(
+  //           categoryPath,
+  //           productSlug,
+  //         );
+  //         return {
+  //           type: 'product',
+  //           data: product,
+  //         };
+  //       } catch (error) {
+  //         // Product not found
+  //       }
+  //     }
 
-      return { type: 'not_found', data: null };
-    } catch (error) {
-      this.logger.error(`Failed to resolve URL path: ${error.message}`);
-      return { type: 'not_found', data: null };
-    }
-  }
+  //     return { type: 'not_found', data: null };
+  //   } catch (error) {
+  //     this.logger.error(`Failed to resolve URL path: ${error.message}`);
+  //     return { type: 'not_found', data: null };
+  //   }
+  // }
 }
