@@ -736,42 +736,42 @@ export class CategoryService {
     return parentPath ? `${parentPath} > ${category.name}` : category.name;
   }
 
-  private sortCategoriesByHierarchy(categories: any[]): any[] {
-    const categoryMap = new Map();
-    const result: any[] = [];
+  // private sortCategoriesByHierarchy(categories: any[]): any[] {
+  //   const categoryMap = new Map();
+  //   const result: any[] = [];
 
-    categories.forEach((cat) => {
-      categoryMap.set(cat.id, { ...cat, children: [] });
-    });
+  //   categories.forEach((cat) => {
+  //     categoryMap.set(cat.id, { ...cat, children: [] });
+  //   });
 
-    const roots: any[] = [];
-    categories.forEach((cat) => {
-      const categoryNode = categoryMap.get(cat.id);
+  //   const roots: any[] = [];
+  //   categories.forEach((cat) => {
+  //     const categoryNode = categoryMap.get(cat.id);
 
-      if (cat.parent_id) {
-        const parent = categoryMap.get(cat.parent_id);
-        if (parent) {
-          parent.children.push(categoryNode);
-        } else {
-          roots.push(categoryNode);
-        }
-      } else {
-        roots.push(categoryNode);
-      }
-    });
+  //     if (cat.parent_id) {
+  //       const parent = categoryMap.get(cat.parent_id);
+  //       if (parent) {
+  //         parent.children.push(categoryNode);
+  //       } else {
+  //         roots.push(categoryNode);
+  //       }
+  //     } else {
+  //       roots.push(categoryNode);
+  //     }
+  //   });
 
-    const flattenTree = (nodes: any[]) => {
-      nodes.forEach((node) => {
-        result.push(node);
-        if (node.children.length > 0) {
-          flattenTree(node.children);
-        }
-      });
-    };
+  //   const flattenTree = (nodes: any[]) => {
+  //     nodes.forEach((node) => {
+  //       result.push(node);
+  //       if (node.children.length > 0) {
+  //         flattenTree(node.children);
+  //       }
+  //     });
+  //   };
 
-    flattenTree(roots);
-    return result;
-  }
+  //   flattenTree(roots);
+  //   return result;
+  // }
 
   async findBySlug(slug: string): Promise<category | null> {
     return this.prisma.category.findFirst({
@@ -848,8 +848,8 @@ export class CategoryService {
   }
 
   async resolveCategoryPath(slugPath: string[]): Promise<any> {
-    const categories = [];
-    let currentParentId = null;
+    const categories: any[] = [];
+    let currentParentId: bigint | null = null;
 
     for (const slug of slugPath) {
       const category = await this.prisma.category.findFirst({
@@ -884,13 +884,20 @@ export class CategoryService {
     };
   }
 
+  private sortCategoriesByHierarchy(categories: any[]): any[] {
+    return categories.sort((a, b) => {
+      if (!a.parent_id && b.parent_id) return -1;
+      if (a.parent_id && !b.parent_id) return 1;
+      return 0;
+    });
+  }
+
   async buildCategoryPath(categoryIds: number[]): Promise<string[]> {
     const categories = await this.prisma.category.findMany({
       where: { id: { in: categoryIds.map((id) => BigInt(id)) } },
       select: { id: true, slug: true, parent_id: true },
     });
 
-    // Sort by hierarchy level and return slug path
     const sortedCategories = this.sortCategoriesByHierarchy(categories);
     return sortedCategories.map((cat) => cat.slug).filter(Boolean);
   }
