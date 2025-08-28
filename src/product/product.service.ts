@@ -1303,7 +1303,7 @@ export class ProductService {
                 name: true,
                 description: true,
                 parent_id: true,
-                path: true, // ✅ Include path for debugging
+                path: true,
               },
             },
           },
@@ -1349,7 +1349,6 @@ export class ProductService {
     }
   }
 
-  // ✅ Sorting logic extraction
   private buildSortClause(
     orderBy: string = 'id',
     isDesc: boolean = true,
@@ -1367,7 +1366,6 @@ export class ProductService {
     }
   }
 
-  // ✅ Product transformation extraction
   private transformProductForCMS(product: any) {
     return {
       id: Number(product.id),
@@ -1383,6 +1381,8 @@ export class ProductService {
       description: product.description,
       general_description: product.general_description,
       instruction: product.instruction,
+
+      category_slug: product.category_slug,
 
       is_visible: product.is_visible,
       is_featured: product.is_featured,
