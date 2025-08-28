@@ -724,55 +724,6 @@ export class CategoryService {
     }
   }
 
-  private getCategoryPath(categoryId: number, categories: any[]): string {
-    const category = categories.find((c) => c.id === categoryId);
-    if (!category) return '';
-
-    if (!category.parent_id) {
-      return category.name;
-    }
-
-    const parentPath = this.getCategoryPath(category.parent_id, categories);
-    return parentPath ? `${parentPath} > ${category.name}` : category.name;
-  }
-
-  // private sortCategoriesByHierarchy(categories: any[]): any[] {
-  //   const categoryMap = new Map();
-  //   const result: any[] = [];
-
-  //   categories.forEach((cat) => {
-  //     categoryMap.set(cat.id, { ...cat, children: [] });
-  //   });
-
-  //   const roots: any[] = [];
-  //   categories.forEach((cat) => {
-  //     const categoryNode = categoryMap.get(cat.id);
-
-  //     if (cat.parent_id) {
-  //       const parent = categoryMap.get(cat.parent_id);
-  //       if (parent) {
-  //         parent.children.push(categoryNode);
-  //       } else {
-  //         roots.push(categoryNode);
-  //       }
-  //     } else {
-  //       roots.push(categoryNode);
-  //     }
-  //   });
-
-  //   const flattenTree = (nodes: any[]) => {
-  //     nodes.forEach((node) => {
-  //       result.push(node);
-  //       if (node.children.length > 0) {
-  //         flattenTree(node.children);
-  //       }
-  //     });
-  //   };
-
-  //   flattenTree(roots);
-  //   return result;
-  // }
-
   async findBySlug(slug: string): Promise<category | null> {
     return this.prisma.category.findFirst({
       where: { slug },
