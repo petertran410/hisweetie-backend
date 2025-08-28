@@ -555,4 +555,172 @@ export class ProductController {
   ) {
     return this.productService.findIdBySlug(slug, categorySlug);
   }
+
+  @Post('generate-slugs')
+  @ApiOperation({
+    summary: 'Generate slugs for existing products',
+    description:
+      'One-time migration to generate slugs for products without slugs',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Slug generation completed',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        message: { type: 'string' },
+        statistics: {
+          type: 'object',
+          properties: {
+            updated: { type: 'number' },
+            failed: { type: 'number' },
+            total: { type: 'number' },
+          },
+        },
+      },
+    },
+  })
+  async generateProductSlugs() {
+    return this.productService.generateSlugsForExistingProducts();
+  }
+
+  @Get('client/by-category-slug/:slugPath')
+  @ApiOperation({
+    summary: 'Get products by category slug path',
+    description:
+      'Retrieve all products for a category hierarchy using slug path',
+  })
+  @ApiParam({
+    name: 'slugPath',
+    description: 'Category slug path (comma-separated)',
+    example: 'nguyen-lieu-pha-che,mut,tra-sua',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Products retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        data: {
+          type: 'object',
+          properties: {
+            products: { type: 'array' },
+            category: { type: 'object' },
+            totalProducts: { type: 'number' },
+          },
+        },
+      },
+    },
+  })
+  async getProductsByCategorySlugPath(@Param('slugPath') slugPath: string) {
+    if (!slugPath) {
+      throw new BadRequestException('slugPath parameter is required');
+    }
+
+    const slugArray = slugPath
+      .split(',')
+      .map((slug) => slug.trim())
+      .filter((slug) => slug);
+
+    if (slugArray.length === 0) {
+      throw new BadRequestException('slugPath must contain at least one slug');
+    }
+
+    try {
+      const categoryData =
+        await this.categoryService.resolveCategoryPath(slugArray);
+
+      if (!categoryData || !categoryData.id) {
+        throw new NotFoundException(
+          `Category not found for path: ${slugArray.join('/')}`,
+        );
+      }
+
+      const categoryIds = await this.categoryService.buildCategoryPath([
+        categoryData.id,
+      ]);
+
+      const products = await this.prismaService.product.findMany({
+        where: {
+          AND: [
+            { is_visible: true },
+            {
+              OR: [
+                { category_id: { in: categoryIds.map((id) => BigInt(id)) } },
+              ],
+            },
+          ],
+        },
+        include: {
+          category: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              description: true,
+            },
+          },
+        },
+        orderBy: { id: 'desc' },
+      });
+
+      const transformedProducts = products.map((product) => {
+        const productTitle =
+          product.title || product.kiotviet_name || 'Untitled Product';
+        const productPrice = product.kiotviet_price
+          ? Number(product.kiotviet_price)
+          : null;
+
+        return {
+          id: Number(product.id),
+          title: productTitle,
+          slug: product.slug,
+          price: productPrice,
+          general_description: product.general_description,
+          description: product.description,
+          instruction: product.instruction,
+          rate: product.rate,
+          isFeatured: product.is_featured === true,
+          isVisible: product.is_visible === true,
+          imagesUrl: product.kiotviet_images
+            ? Array.isArray(product.kiotviet_images)
+              ? product.kiotviet_images
+              : []
+            : [],
+          featuredThumbnail: product.featured_thumbnail,
+          recipeThumbnail: product.recipe_thumbnail,
+          category: product.category
+            ? {
+                id: Number(product.category.id),
+                name: product.category.name,
+                slug: product.category.slug,
+                description: product.category.description,
+              }
+            : null,
+        };
+      });
+
+      return {
+        success: true,
+        data: {
+          products: transformedProducts,
+          category: {
+            id: categoryData.id,
+            name: categoryData.name,
+            slug: categoryData.slug,
+            description: categoryData.description,
+            slugPath: slugArray,
+          },
+          totalProducts: transformedProducts.length,
+        },
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to get products by slug path: ${error.message}`,
+      );
+      throw error;
+    }
+  }
 }

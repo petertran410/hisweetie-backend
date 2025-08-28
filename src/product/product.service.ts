@@ -881,7 +881,8 @@ export class ProductService {
           id: true,
           category_id: true,
           is_from_kiotviet: true,
-          category_slug: true,
+          title: true,
+          kiotviet_name: true,
         },
       });
 
@@ -889,8 +890,22 @@ export class ProductService {
         throw new NotFoundException(`Product with ID ${id} not found`);
       }
 
-      const extractedCategoryId: any = this.extractCategoryId(updateProductDto);
+      let slug: string | undefined = undefined;
+      if (
+        updateProductDto.title ||
+        existingProduct.title ||
+        existingProduct.kiotviet_name
+      ) {
+        const slugSource =
+          updateProductDto.title ||
+          existingProduct.title ||
+          existingProduct.kiotviet_name;
+        if (slugSource) {
+          slug = this.convertToSlug(slugSource);
+        }
+      }
 
+      const extractedCategoryId: any = this.extractCategoryId(updateProductDto);
       const categorySlug = await this.syncCategorySlug(extractedCategoryId);
 
       if (
@@ -918,6 +933,7 @@ export class ProductService {
 
       const updateData: Prisma.productUpdateInput = {
         title: updateProductDto.title,
+        slug: slug,
         description: updateProductDto.description,
         general_description: updateProductDto.general_description,
         instruction: updateProductDto.instruction,
@@ -1601,7 +1617,6 @@ export class ProductService {
     }
   }
 
-  // Sử dụng lại convertToSlug method đã có hoặc thêm nếu chưa có
   private convertToSlug(title: string): string {
     if (!title) return '';
 
@@ -1619,5 +1634,45 @@ export class ProductService {
       .replace(/\s+/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '');
+  }
+
+  async generateSlugsForExistingProducts(): Promise<any> {
+    try {
+      const products = await this.prisma.product.findMany({
+        where: { OR: [{ slug: null }, { slug: '' }] },
+      });
+
+      let updated = 0;
+      let failed = 0;
+
+      for (const product of products) {
+        try {
+          const slugSource = product.title || product.kiotviet_name;
+          if (slugSource) {
+            const slug = this.convertToSlug(slugSource);
+
+            await this.prisma.product.update({
+              where: { id: product.id },
+              data: { slug },
+            });
+            updated++;
+          }
+        } catch (error) {
+          this.logger.error(
+            `Failed to update slug for product ${product.id}: ${error.message}`,
+          );
+          failed++;
+        }
+      }
+
+      return {
+        success: true,
+        message: `Generated slugs: ${updated} updated, ${failed} failed`,
+        statistics: { updated, failed, total: products.length },
+      };
+    } catch (error) {
+      this.logger.error(`Failed to generate slugs: ${error.message}`);
+      throw error;
+    }
   }
 }
