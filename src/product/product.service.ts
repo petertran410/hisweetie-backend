@@ -461,6 +461,8 @@ export class ProductService {
 
     for (const productData of products) {
       try {
+        const productName = productData.name?.trim();
+        const slug = productName ? this.convertToSlug(productName) : null;
         const product = await this.prismaService.product.upsert({
           where: { kiotviet_id: BigInt(productData.id) },
           update: {
@@ -476,6 +478,7 @@ export class ProductService {
             kiotviet_description: productData.description?.trim() || null,
             kiotviet_images: productData.images,
             kiotviet_synced_at: new Date(),
+            ...(slug && { slug }),
           },
           create: {
             kiotviet_id: BigInt(productData.id),
@@ -491,6 +494,7 @@ export class ProductService {
             kiotviet_description: productData.description?.trim() || null,
             kiotviet_images: productData.images,
             kiotviet_synced_at: new Date(),
+            slug,
           },
         });
 
@@ -1549,6 +1553,92 @@ export class ProductService {
     } catch (error) {
       this.logger.error(`Failed to update product category: ${error.message}`);
       throw error;
+    }
+  }
+  async generateMissingSlugs() {
+    const products = await this.prisma.product.findMany({
+      where: { slug: null },
+    });
+
+    for (const product of products) {
+      const title = product.title || product.kiotviet_name;
+      if (title) {
+        const slug = this.convertToSlug(title);
+        await this.prisma.product.update({
+          where: { id: product.id },
+          data: { slug },
+        });
+      }
+    }
+  }
+
+  private convertToSlug(title: string): string {
+    return title
+      .toLowerCase()
+      .trim()
+      .replace(/[áàảãạâấầẩẫậăắằẳẵặ]/g, 'a')
+      .replace(/[éèẻẽẹêếềểễệ]/g, 'e')
+      .replace(/[íìỉĩị]/g, 'i')
+      .replace(/[óòỏõọôốồổỗộơớờởỡợ]/g, 'o')
+      .replace(/[úùủũụưứừửữự]/g, 'u')
+      .replace(/[ýỳỷỹỵ]/g, 'y')
+      .replace(/đ/g, 'd')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+  }
+
+  async generateProductSlugs(): Promise<any> {
+    try {
+      const products = await this.prisma.product.findMany({
+        where: {
+          OR: [{ slug: null }, { slug: '' }],
+        },
+        select: { id: true, title: true, kiotviet_name: true },
+      });
+
+      let updated = 0;
+      let skipped = 0;
+
+      for (const product of products) {
+        const title = product.title || product.kiotviet_name;
+        if (title) {
+          const slug = this.convertToSlug(title);
+          if (slug) {
+            try {
+              await this.prisma.product.update({
+                where: { id: product.id },
+                data: { slug },
+              });
+              updated++;
+            } catch (error) {
+              // Slug conflict - add suffix
+              const uniqueSlug = `${slug}-${product.id}`;
+              await this.prisma.product.update({
+                where: { id: product.id },
+                data: { slug: uniqueSlug },
+              });
+              updated++;
+            }
+          } else {
+            skipped++;
+          }
+        } else {
+          skipped++;
+        }
+      }
+
+      return {
+        success: true,
+        message: `Generated slugs for ${updated} products, skipped ${skipped}`,
+        statistics: { updated, skipped, total: products.length },
+      };
+    } catch (error) {
+      this.logger.error('Failed to generate product slugs:', error);
+      throw new BadRequestException(
+        `Failed to generate slugs: ${error.message}`,
+      );
     }
   }
 }

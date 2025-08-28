@@ -229,4 +229,10 @@ export class CategoryController {
       toCategoryId || null,
     );
   }
+
+  @Post('generate-slugs')
+  @ApiOperation({ summary: 'Generate slugs for existing categories' })
+  async generateCategorySlugs(): Promise<any> {
+    return this.categoryService.generateSlugsForExistingCategories();
+  }
 }

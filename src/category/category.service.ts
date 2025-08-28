@@ -11,6 +11,7 @@ import {
   UpdateCategoryDto,
   CategoryTreeDto,
 } from './dto/create-category.dto';
+import { category } from '@prisma/client';
 
 @Injectable()
 export class CategoryService {
@@ -20,6 +21,9 @@ export class CategoryService {
 
   async create(createCategoryDto: CreateCategoryDto) {
     try {
+      const { name } = createCategoryDto;
+      const slug = name ? this.convertToSlug(name) : null;
+
       if (createCategoryDto.parent_id) {
         const parentCategory = await this.prisma.category.findUnique({
           where: { id: BigInt(createCategoryDto.parent_id) },
@@ -39,6 +43,7 @@ export class CategoryService {
             ? createCategoryDto.parent_id
             : null,
           priority: createCategoryDto.priority || 0,
+          slug,
         },
       });
 
@@ -182,12 +187,17 @@ export class CategoryService {
 
   async update(id: number, updateCategoryDto: UpdateCategoryDto) {
     try {
+      const updateData: any = { ...updateCategoryDto };
       const existingCategory = await this.prisma.category.findUnique({
         where: { id: BigInt(id) },
       });
 
       if (!existingCategory) {
         throw new NotFoundException('Category not found');
+      }
+
+      if (updateCategoryDto.name) {
+        updateData.slug = this.convertToSlug(updateCategoryDto.name);
       }
 
       if (updateCategoryDto.parent_id) {
@@ -225,6 +235,7 @@ export class CategoryService {
             ? BigInt(updateCategoryDto.parent_id)
             : null,
           priority: updateCategoryDto.priority,
+          slug: updateData.slug,
         },
       });
 
@@ -760,5 +771,79 @@ export class CategoryService {
 
     flattenTree(roots);
     return result;
+  }
+
+  async findBySlug(slug: string): Promise<category | null> {
+    return this.prisma.category.findFirst({
+      where: { slug },
+    });
+  }
+
+  private convertToSlug(name: string): string {
+    return name
+      .toLowerCase()
+      .trim()
+      .replace(/[áàảãạâấầẩẫậăắằẳẵặ]/g, 'a')
+      .replace(/[éèẻẽẹêếềểễệ]/g, 'e')
+      .replace(/[íìỉĩị]/g, 'i')
+      .replace(/[óòỏõọôốồổỗộơớờởỡợ]/g, 'o')
+      .replace(/[úùủũụưứừửữự]/g, 'u')
+      .replace(/[ýỳỷỹỵ]/g, 'y')
+      .replace(/đ/g, 'd')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+  }
+
+  async generateSlugsForExistingCategories(): Promise<any> {
+    try {
+      const categories = await this.prisma.category.findMany({
+        where: {
+          OR: [{ slug: null }, { slug: '' }],
+        },
+        select: { id: true, name: true },
+      });
+
+      let updated = 0;
+      let skipped = 0;
+
+      for (const category of categories) {
+        if (category.name) {
+          const slug = this.convertToSlug(category.name);
+          if (slug) {
+            try {
+              await this.prisma.category.update({
+                where: { id: category.id },
+                data: { slug },
+              });
+              updated++;
+            } catch (error) {
+              // Handle duplicate slugs
+              const uniqueSlug = `${slug}-${category.id}`;
+              await this.prisma.category.update({
+                where: { id: category.id },
+                data: { slug: uniqueSlug },
+              });
+              updated++;
+            }
+          } else {
+            skipped++;
+          }
+        } else {
+          skipped++;
+        }
+      }
+
+      return {
+        success: true,
+        message: `Generated slugs for ${updated} categories, skipped ${skipped}`,
+        statistics: { updated, skipped, total: categories.length },
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        `Failed to generate slugs: ${error.message}`,
+      );
+    }
   }
 }

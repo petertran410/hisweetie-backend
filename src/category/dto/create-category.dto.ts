@@ -10,6 +10,9 @@ export class CreateCategoryDto {
   @IsString()
   name: string;
 
+  @ApiProperty({ required: false })
+  slug?: string;
+
   @ApiProperty({
     description: 'Category description',
     required: false,
