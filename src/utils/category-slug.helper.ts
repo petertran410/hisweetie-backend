@@ -1,27 +1,67 @@
-export class CategorySlugHelper {
-  static convertToSlug(name: string | null): string {
-    if (!name || name.trim() === '') return '';
+// src/utils/category-slug-resolver.js
+export class CategorySlugResolver {
+  static slugToIdCache = new Map();
+  static idToSlugCache = new Map();
 
-    return name
-      .toLowerCase()
-      .trim()
-      .replace(/[áàảãạâấầẩẫậăắằẳẵặ]/g, 'a')
-      .replace(/[éèẻẽẹêếềểễệ]/g, 'e')
-      .replace(/[íìỉĩị]/g, 'i')
-      .replace(/[óòỏõọôốồổỗộơớờởỡợ]/g, 'o')
-      .replace(/[úùủũụưứừửữự]/g, 'u')
-      .replace(/[ýỳỷỹỵ]/g, 'y')
-      .replace(/đ/g, 'd')
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
+  static async resolveSlugToId(categorySlug) {
+    if (this.slugToIdCache.has(categorySlug)) {
+      return this.slugToIdCache.get(categorySlug);
+    }
+
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_DOMAIN}/api/categories/resolve-by-slugs`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slugs: [categorySlug] }),
+        },
+      );
+
+      const [categoryData] = await response.json();
+      if (categoryData) {
+        this.slugToIdCache.set(categorySlug, categoryData.id);
+        this.idToSlugCache.set(categoryData.id, categorySlug);
+        return categoryData.id;
+      }
+    } catch (error) {
+      console.error('Slug resolution failed:', error);
+    }
+    return null;
   }
 
-  static findCategoryBySlug(categories: any[], targetSlug: string): any | null {
-    return categories.find((cat) => {
-      if (!cat.name) return false;
-      return this.convertToSlug(cat.name) === targetSlug;
+  static async resolveIdToSlug(categoryId) {
+    if (this.idToSlugCache.has(categoryId)) {
+      return this.idToSlugCache.get(categoryId);
+    }
+
+    await this.buildSlugCache();
+    return this.idToSlugCache.get(categoryId);
+  }
+
+  static async buildSlugCache() {
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_DOMAIN}/api/categories/client/hierarchy`,
+      );
+      const categories = await response.json();
+
+      this.buildCacheFromHierarchy(categories);
+    } catch (error) {
+      console.error('Cache build failed:', error);
+    }
+  }
+
+  static buildCacheFromHierarchy(categories) {
+    categories.forEach((category) => {
+      if (category.slug) {
+        this.slugToIdCache.set(category.slug, category.id);
+        this.idToSlugCache.set(category.id, category.slug);
+      }
+
+      if (category.children) {
+        this.buildCacheFromHierarchy(category.children);
+      }
     });
   }
 }
