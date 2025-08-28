@@ -247,4 +247,10 @@ export class CategoryController {
   async buildCategoryPath(@Body() body: { categoryIds: number[] }) {
     return this.categoryService.buildCategoryPath(body.categoryIds);
   }
+
+  @Get('client/find-by-slug/:slug')
+  @ApiOperation({ summary: 'Find category by slug for client' })
+  async findBySlugForClient(@Param('slug') slug: string) {
+    return this.categoryService.findBySlugForClient(slug);
+  }
 }

@@ -852,4 +852,31 @@ export class CategoryService {
     const sortedCategories = this.sortCategoriesByHierarchy(categories);
     return sortedCategories.map((cat) => cat.slug).filter(Boolean);
   }
+
+  async findBySlugForClient(slug: string) {
+    const category = await this.prisma.category.findFirst({
+      where: { slug },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        level: true,
+        parent_id: true,
+      },
+    });
+
+    if (!category) {
+      throw new NotFoundException(`Category with slug "${slug}" not found`);
+    }
+
+    return {
+      id: Number(category.id),
+      name: category.name,
+      slug: category.slug,
+      description: category.description,
+      level: category.level,
+      parentId: category.parent_id ? Number(category.parent_id) : null,
+    };
+  }
 }

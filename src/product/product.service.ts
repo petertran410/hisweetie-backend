@@ -4,6 +4,7 @@ import {
   NotFoundException,
   Logger,
   BadRequestException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -1450,6 +1451,7 @@ export class ProductService {
         select: {
           id: true,
           category_id: true,
+          category_slug: true,
           description: true,
           general_description: true,
           instruction: true,
@@ -1529,5 +1531,87 @@ export class ProductService {
     });
 
     return category?.slug || null;
+  }
+
+  async findIdBySlug(slug: string, categorySlug: string) {
+    try {
+      const category = await this.prisma.category.findFirst({
+        where: { slug: categorySlug },
+      });
+
+      if (!category) {
+        throw new NotFoundException(
+          `Category with slug "${categorySlug}" not found`,
+        );
+      }
+
+      const products = await this.prisma.product.findMany({
+        where: {
+          category_id: category.id,
+          is_visible: true,
+          OR: [{ title: { not: null } }, { kiotviet_name: { not: null } }],
+        },
+        select: {
+          id: true,
+          title: true,
+          kiotviet_name: true,
+          category: {
+            select: { slug: true, name: true },
+          },
+        },
+        orderBy: { id: 'desc' },
+      });
+
+      const foundProduct = products.find((product) => {
+        const productTitle = product.title || product.kiotviet_name || '';
+        const productSlug = this.convertToSlug(productTitle);
+        return productSlug === slug;
+      });
+
+      if (!foundProduct) {
+        throw new NotFoundException(
+          `Product with slug "${slug}" in category "${categorySlug}" not found`,
+        );
+      }
+
+      return {
+        id: Number(foundProduct.id),
+        title: foundProduct.title || foundProduct.kiotviet_name,
+        slug: this.convertToSlug(
+          foundProduct.title || foundProduct.kiotviet_name || '',
+        ),
+        category: {
+          slug: foundProduct.category?.slug,
+          name: foundProduct.category?.name,
+        },
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        `Error finding product: ${error.message}`,
+      );
+    }
+  }
+
+  // Sử dụng lại convertToSlug method đã có hoặc thêm nếu chưa có
+  private convertToSlug(title: string): string {
+    if (!title) return '';
+
+    return title
+      .toLowerCase()
+      .trim()
+      .replace(/[áàảãạâấầẩẫậăắằẳẵặ]/g, 'a')
+      .replace(/[éèẻẽẹêếềểễệ]/g, 'e')
+      .replace(/[íìỉĩị]/g, 'i')
+      .replace(/[óòỏõọôốồổỗộơớờởỡợ]/g, 'o')
+      .replace(/[úùủũụưứừửữự]/g, 'u')
+      .replace(/[ýỳỷỹỵ]/g, 'y')
+      .replace(/đ/g, 'd')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
   }
 }
