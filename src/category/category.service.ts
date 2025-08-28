@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateCategoryDto,
   UpdateCategoryDto,
+  CategoryTreeDto,
 } from './dto/create-category.dto';
 
 @Injectable()
@@ -55,6 +56,36 @@ export class CategoryService {
     } catch (error) {
       this.logger.error(`Error creating category: ${error.message}`);
       throw error;
+    }
+  }
+
+  async getAllCategoriesTree(): Promise<CategoryTreeDto[]> {
+    try {
+      const categories = await this.prisma.category.findMany({
+        include: {
+          product: {
+            select: { id: true },
+          },
+        },
+        orderBy: [{ priority: 'asc' }, { name: 'asc' }],
+      });
+
+      const categoriesWithCount = categories.map((cat) => ({
+        id: Number(cat.id),
+        name: cat.name,
+        description: cat.description,
+        parent_id: cat.parent_id ? Number(cat.parent_id) : null,
+        priority: cat.priority || 0,
+        productCount: cat.product.length,
+        children: [],
+      }));
+
+      return this.buildCategoryTree(categoriesWithCount);
+    } catch (error) {
+      this.logger.error(`Error fetching categories tree: ${error.message}`);
+      throw new BadRequestException(
+        `Failed to fetch categories tree: ${error.message}`,
+      );
     }
   }
 
@@ -546,6 +577,79 @@ export class CategoryService {
     }
   }
 
+  private buildCategoryTree(categories: any[]): CategoryTreeDto[] {
+    const categoryMap = new Map();
+    const roots: CategoryTreeDto[] = [];
+
+    categories.forEach((cat) => {
+      categoryMap.set(cat.id, { ...cat, children: [] });
+    });
+
+    categories.forEach((cat) => {
+      const categoryNode = categoryMap.get(cat.id);
+
+      if (cat.parent_id) {
+        const parent = categoryMap.get(cat.parent_id);
+        if (parent) {
+          parent.children.push(categoryNode);
+        } else {
+          roots.push(categoryNode);
+        }
+      } else {
+        roots.push(categoryNode);
+      }
+    });
+
+    return roots;
+  }
+
+  async getCategoriesFlat() {
+    try {
+      const categories = await this.prisma.category.findMany({
+        orderBy: [{ priority: 'asc' }, { name: 'asc' }],
+      });
+
+      const flatCategories = categories.map((cat) => ({
+        id: Number(cat.id),
+        name: cat.name,
+        description: cat.description,
+        parent_id: cat.parent_id ? Number(cat.parent_id) : null,
+        priority: cat.priority || 0,
+        level: 0,
+      }));
+
+      const calculateLevel = (
+        categoryId: number,
+        visited = new Set(),
+      ): number => {
+        if (visited.has(categoryId)) return 0;
+        visited.add(categoryId);
+
+        const category = flatCategories.find((c) => c.id === categoryId);
+        if (!category || !category.parent_id) return 0;
+
+        return 1 + calculateLevel(category.parent_id, visited);
+      };
+
+      const categoriesWithLevel = flatCategories.map((cat) => ({
+        ...cat,
+        level: calculateLevel(cat.id),
+        displayName: '—'.repeat(calculateLevel(cat.id)) + ' ' + cat.name,
+      }));
+
+      return {
+        success: true,
+        data: categoriesWithLevel,
+        message: 'Categories fetched successfully',
+      };
+    } catch (error) {
+      this.logger.error(`Error fetching flat categories: ${error.message}`);
+      throw new BadRequestException(
+        `Failed to fetch flat categories: ${error.message}`,
+      );
+    }
+  }
+
   async getCategoriesForCMS() {
     try {
       const categories = await this.prisma.category.findMany({
@@ -607,5 +711,54 @@ export class CategoryService {
         `Failed to fetch categories for CMS: ${error.message}`,
       );
     }
+  }
+
+  private getCategoryPath(categoryId: number, categories: any[]): string {
+    const category = categories.find((c) => c.id === categoryId);
+    if (!category) return '';
+
+    if (!category.parent_id) {
+      return category.name;
+    }
+
+    const parentPath = this.getCategoryPath(category.parent_id, categories);
+    return parentPath ? `${parentPath} > ${category.name}` : category.name;
+  }
+
+  private sortCategoriesByHierarchy(categories: any[]): any[] {
+    const categoryMap = new Map();
+    const result: any[] = [];
+
+    categories.forEach((cat) => {
+      categoryMap.set(cat.id, { ...cat, children: [] });
+    });
+
+    const roots: any[] = [];
+    categories.forEach((cat) => {
+      const categoryNode = categoryMap.get(cat.id);
+
+      if (cat.parent_id) {
+        const parent = categoryMap.get(cat.parent_id);
+        if (parent) {
+          parent.children.push(categoryNode);
+        } else {
+          roots.push(categoryNode);
+        }
+      } else {
+        roots.push(categoryNode);
+      }
+    });
+
+    const flattenTree = (nodes: any[]) => {
+      nodes.forEach((node) => {
+        result.push(node);
+        if (node.children.length > 0) {
+          flattenTree(node.children);
+        }
+      });
+    };
+
+    flattenTree(roots);
+    return result;
   }
 }
