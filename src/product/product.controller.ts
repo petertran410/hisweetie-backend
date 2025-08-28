@@ -547,10 +547,4 @@ export class ProductController {
   async getAllProductsForClient() {
     return this.productService.getAllProductsForClient();
   }
-
-  @Post('generate-slugs')
-  @ApiOperation({ summary: 'Generate slugs for existing products' })
-  async generateProductSlugs() {
-    return this.productService.generateProductSlugs();
-  }
 }
