@@ -876,7 +876,12 @@ export class ProductService {
     try {
       const existingProduct = await this.prisma.product.findUnique({
         where: { id: BigInt(id) },
-        select: { id: true, category_id: true, is_from_kiotviet: true },
+        select: {
+          id: true,
+          category_id: true,
+          is_from_kiotviet: true,
+          category_slug: true,
+        },
       });
 
       if (!existingProduct) {
@@ -928,6 +933,7 @@ export class ProductService {
               ? { connect: { id: BigInt(extractedCategoryId) } }
               : { disconnect: true }
             : undefined,
+        category_slug: updateProductDto.category_slug,
       };
 
       Object.keys(updateData).forEach((key) => {
@@ -1234,11 +1240,11 @@ export class ProductService {
     pageNumber: number;
     title?: string;
     categoryId?: number;
-    categoryIds?: number[]; // ✅ ADD: Support multiple categories
+    categoryIds?: number[];
     visibilityFilter?: boolean;
     includeHidden?: boolean;
-    orderBy?: string; // ✅ ADD: Sorting support
-    isDesc?: boolean; // ✅ ADD: Sort direction
+    orderBy?: string;
+    isDesc?: boolean;
   }) {
     try {
       const {
@@ -1257,14 +1263,12 @@ export class ProductService {
       const take = pageSize;
       const where: Prisma.productWhereInput = {};
 
-      // ✅ Visibility logic
       if (!includeHidden) {
         where.is_visible = true;
       } else if (visibilityFilter !== undefined) {
         where.is_visible = visibilityFilter;
       }
 
-      // ✅ Search logic
       if (title) {
         where.OR = [
           { title: { contains: title } },
@@ -1272,18 +1276,14 @@ export class ProductService {
         ];
       }
 
-      // ✅ ENHANCED: Category filtering logic
       if (categoryIds && categoryIds.length > 0) {
-        // Multiple categories - for hierarchy filtering
         where.category_id = {
           in: categoryIds.map((id) => BigInt(id)),
         };
       } else if (categoryId) {
-        // Single category - backward compatibility
         where.category_id = BigInt(categoryId);
       }
 
-      // ✅ ENHANCED: Dynamic sorting
       const orderByClause: Prisma.productOrderByWithRelationInput =
         this.buildSortClause(orderBy, isDesc);
 

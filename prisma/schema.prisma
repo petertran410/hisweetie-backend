@@ -48,6 +48,7 @@ model product {
   instruction            String?   @db.LongText
   images_url             String?   @db.LongText
   category_id            BigInt?
+  category_slug          String?
   is_featured            Boolean?  @db.Bit(1)
   is_visible             Boolean?  @default(dbgenerated("b'0'")) @db.Bit(1)
   rate                   Float?
@@ -65,19 +66,18 @@ model product {
   is_from_kiotviet       Boolean   @default(dbgenerated("b'0'")) @db.Bit(1)
   kiotviet_synced_at     DateTime? @db.DateTime(6)
   kiotviet_description   String?
-  slug                   String?   @unique @db.VarChar(255)
   orders                 orders[]
   category               category? @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   review                 review[]
 
   @@index([category_id, is_visible])
+  @@index([category_slug])
   @@index([is_visible])
   @@index([kiotviet_id])
   @@index([kiotviet_code])
   @@index([kiotviet_category_id])
   @@index([kiotviet_trademark_id])
   @@index([is_from_kiotviet])
-  @@index([slug])
 }
 
 model category {
