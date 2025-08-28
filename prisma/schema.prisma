@@ -49,6 +49,7 @@ model product {
   images_url             String?   @db.LongText
   category_id            BigInt?
   category_slug          String?
+  slug                   String?
   is_featured            Boolean?  @db.Bit(1)
   is_visible             Boolean?  @default(dbgenerated("b'0'")) @db.Bit(1)
   rate                   Float?
@@ -78,6 +79,7 @@ model product {
   @@index([kiotviet_category_id])
   @@index([kiotviet_trademark_id])
   @@index([is_from_kiotviet])
+  @@index([slug])
 }
 
 model category {
