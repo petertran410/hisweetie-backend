@@ -1304,6 +1304,8 @@ export class ProductService {
                 description: true,
                 parent_id: true,
                 path: true,
+                slug: true,
+                title_meta: true,
               },
             },
           },
@@ -1318,6 +1320,8 @@ export class ProductService {
       ]);
 
       const transformedProducts = products.map(this.transformProductForCMS);
+
+      console.log(transformedProducts);
 
       return {
         success: true,
@@ -1398,6 +1402,8 @@ export class ProductService {
               ? Number(product.category.parent_id)
               : null,
             path: product.category.path,
+            title_meta: product.category.title_meta,
+            slug: product.category.slug,
           }
         : null,
 
