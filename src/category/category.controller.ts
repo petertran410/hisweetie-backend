@@ -235,4 +235,16 @@ export class CategoryController {
   async generateCategorySlugs(): Promise<any> {
     return this.categoryService.generateSlugsForExistingCategories();
   }
+
+  @Post('resolve-path')
+  @ApiOperation({ summary: 'Resolve category slug path to hierarchy' })
+  async resolveCategoryPath(@Body() body: { slugPath: string[] }) {
+    return this.categoryService.resolveCategoryPath(body.slugPath);
+  }
+
+  @Post('build-path')
+  @ApiOperation({ summary: 'Build slug path from category IDs' })
+  async buildCategoryPath(@Body() body: { categoryIds: number[] }) {
+    return this.categoryService.buildCategoryPath(body.categoryIds);
+  }
 }

@@ -21,8 +21,8 @@ export class CategoryService {
 
   async create(createCategoryDto: CreateCategoryDto) {
     try {
-      const { name } = createCategoryDto;
-      const slug = name ? this.convertToSlug(name) : null;
+      // const { name } = createCategoryDto;
+      // const slug = name ? this.convertToSlug(name) : null;
 
       if (createCategoryDto.parent_id) {
         const parentCategory = await this.prisma.category.findUnique({
@@ -43,7 +43,7 @@ export class CategoryService {
             ? createCategoryDto.parent_id
             : null,
           priority: createCategoryDto.priority || 0,
-          slug,
+          slug: this.convertToSlug(createCategoryDto.name),
         },
       });
 
@@ -845,5 +845,53 @@ export class CategoryService {
         `Failed to generate slugs: ${error.message}`,
       );
     }
+  }
+
+  async resolveCategoryPath(slugPath: string[]): Promise<any> {
+    const categories = [];
+    let currentParentId = null;
+
+    for (const slug of slugPath) {
+      const category = await this.prisma.category.findFirst({
+        where: {
+          slug,
+          parent_id: currentParentId ? BigInt(currentParentId) : null,
+        },
+        include: {
+          children: {
+            select: { id: true, name: true, slug: true },
+          },
+        },
+      });
+
+      if (!category) throw new NotFoundException(`Category not found: ${slug}`);
+
+      categories.push(category);
+      currentParentId = category.id;
+    }
+
+    return {
+      categoryHierarchy: categories,
+      finalCategory: categories[categories.length - 1],
+      breadcrumbPath: categories.map((cat) => ({
+        name: cat.name,
+        slug: cat.slug,
+        href: `/san-pham/${categories
+          .slice(0, categories.indexOf(cat) + 1)
+          .map((c) => c.slug)
+          .join('/')}`,
+      })),
+    };
+  }
+
+  async buildCategoryPath(categoryIds: number[]): Promise<string[]> {
+    const categories = await this.prisma.category.findMany({
+      where: { id: { in: categoryIds.map((id) => BigInt(id)) } },
+      select: { id: true, slug: true, parent_id: true },
+    });
+
+    // Sort by hierarchy level and return slug path
+    const sortedCategories = this.sortCategoriesByHierarchy(categories);
+    return sortedCategories.map((cat) => cat.slug).filter(Boolean);
   }
 }
