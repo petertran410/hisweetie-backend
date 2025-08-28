@@ -249,8 +249,17 @@ export class CategoryController {
   }
 
   @Get('client/find-by-slug/:slug')
-  @ApiOperation({ summary: 'Find category by slug for client' })
   async findBySlugForClient(@Param('slug') slug: string) {
-    return this.categoryService.findBySlugForClient(slug);
+    const category = await this.categoryService.findBySlug(slug);
+    if (!category) {
+      throw new NotFoundException(`Category with slug "${slug}" not found`);
+    }
+
+    return {
+      id: Number(category.id),
+      name: category.name,
+      slug: category.slug,
+      description: category.description,
+    };
   }
 }

@@ -549,12 +549,6 @@ export class ProductController {
   }
 
   @Get('client/find-id-by-slug')
-  @ApiOperation({
-    summary: 'Find product ID by slug and category slug',
-    description: 'Returns product ID to support clean URLs like articles',
-  })
-  @ApiQuery({ name: 'slug', description: 'Product slug (from title)' })
-  @ApiQuery({ name: 'categorySlug', description: 'Category slug' })
   async findIdBySlug(
     @Query('slug') slug: string,
     @Query('categorySlug') categorySlug: string,
