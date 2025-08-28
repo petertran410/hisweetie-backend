@@ -888,7 +888,9 @@ export class ProductService {
         throw new NotFoundException(`Product with ID ${id} not found`);
       }
 
-      const extractedCategoryId = this.extractCategoryId(updateProductDto);
+      const extractedCategoryId: any = this.extractCategoryId(updateProductDto);
+
+      const categorySlug = await this.syncCategorySlug(extractedCategoryId);
 
       if (
         updateProductDto.categoryIds &&
@@ -933,7 +935,7 @@ export class ProductService {
               ? { connect: { id: BigInt(extractedCategoryId) } }
               : { disconnect: true }
             : undefined,
-        category_slug: updateProductDto.category_slug,
+        category_slug: categorySlug,
       };
 
       Object.keys(updateData).forEach((key) => {
@@ -1488,67 +1490,44 @@ export class ProductService {
     }
   }
 
-  async updateProductCategory(
-    productId: number,
-    categoryId: number | null,
-  ): Promise<{
-    success: boolean;
-    data: {
-      productId: number;
-      categoryId: number | null;
-      categoryName: string | null;
-    };
-    message: string;
-  }> {
-    try {
-      const product = await this.prisma.product.findUnique({
-        where: { id: BigInt(productId) },
+  async updateProductCategory(productId: number, categoryId: number | null) {
+    let categorySlug: string | null = null;
+
+    if (categoryId) {
+      const category = await this.prisma.category.findUnique({
+        where: { id: BigInt(categoryId) },
+        select: { slug: true },
       });
 
-      if (!product) {
-        throw new NotFoundException(`Product with ID ${productId} not found`);
+      if (!category) {
+        throw new NotFoundException('Category not found');
       }
 
-      if (categoryId) {
-        const category = await this.prisma.category.findUnique({
-          where: { id: BigInt(categoryId) },
-        });
-
-        if (!category) {
-          throw new NotFoundException(
-            `Category with ID ${categoryId} not found`,
-          );
-        }
-      }
-
-      const updated = await this.prisma.product.update({
-        where: { id: BigInt(productId) },
-        data: {
-          category_id: categoryId ? BigInt(categoryId) : null,
-        },
-        include: {
-          category: {
-            select: { id: true, name: true },
-          },
-        },
-      });
-
-      this.logger.log(
-        `Product ${productId} category updated to ${categoryId || 'none'}`,
-      );
-
-      return {
-        success: true,
-        data: {
-          productId: Number(updated.id),
-          categoryId: updated.category_id ? Number(updated.category_id) : null,
-          categoryName: updated.category?.name || null,
-        },
-        message: 'Product category updated successfully',
-      };
-    } catch (error) {
-      this.logger.error(`Failed to update product category: ${error.message}`);
-      throw error;
+      categorySlug = category.slug;
     }
+
+    const updatedProduct = await this.prisma.product.update({
+      where: { id: BigInt(productId) },
+      data: {
+        category_id: categoryId ? BigInt(categoryId) : null,
+        category_slug: categorySlug, // Sync slug
+      },
+      include: { category: true },
+    });
+
+    return this.transformProduct(updatedProduct);
+  }
+
+  private async syncCategorySlug(
+    categoryId: number | null,
+  ): Promise<string | null> {
+    if (!categoryId) return null;
+
+    const category = await this.prisma.category.findUnique({
+      where: { id: BigInt(categoryId) },
+      select: { slug: true },
+    });
+
+    return category?.slug || null;
   }
 }
