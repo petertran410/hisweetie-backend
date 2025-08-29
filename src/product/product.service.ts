@@ -1676,4 +1676,35 @@ export class ProductService {
       throw error;
     }
   }
+
+  async findBySlug(slug: string): Promise<any> {
+    try {
+      const product = await this.prisma.product.findFirst({
+        where: {
+          slug: slug,
+          is_visible: true,
+        },
+        include: {
+          category: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              description: true,
+              parent_id: true,
+            },
+          },
+        },
+      });
+
+      if (!product) {
+        throw new NotFoundException(`Product with slug "${slug}" not found`);
+      }
+
+      return this.transformProduct(product);
+    } catch (error) {
+      this.logger.error(`Failed to find product by slug: ${slug}`, error);
+      throw error;
+    }
+  }
 }

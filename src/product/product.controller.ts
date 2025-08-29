@@ -723,4 +723,9 @@ export class ProductController {
       throw error;
     }
   }
+
+  @Get('client/find-by-slug/:slug')
+  async findProductBySlug(@Param('slug') slug: string) {
+    return this.productService.findBySlug(slug);
+  }
 }
