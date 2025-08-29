@@ -678,6 +678,7 @@ export class CategoryService {
         description: cat.description,
         parent_id: cat.parent_id ? Number(cat.parent_id) : null,
         priority: cat.priority || 0,
+        slug: cat.slug,
         productCount: cat.product.length,
         title_meta: cat.title_meta,
         level: 0,
