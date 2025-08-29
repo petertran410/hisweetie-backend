@@ -1403,6 +1403,7 @@ export class ProductService {
       instruction: product.instruction,
 
       category_slug: product.category_slug,
+      slug: product.slug,
 
       is_visible: product.is_visible,
       is_featured: product.is_featured,
