@@ -17,7 +17,6 @@ async function bootstrap() {
   app.use(express.static('.'));
   app.useGlobalInterceptors(new BigIntInterceptor());
 
-  // CORS Configuration - UPDATED
   const allowedOrigins = [
     'https://dieptra.com',
     'https://www.dieptra.com',
@@ -25,6 +24,7 @@ async function bootstrap() {
     'http://localhost:3210',
     'http://14.224.212.102:3333',
     'https://cms.gaulermao.com',
+    'https://www.dieptra.com/',
   ];
 
   app.enableCors({
