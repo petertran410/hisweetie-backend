@@ -1713,7 +1713,6 @@ export class ProductService {
       });
 
       if (exactMatch) {
-        // ✅ ENHANCE: Transform with category hierarchy
         return this.transformProductWithHierarchy(exactMatch);
       }
 
