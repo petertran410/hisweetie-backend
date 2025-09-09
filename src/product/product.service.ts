@@ -1,4 +1,3 @@
-import { category } from './../../node_modules/.prisma/client/index.d';
 import {
   Injectable,
   NotFoundException,
@@ -14,9 +13,15 @@ import { ConfigService } from '@nestjs/config';
 import { KiotVietAuthService } from 'src/auth/kiotviet-auth/auth.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { async, firstValueFrom } from 'rxjs';
-import { create } from 'domain';
-import { title } from 'process';
 import { ProductListItemDto } from './dto/product-list-response.dto';
+
+interface CategoryHierarchyItem {
+  id: number;
+  name: string;
+  slug: string;
+  level: number;
+  href: string;
+}
 
 interface KiotProduct {
   id: number;
@@ -768,7 +773,6 @@ export class ProductService {
   private transformProduct(product: any) {
     const productTitle =
       product.title || product.kiotviet_name || 'Untitled Product';
-
     const productPrice = product.kiotviet_price
       ? Number(product.kiotviet_price)
       : null;
@@ -786,13 +790,19 @@ export class ProductService {
       ? {
           id: Number(product.category.id),
           name: product.category.name,
-          path: product.category.path || null,
-          displayName: product.category.displayName || product.category.name,
+          slug: product.category.slug,
+          description: product.category.description,
+          parent_id: product.category.parent_id
+            ? Number(product.category.parent_id)
+            : null,
+          path: product.category.path,
+          level: product.category.level,
         }
       : null;
     return {
       id: Number(product.id),
       title: productTitle,
+      slug: this.convertToSlug(productTitle),
       price: productPrice,
       quantity: product.quantity || 0,
       general_description: product.general_description,
@@ -1677,10 +1687,10 @@ export class ProductService {
 
   async findBySlug(slug: string): Promise<any> {
     try {
-      const product = await this.prisma.product.findFirst({
+      const products = await this.prisma.product.findMany({
         where: {
-          slug: slug,
           is_visible: true,
+          OR: [{ title: { not: null } }, { kiotviet_name: { not: null } }],
         },
         include: {
           category: {
@@ -1690,19 +1700,97 @@ export class ProductService {
               slug: true,
               description: true,
               parent_id: true,
+              path: true,
+              level: true,
             },
           },
         },
       });
 
-      if (!product) {
-        throw new NotFoundException(`Product with slug "${slug}" not found`);
+      const exactMatch = products.find((product) => {
+        const productTitle = product.title || product.kiotviet_name;
+        return productTitle && this.convertToSlug(productTitle) === slug;
+      });
+
+      if (exactMatch) {
+        // ✅ ENHANCE: Transform with category hierarchy
+        return this.transformProductWithHierarchy(exactMatch);
       }
 
-      return this.transformProduct(product);
+      throw new NotFoundException(`Product not found: ${slug}`);
     } catch (error) {
       this.logger.error(`Failed to find product by slug: ${slug}`, error);
       throw error;
+    }
+  }
+
+  private async transformProductWithHierarchy(product: any) {
+    const basicProduct = this.transformProduct(product);
+
+    let categoryHierarchy: any[] = [];
+
+    if (product.category && product.category_id) {
+      categoryHierarchy = await this.buildCategoryHierarchyForProduct(
+        Number(product.category_id),
+      );
+    }
+
+    return {
+      ...basicProduct,
+      categoryHierarchy,
+    };
+  }
+
+  private async buildCategoryHierarchyForProduct(
+    categoryId: number,
+  ): Promise<CategoryHierarchyItem[]> {
+    try {
+      const allCategories = await this.prisma.category.findMany({
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          parent_id: true,
+          level: true,
+        },
+      });
+
+      const hierarchy: Omit<CategoryHierarchyItem, 'href'>[] = [];
+      let currentId: number | null = categoryId;
+
+      while (currentId) {
+        const category = allCategories.find(
+          (cat) => Number(cat.id) === currentId,
+        );
+
+        if (!category) break;
+
+        if (category.name && category.slug && category.level !== null) {
+          hierarchy.unshift({
+            id: Number(category.id),
+            name: category.name,
+            slug: category.slug,
+            level: category.level,
+          });
+        }
+
+        currentId = category.parent_id ? Number(category.parent_id) : null;
+      }
+
+      return hierarchy.map((cat, index): CategoryHierarchyItem => {
+        const slugPath = hierarchy
+          .slice(0, index + 1)
+          .map((c) => c.slug)
+          .join('/');
+
+        return {
+          ...cat,
+          href: `/san-pham/${slugPath}`,
+        };
+      });
+    } catch (error) {
+      this.logger.error('Failed to build category hierarchy:', error);
+      return [];
     }
   }
 }
