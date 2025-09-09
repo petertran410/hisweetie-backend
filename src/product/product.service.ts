@@ -1337,8 +1337,6 @@ export class ProductService {
 
       const transformedProducts = products.map(this.transformProductForCMS);
 
-      console.log(transformedProducts);
-
       return {
         success: true,
         content: transformedProducts,

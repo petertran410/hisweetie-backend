@@ -221,10 +221,6 @@ export class CategoryService {
         : null;
       const newParentId = updateCategoryDto.parent_id || null;
 
-      console.log(
-        `🔄 Updating category ${id}: ${oldParentId} → ${newParentId}`,
-      );
-
       const updatedCategory = await this.prisma.category.update({
         where: { id: BigInt(id) },
         data: {
@@ -352,60 +348,35 @@ export class CategoryService {
   }
 
   private async updateChildCounts(tx: any): Promise<void> {
-    console.log('🔄 Starting updateChildCounts...');
-
     const categories = await tx.category.findMany({
       orderBy: { id: 'asc' },
     });
-
-    console.log(
-      `📊 Found ${categories.length} categories to update child counts`,
-    );
 
     for (const category of categories) {
       const childCount = await tx.category.count({
         where: { parent_id: category.id },
       });
 
-      console.log(
-        `👶 Category ${Number(category.id)} - Children: ${childCount}`,
-      );
-
       await tx.category.update({
         where: { id: category.id },
         data: { child_count: childCount },
       });
     }
-
-    console.log('✅ updateChildCounts completed');
   }
 
   private async updateProductCounts(tx: any): Promise<void> {
-    console.log('🔄 Starting updateProductCounts...');
-
     const categories = await tx.category.findMany({
       orderBy: { id: 'asc' },
     });
-
-    console.log(
-      `📊 Found ${categories.length} categories to update product counts`,
-    );
 
     for (const category of categories) {
       const directCount = await tx.product.count({
         where: { category_id: category.id },
       });
 
-      console.log(
-        `📝 Category ${Number(category.id)} - Direct products: ${directCount}`,
-      );
-
       const descendantIds = await this.getDescendantIds(
         Number(category.id),
         tx,
-      );
-      console.log(
-        `👶 Category ${Number(category.id)} - Descendants: [${descendantIds.join(', ')}]`,
       );
 
       const allCategoryIds = [
@@ -417,10 +388,6 @@ export class CategoryService {
         where: { category_id: { in: allCategoryIds } },
       });
 
-      console.log(
-        `📊 Category ${Number(category.id)} - Total products: ${totalCount}`,
-      );
-
       await tx.category.update({
         where: { id: category.id },
         data: {
@@ -429,8 +396,6 @@ export class CategoryService {
         },
       });
     }
-
-    console.log('✅ updateProductCounts completed');
   }
 
   private async getDescendantIds(
