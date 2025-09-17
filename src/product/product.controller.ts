@@ -489,6 +489,7 @@ export class ProductController {
     @Query('pageSize') pageSize: string = '15',
     @Query('pageNumber') pageNumber: string = '0',
     @Query('title') title?: string,
+    @Query('title_meta') title_meta?: string,
     @Query('categoryId') categoryId?: string,
     @Query('categoryIds') categoryIds?: string,
     @Query('is_visible') is_visible?: string,

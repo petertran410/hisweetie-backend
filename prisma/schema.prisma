@@ -43,6 +43,7 @@ model kiotviet_category {
 model product {
   id                     BigInt    @id @default(autoincrement())
   title                  String?   @db.VarChar(255)
+  title_meta             String?
   description            String?   @db.LongText
   general_description    String?   @db.LongText
   instruction            String?   @db.LongText

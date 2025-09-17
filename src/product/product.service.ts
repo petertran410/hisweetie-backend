@@ -658,6 +658,7 @@ export class ProductService {
     orderBy?: string;
     isDesc?: boolean;
     title?: string;
+    title_meta?: string;
     includeHidden?: boolean;
   }) {
     try {
@@ -668,6 +669,7 @@ export class ProductService {
         orderBy = 'id',
         isDesc = true,
         title,
+        title_meta,
         includeHidden = false,
       } = params;
 
@@ -725,6 +727,7 @@ export class ProductService {
       const transformedProducts = products.map((product) => ({
         id: Number(product.id),
         title: product.title || product.kiotviet_name || 'Untitled Product',
+        title_meta: product.title_meta ?? '',
         price: product.kiotviet_price ? Number(product.kiotviet_price) : null,
         general_description: product.general_description,
         description: product.description,
@@ -802,6 +805,7 @@ export class ProductService {
     return {
       id: Number(product.id),
       title: productTitle,
+      title_meta: product.title_meta,
       slug: this.convertToSlug(productTitle),
       price: productPrice,
       quantity: product.quantity || 0,
@@ -844,6 +848,7 @@ export class ProductService {
 
       const productData: Prisma.productCreateInput = {
         title: createProductDto.title,
+        title_meta: createProductDto.title_meta,
         description: createProductDto.description,
         general_description: createProductDto.general_description,
         instruction: createProductDto.instruction,
@@ -892,6 +897,7 @@ export class ProductService {
           category_id: true,
           is_from_kiotviet: true,
           title: true,
+          title_meta: true,
           kiotviet_name: true,
         },
       });
@@ -943,6 +949,7 @@ export class ProductService {
 
       const updateData: Prisma.productUpdateInput = {
         title: updateProductDto.title,
+        title_meta: updateProductDto.title_meta,
         slug: slug,
         description: updateProductDto.description,
         general_description: updateProductDto.general_description,
@@ -1268,6 +1275,7 @@ export class ProductService {
     pageSize: number;
     pageNumber: number;
     title?: string;
+    title_meta?: string;
     categoryId?: number;
     categoryIds?: number[];
     visibilityFilter?: boolean;
@@ -1280,6 +1288,7 @@ export class ProductService {
         pageSize,
         pageNumber,
         title,
+        title_meta,
         categoryId,
         categoryIds,
         visibilityFilter,
@@ -1398,6 +1407,7 @@ export class ProductService {
     return {
       id: Number(product.id),
       title: product.title,
+      title_meta: product.title_meta,
       kiotviet_name: product.kiotviet_name,
       kiotviet_code: product.kiotviet_code,
       kiotviet_price: product.kiotviet_price

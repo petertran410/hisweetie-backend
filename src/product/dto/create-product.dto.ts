@@ -19,6 +19,13 @@ export class CreateProductDto {
   title: string;
 
   @ApiProperty({
+    description: 'Product title_meta',
+    example: 'Trà Sữa Trân Châu Đường Đen',
+  })
+  @IsString()
+  title_meta: string;
+
+  @ApiProperty({
     description: 'Product description',
     example: 'Trà sữa thơm ngon với trân châu đường đen hấp dẫn',
     required: false,
