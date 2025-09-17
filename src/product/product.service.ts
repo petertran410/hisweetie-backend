@@ -775,7 +775,10 @@ export class ProductService {
 
   private transformProduct(product: any) {
     const productTitle =
-      product.title || product.kiotviet_name || 'Untitled Product';
+      product.title ||
+      product.kiotviet_name ||
+      product.title_meta ||
+      'Untitled Product';
     const productPrice = product.kiotviet_price
       ? Number(product.kiotviet_price)
       : null;
