@@ -17,6 +17,13 @@ export class PaymentService {
       createPaymentDto;
 
     try {
+      const simplifiedCartItems = cartItems.map((item) => ({
+        id: item.productId,
+        qty: item.quantity,
+        price: item.price,
+        title: item.title.substring(0, 50),
+      }));
+
       const order = await this.prisma.product_order.create({
         data: {
           total: BigInt(amounts.total),
@@ -28,7 +35,7 @@ export class PaymentService {
           payment_method: paymentMethod,
           payment_status: paymentMethod === 'cod' ? 'PAID' : 'PENDING',
           status: paymentMethod === 'cod' ? 'CONFIRMED' : 'PENDING',
-          product_list: JSON.stringify(cartItems),
+          product_list: JSON.stringify(simplifiedCartItems),
         },
       });
 

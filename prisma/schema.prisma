@@ -225,23 +225,23 @@ model orders {
 
 model product_order {
   id             BigInt         @id @default(autoincrement())
-  created_by     String?        @db.VarChar(255)
+  created_by     String?
   created_date   DateTime?      @db.DateTime(6)
-  updated_by     String?        @db.VarChar(255)
+  updated_by     String?
   updated_date   DateTime?      @db.DateTime(6)
   address        String?        @db.LongText
   note           String?        @db.LongText
-  payment_method String?        @db.VarChar(255)
+  payment_method String?
   total          BigInt?
-  phone          String?        @db.VarChar(255)
-  status         String?        @db.VarChar(255)
+  phone          String?
+  status         String?
   payment_status String?
   product_list   String?
   total_amount   BigInt?
   full_name      String?
   email          String?
-  user_full_name String?        @db.VarChar(255)
-  user_id        String?        @db.VarChar(255)
+  user_full_name String?
+  user_id        String?
   orders         orders[]
   payment_logs   payment_logs[]
   user           user?          @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
