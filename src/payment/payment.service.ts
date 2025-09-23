@@ -1,7 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SepayService } from './sepay.service';
-import { CreateOrderDto } from './dto/create-order.dto';
+import { CreatePaymentDto } from './dto/create-payment.dto';
 
 @Injectable()
 export class PaymentService {
@@ -12,8 +12,9 @@ export class PaymentService {
     private sepayService: SepayService,
   ) {}
 
-  async createOrder(createOrderDto: CreateOrderDto) {
-    const { customerInfo, cartItems, paymentMethod, amounts } = createOrderDto;
+  async createOrder(createPaymentDto: CreatePaymentDto) {
+    const { customerInfo, cartItems, paymentMethod, amounts } =
+      createPaymentDto;
 
     try {
       const order = await this.prisma.product_order.create({
@@ -54,7 +55,7 @@ export class PaymentService {
       };
     } catch (error) {
       this.logger.error('Failed to create order:', error);
-      throw new BadRequestException('Failed to create order');
+      throw new BadRequestException(`Failed to create order: ${error.message}`);
     }
   }
 
@@ -106,7 +107,9 @@ export class PaymentService {
         `Failed to check payment status for ${orderId}:`,
         error,
       );
-      throw error;
+      throw new BadRequestException(
+        `Failed to check payment status: ${error.message}`,
+      );
     }
   }
 
@@ -142,7 +145,10 @@ export class PaymentService {
       return { success: true, message: 'Payment processed successfully' };
     } catch (error) {
       this.logger.error('Webhook processing failed:', error);
-      throw error;
+      return {
+        success: false,
+        message: `Webhook processing failed: ${error.message}`,
+      };
     }
   }
 
@@ -171,13 +177,30 @@ export class PaymentService {
     eventType: string,
     eventData: any,
   ) {
-    await this.prisma.payment_logs.create({
-      data: {
-        order_id: BigInt(orderId),
-        event_type: eventType,
-        event_data: eventData,
-        created_date: new Date(),
-      },
+    try {
+      await this.prisma.payment_logs.create({
+        data: {
+          order_id: BigInt(orderId),
+          event_type: eventType,
+          event_data: eventData,
+          created_date: new Date(),
+        },
+      });
+    } catch (error) {
+      this.logger.error('Failed to log payment event:', error);
+    }
+  }
+
+  async getOrderDebugInfo(orderId: string) {
+    const order = await this.prisma.product_order.findUnique({
+      where: { id: BigInt(orderId) },
     });
+
+    const logs = await this.prisma.payment_logs.findMany({
+      where: { order_id: BigInt(orderId) },
+      orderBy: { created_date: 'desc' },
+    });
+
+    return { order, logs };
   }
 }

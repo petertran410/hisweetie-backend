@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { PaymentService } from './payment.service';
 import { SepayService } from './sepay.service';
-import { CreateOrderDto } from './dto/create-order.dto';
+import { CreatePaymentDto } from './dto/create-payment.dto';
 
 @Controller('payment')
 export class PaymentController {
@@ -23,20 +23,41 @@ export class PaymentController {
   ) {}
 
   @Post('create')
-  async createPayment(@Body() createOrderDto: CreateOrderDto) {
-    return this.paymentService.createOrder(createOrderDto);
+  async createPayment(@Body() createPaymentDto: CreatePaymentDto) {
+    try {
+      return await this.paymentService.createOrder(createPaymentDto);
+    } catch (error) {
+      this.logger.error('Payment creation failed:', error);
+      return {
+        success: false,
+        message: error.message || 'Failed to create payment',
+      };
+    }
   }
 
   @Get('status/:orderId')
   async getPaymentStatus(@Param('orderId') orderId: string) {
-    return this.paymentService.checkPaymentStatus(orderId);
+    try {
+      return await this.paymentService.checkPaymentStatus(orderId);
+    } catch (error) {
+      this.logger.error(`Payment status check failed for ${orderId}:`, error);
+      return {
+        success: false,
+        message: error.message || 'Failed to check payment status',
+      };
+    }
   }
 
   @Post('webhook/sepay')
   @HttpCode(HttpStatus.OK)
   async handleSepayWebhook(@Body() webhookData: any, @Req() req: any) {
     this.logger.log('Received SePay webhook:', webhookData);
-    return this.paymentService.handleWebhook(webhookData);
+    try {
+      return await this.paymentService.handleWebhook(webhookData);
+    } catch (error) {
+      this.logger.error('Webhook processing failed:', error);
+      return { success: false, message: error.message };
+    }
   }
 
   @Get('test-connection')
@@ -61,5 +82,15 @@ export class PaymentController {
         },
       ],
     };
+  }
+
+  @Get('debug/:orderId')
+  async debugOrder(@Param('orderId') orderId: string) {
+    try {
+      const order = await this.paymentService.getOrderDebugInfo(orderId);
+      return { success: true, data: order };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
   }
 }
