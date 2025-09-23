@@ -96,7 +96,6 @@ export class PaymentService {
         JSON.stringify(webhookData, null, 2),
       );
 
-      // Validate required fields
       const requiredFields = ['transferType', 'transferAmount', 'content'];
       const missingFields = requiredFields.filter(
         (field) => !webhookData[field],
@@ -104,61 +103,37 @@ export class PaymentService {
 
       if (missingFields.length > 0) {
         this.logger.error('Missing required fields:', missingFields);
-        return {
-          success: false,
-          message: `Missing fields: ${missingFields.join(', ')}`,
-        };
+        return { success: false, message: 'Missing required fields' };
       }
 
       const mappedData = {
-        content: webhookData.content,
-        transferAmount: Number(webhookData.transferAmount),
         transferType: webhookData.transferType,
-        transactionId: webhookData.referenceCode || webhookData.code,
-        accountNumber: webhookData.accountNumber,
+        transferAmount: parseFloat(webhookData.transferAmount),
+        content: webhookData.content || '',
+        transactionId: webhookData.id,
         gateway: webhookData.gateway,
         transactionDate: webhookData.transactionDate,
       };
 
-      this.logger.log('Mapped data:', mappedData);
-
-      // Chỉ xử lý giao dịch tiền vào
       if (mappedData.transferType !== 'in') {
-        return { success: false, message: 'Not an incoming transaction' };
+        return { success: true, message: 'Not an incoming transfer' };
       }
 
-      // Extract order ID từ content có format "SEVQR+DH123"
-      const orderRegex = /SEVQR\+DH(\d+)/i;
-      const match = mappedData.content.match(orderRegex);
-
-      if (!match || !match[1]) {
-        this.logger.error('Order ID not found in content:', mappedData.content);
-        return {
-          success: false,
-          message: 'Order ID not found in transaction content',
-        };
+      const orderMatch = mappedData.content.match(/SEVQR[\s+]DHWEB(\d+)/i);
+      if (!orderMatch) {
+        this.logger.warn('No order ID found in content:', mappedData.content);
+        return { success: true, message: 'No order ID found' };
       }
 
-      const orderId = match[1];
-      this.logger.log('Extracted order ID:', orderId);
+      const orderId = orderMatch[1];
+      this.logger.log(`Extracted order ID: ${orderId}`);
 
-      // Validate amount
-      if (mappedData.transferAmount <= 0) {
-        this.logger.error(
-          'Invalid transfer amount:',
-          mappedData.transferAmount,
-        );
-        return { success: false, message: 'Invalid transfer amount' };
-      }
-
-      // Find order
       const order = await this.prisma.product_order.findFirst({
         where: {
           id: BigInt(orderId),
-          total: BigInt(mappedData.transferAmount),
-          payment_status: {
-            in: ['PENDING', 'UNPAID', ''],
-          },
+          total: mappedData.transferAmount,
+          payment_status: 'PENDING',
+          payment_method: 'sepay_bank',
         },
       });
 
@@ -166,28 +141,12 @@ export class PaymentService {
         this.logger.error(
           `Order not found: ID=${orderId}, Amount=${mappedData.transferAmount}`,
         );
-
-        // Debug existing order
-        const existingOrder = await this.prisma.product_order.findUnique({
-          where: { id: BigInt(orderId) },
-        });
-
-        if (existingOrder) {
-          this.logger.error('Order exists but conditions not met:', {
-            orderId,
-            orderAmount: Number(existingOrder.total),
-            webhookAmount: mappedData.transferAmount,
-            paymentStatus: existingOrder.payment_status,
-          });
-        }
-
         return {
           success: false,
           message: 'Order not found or already processed',
         };
       }
 
-      // Update order status
       await this.prisma.product_order.update({
         where: { id: BigInt(orderId) },
         data: {
@@ -198,7 +157,6 @@ export class PaymentService {
         },
       });
 
-      // Log payment event
       await this.prisma.payment_logs.create({
         data: {
           order_id: BigInt(orderId),
