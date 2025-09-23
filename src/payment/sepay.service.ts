@@ -82,7 +82,7 @@ export class SepayService {
       }
 
       const transactions = response.data?.transactions || [];
-      const orderContent = `DH${orderId}`;
+      const orderContent = `SEVQR+WEBDH${orderId}`;
 
       const matchingTransaction = transactions.find(
         (tx: any) =>
