@@ -232,9 +232,14 @@ model product_order {
   address        String?        @db.LongText
   note           String?        @db.LongText
   payment_method String?        @db.VarChar(255)
+  total          BigInt?
   phone          String?        @db.VarChar(255)
   status         String?        @db.VarChar(255)
+  payment_status String?
+  product_list   String?
   total_amount   BigInt?
+  full_name      String?
+  email          String?
   user_full_name String?        @db.VarChar(255)
   user_id        String?        @db.VarChar(255)
   orders         orders[]

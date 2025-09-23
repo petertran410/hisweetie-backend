@@ -9,9 +9,9 @@ import { ProductModule } from './product/product.module';
 import { NewsModule } from './news/news.module';
 import { JobpostModule } from './jobpost/jobpost.module';
 import { FileModule } from './file/file.module';
-import { PagesModule } from './pages/pages.module'; // THÊM MODULE PAGES
+import { PagesModule } from './pages/pages.module';
 import { PrismaModule } from './prisma/prisma.module';
-// import { PaymentModule } from './payment/payment.module';
+import { PaymentModule } from './payment/payment.module';
 
 @Module({
   imports: [
@@ -29,7 +29,7 @@ import { PrismaModule } from './prisma/prisma.module';
     JobpostModule,
     FileModule,
     PagesModule,
-    // PaymentModule,
+    PaymentModule,
   ],
   controllers: [],
   providers: [],
