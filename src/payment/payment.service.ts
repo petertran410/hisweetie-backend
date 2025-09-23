@@ -92,14 +92,26 @@ export class PaymentService {
     try {
       this.logger.log('=== WEBHOOK PROCESSING START ===');
       this.logger.log(
-        'Full webhook data:',
+        'Raw webhook data:',
         JSON.stringify(webhookData, null, 2),
       );
 
-      // Map đúng field names theo SePay API
+      const requiredFields = ['transferType', 'transferAmount', 'content'];
+      const missingFields = requiredFields.filter(
+        (field) => !webhookData[field],
+      );
+
+      if (missingFields.length > 0) {
+        this.logger.error('Missing required fields:', missingFields);
+        return {
+          success: false,
+          message: `Missing fields: ${missingFields.join(', ')}`,
+        };
+      }
+
       const mappedData = {
-        content: webhookData.content || webhookData.description,
-        transferAmount: webhookData.transferAmount,
+        content: webhookData.content,
+        transferAmount: Number(webhookData.transferAmount),
         transferType: webhookData.transferType,
         transactionId: webhookData.referenceCode || webhookData.code,
         accountNumber: webhookData.accountNumber,
@@ -111,8 +123,7 @@ export class PaymentService {
 
       this.logger.log('Mapped data:', mappedData);
 
-      // Check if this is an incoming transaction
-      if (!mappedData.transferType || mappedData.transferType !== 'in') {
+      if (mappedData.transferType !== 'in') {
         this.logger.warn(
           'Not an incoming transaction. Type:',
           mappedData.transferType,
@@ -120,50 +131,62 @@ export class PaymentService {
         return { success: false, message: 'Not an incoming transaction' };
       }
 
-      if (!mappedData.content || !mappedData.transferAmount) {
-        this.logger.error('Missing required fields: content or transferAmount');
-        return { success: false, message: 'Missing required webhook data' };
-      }
+      const orderRegex = /DH(\d+)/i;
+      const match = mappedData.content.match(orderRegex);
 
-      // Extract order ID from content
-      const orderPatterns = [/DH(\d+)/i, /(?:^|\s)(\d+)(?:\s|$)/];
-      let orderId = null;
-
-      for (const pattern of orderPatterns) {
-        const match = mappedData.content.match(pattern);
-        if (match && match[1]) {
-          orderId = match[1];
-          break;
-        }
-      }
-
-      if (!orderId) {
+      if (!match || !match[1]) {
         this.logger.error('Order ID not found in content:', mappedData.content);
-        return { success: false, message: 'Order ID not found' };
+        return {
+          success: false,
+          message: 'Order ID not found in transaction content',
+        };
       }
 
+      const orderId = match[1];
       this.logger.log('Extracted order ID:', orderId);
 
-      // Find order using correct model
+      if (mappedData.transferAmount <= 0) {
+        this.logger.error(
+          'Invalid transfer amount:',
+          mappedData.transferAmount,
+        );
+        return { success: false, message: 'Invalid transfer amount' };
+      }
+
       const order = await this.prisma.product_order.findFirst({
         where: {
           id: BigInt(orderId),
           total: BigInt(mappedData.transferAmount),
-          payment_status: 'PENDING',
+          payment_status: {
+            in: ['PENDING', 'UNPAID'],
+          },
         },
       });
 
       if (!order) {
         this.logger.error(
-          `Order not found: ID=${orderId}, Amount=${mappedData.transferAmount}`,
+          `Order not found: ID=${orderId}, Amount=${mappedData.transferAmount}, Status=PENDING/UNPAID`,
         );
+
+        const existingOrder = await this.prisma.product_order.findUnique({
+          where: { id: BigInt(orderId) },
+        });
+
+        if (existingOrder) {
+          this.logger.error('Order exists but conditions not met:', {
+            orderId,
+            orderAmount: Number(existingOrder.total),
+            webhookAmount: mappedData.transferAmount,
+            paymentStatus: existingOrder.payment_status,
+          });
+        }
+
         return {
           success: false,
           message: 'Order not found or already processed',
         };
       }
 
-      // Update order status
       await this.prisma.product_order.update({
         where: { id: BigInt(orderId) },
         data: {
@@ -174,7 +197,6 @@ export class PaymentService {
         },
       });
 
-      // Log payment event
       await this.prisma.payment_logs.create({
         data: {
           order_id: BigInt(orderId),
@@ -187,7 +209,6 @@ export class PaymentService {
         },
       });
 
-      // Save webhook data
       await this.prisma.payment_webhooks.create({
         data: {
           webhook_id: mappedData.transactionId || `SEPAY_${Date.now()}`,
@@ -205,22 +226,22 @@ export class PaymentService {
         },
       });
 
-      this.logger.log(`✅ Order ${orderId} payment confirmed`);
+      this.logger.log(`✅ Order ${orderId} payment confirmed successfully`);
       return {
         success: true,
         message: 'Payment processed successfully',
         orderId,
+        amount: mappedData.transferAmount,
       };
     } catch (error) {
       this.logger.error('Webhook processing failed:', error.stack);
 
-      // Log error
       try {
         await this.prisma.payment_logs.create({
           data: {
-            order_id: BigInt(0), // Unknown order
+            order_id: BigInt(0),
             event_type: 'WEBHOOK_ERROR',
-            event_data: { error: error.message },
+            event_data: { error: error.message, stack: error.stack },
             sepay_response: webhookData,
             created_date: new Date(),
           },
@@ -229,7 +250,11 @@ export class PaymentService {
         this.logger.error('Failed to log error:', logError);
       }
 
-      return { success: false, message: 'Webhook processing failed' };
+      return {
+        success: false,
+        message: 'Webhook processing failed',
+        error: error.message,
+      };
     }
   }
 
