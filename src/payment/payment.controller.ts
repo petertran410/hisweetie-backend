@@ -12,6 +12,7 @@ import {
 import { PaymentService } from './payment.service';
 import { SepayService } from './sepay.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { ConfigService } from '@nestjs/config';
 
 @Controller('payment')
 export class PaymentController {
@@ -20,6 +21,7 @@ export class PaymentController {
   constructor(
     private paymentService: PaymentService,
     private sepayService: SepayService,
+    private configService: ConfigService,
   ) {}
 
   @Post('create')
@@ -62,7 +64,29 @@ export class PaymentController {
 
   @Get('test-connection')
   async testConnection() {
-    return this.sepayService.testConnection();
+    const result = await this.sepayService.testConnection();
+    this.logger.log('Test connection result:', result);
+    return result;
+  }
+
+  @Get('validate-token')
+  async validateToken() {
+    const isValid = await this.sepayService.validateApiToken();
+    return {
+      success: isValid,
+      message: isValid ? 'API token is valid' : 'API token is invalid',
+    };
+  }
+
+  @Get('debug-config')
+  async debugConfig() {
+    return {
+      baseUrl: this.configService.get('SEPAY_BASE_URL'),
+      bankAccount: this.configService.get('SEPAY_BANK_ACCOUNT'),
+      bankName: this.configService.get('SEPAY_BANK_NAME'),
+      hasApiToken: !!this.configService.get('SEPAY_API_TOKEN'),
+      tokenLength: this.configService.get('SEPAY_API_TOKEN')?.length || 0,
+    };
   }
 
   @Get('methods')

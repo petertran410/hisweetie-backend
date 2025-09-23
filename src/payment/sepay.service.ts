@@ -26,22 +26,34 @@ export class SepayService {
   async testConnection(): Promise<{ success: boolean; message: string }> {
     try {
       const response = await firstValueFrom(
-        this.httpService.get(`${this.baseUrl}/banks`, {
+        this.httpService.get(`${this.baseUrl}/bankaccounts/count`, {
           headers: {
             Authorization: `Bearer ${this.apiToken}`,
           },
         }),
       );
 
-      return {
-        success: true,
-        message: 'SePay connection successful',
-      };
+      this.logger.log('SePay test response:', response.data);
+
+      if (response.data.status === 200 && response.data.messages?.success) {
+        return {
+          success: true,
+          message: `SePay connection successful. Found ${response.data.count_bankaccounts} bank accounts.`,
+        };
+      } else {
+        return {
+          success: false,
+          message: 'SePay API returned error response',
+        };
+      }
     } catch (error) {
-      this.logger.error('SePay connection failed:', error.message);
+      this.logger.error(
+        'SePay connection failed:',
+        error.response?.data || error.message,
+      );
       return {
         success: false,
-        message: `SePay connection failed: ${error.message}`,
+        message: `SePay connection failed: ${error.response?.data?.error || error.message}`,
       };
     }
   }
@@ -65,20 +77,47 @@ export class SepayService {
         }),
       );
 
+      if (response.data.status !== 200) {
+        throw new Error(`SePay API error: ${response.data.error}`);
+      }
+
       const transactions = response.data?.transactions || [];
       const orderContent = `DH${orderId}`;
 
       const matchingTransaction = transactions.find(
         (tx: any) =>
-          tx.content?.includes(orderContent) &&
-          Math.abs(tx.amount - amount) < 1000 &&
-          tx.type === 'in',
+          tx.transaction_content?.includes(orderContent) &&
+          Math.abs(parseFloat(tx.amount_in) - amount) < 1000 &&
+          parseFloat(tx.amount_in) > 0,
       );
 
       return matchingTransaction || null;
     } catch (error) {
-      this.logger.error('Failed to check transactions:', error.message);
+      this.logger.error(
+        'Failed to check transactions:',
+        error.response?.data || error.message,
+      );
       throw error;
+    }
+  }
+
+  async validateApiToken(): Promise<boolean> {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(`${this.baseUrl}/bankaccounts/count`, {
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+          },
+        }),
+      );
+
+      return response.data.status === 200;
+    } catch (error) {
+      this.logger.error(
+        'API token validation failed:',
+        error.response?.data || error.message,
+      );
+      return false;
     }
   }
 }
