@@ -53,33 +53,22 @@ export class PaymentController {
   @Post('webhook/sepay')
   @HttpCode(HttpStatus.OK)
   async handleSepayWebhook(@Body() webhookData: any, @Req() req: any) {
-    this.logger.log('=== SEPAY WEBHOOK RECEIVED ===');
+    this.logger.log('🚨 SEPAY WEBHOOK CALLED 🚨');
+    this.logger.log('Timestamp:', new Date().toISOString());
+    this.logger.log('IP:', req.ip || req.connection.remoteAddress);
+    this.logger.log('User-Agent:', req.headers['user-agent']);
     this.logger.log('Method:', req.method);
     this.logger.log('URL:', req.url);
     this.logger.log('Headers:', JSON.stringify(req.headers, null, 2));
-    this.logger.log('Content-Type:', req.headers['content-type']);
-    this.logger.log('Body (parsed):', JSON.stringify(webhookData, null, 2));
-    this.logger.log('Raw Body:', req.rawBody || 'No raw body available');
-    this.logger.log('================================');
+    this.logger.log('Body:', JSON.stringify(webhookData, null, 2));
 
     try {
-      this.logger.log('Starting webhook processing...');
-
       const result = await this.paymentService.handleWebhook(webhookData);
-
-      this.logger.log(
-        'Webhook processing result:',
-        JSON.stringify(result, null, 2),
-      );
-
-      return {
-        success: true,
-        message: 'Webhook received successfully',
-        result,
-      };
+      this.logger.log('✅ Webhook processed:', result);
+      return { success: true, received: true, result };
     } catch (error) {
-      this.logger.error('Webhook processing failed:', error.stack);
-      return { success: false, message: error.message, error: error.stack };
+      this.logger.error('❌ Webhook error:', error.stack);
+      return { success: false, received: true, error: error.message };
     }
   }
 
@@ -152,5 +141,14 @@ export class PaymentController {
     };
 
     return await this.paymentService.handleWebhook(testData || sampleData);
+  }
+
+  @Get('webhook/health')
+  async webhookHealth() {
+    return {
+      status: 'OK',
+      timestamp: new Date().toISOString(),
+      webhook_url: 'https://api.gaulermao.com/api/payment/webhook/sepay',
+    };
   }
 }
