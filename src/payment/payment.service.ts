@@ -90,12 +90,13 @@ export class PaymentService {
 
   async handleWebhook(webhookData: any) {
     try {
-      this.logger.log('=== WEBHOOK PROCESSING START ===');
+      this.logger.log('=== SEPAY WEBHOOK START ===');
       this.logger.log(
         'Raw webhook data:',
         JSON.stringify(webhookData, null, 2),
       );
 
+      // Validate required fields
       const requiredFields = ['transferType', 'transferAmount', 'content'];
       const missingFields = requiredFields.filter(
         (field) => !webhookData[field],
@@ -117,21 +118,17 @@ export class PaymentService {
         accountNumber: webhookData.accountNumber,
         gateway: webhookData.gateway,
         transactionDate: webhookData.transactionDate,
-        accumulated: webhookData.accumulated,
-        subAccount: webhookData.subAccount,
       };
 
       this.logger.log('Mapped data:', mappedData);
 
+      // Chỉ xử lý giao dịch tiền vào
       if (mappedData.transferType !== 'in') {
-        this.logger.warn(
-          'Not an incoming transaction. Type:',
-          mappedData.transferType,
-        );
         return { success: false, message: 'Not an incoming transaction' };
       }
 
-      const orderRegex = /DH(\d+)/i;
+      // Extract order ID từ content có format "SEVQR+DH123"
+      const orderRegex = /SEVQR\+DH(\d+)/i;
       const match = mappedData.content.match(orderRegex);
 
       if (!match || !match[1]) {
@@ -145,6 +142,7 @@ export class PaymentService {
       const orderId = match[1];
       this.logger.log('Extracted order ID:', orderId);
 
+      // Validate amount
       if (mappedData.transferAmount <= 0) {
         this.logger.error(
           'Invalid transfer amount:',
@@ -153,21 +151,23 @@ export class PaymentService {
         return { success: false, message: 'Invalid transfer amount' };
       }
 
+      // Find order
       const order = await this.prisma.product_order.findFirst({
         where: {
           id: BigInt(orderId),
           total: BigInt(mappedData.transferAmount),
           payment_status: {
-            in: ['PENDING', 'UNPAID'],
+            in: ['PENDING', 'UNPAID', null],
           },
         },
       });
 
       if (!order) {
         this.logger.error(
-          `Order not found: ID=${orderId}, Amount=${mappedData.transferAmount}, Status=PENDING/UNPAID`,
+          `Order not found: ID=${orderId}, Amount=${mappedData.transferAmount}`,
         );
 
+        // Debug existing order
         const existingOrder = await this.prisma.product_order.findUnique({
           where: { id: BigInt(orderId) },
         });
@@ -187,6 +187,7 @@ export class PaymentService {
         };
       }
 
+      // Update order status
       await this.prisma.product_order.update({
         where: { id: BigInt(orderId) },
         data: {
@@ -197,6 +198,7 @@ export class PaymentService {
         },
       });
 
+      // Log payment event
       await this.prisma.payment_logs.create({
         data: {
           order_id: BigInt(orderId),
@@ -209,23 +211,6 @@ export class PaymentService {
         },
       });
 
-      await this.prisma.payment_webhooks.create({
-        data: {
-          webhook_id: mappedData.transactionId || `SEPAY_${Date.now()}`,
-          provider: 'sepay',
-          order_code: `DH${orderId}`,
-          transaction_id: mappedData.transactionId,
-          status: 'SUCCESS',
-          amount: BigInt(mappedData.transferAmount),
-          gateway_code: mappedData.gateway || 'BANK_TRANSFER',
-          signature: 'N/A',
-          raw_data: webhookData,
-          processed: true,
-          processed_at: new Date(),
-          created_date: new Date(),
-        },
-      });
-
       this.logger.log(`✅ Order ${orderId} payment confirmed successfully`);
       return {
         success: true,
@@ -235,21 +220,6 @@ export class PaymentService {
       };
     } catch (error) {
       this.logger.error('Webhook processing failed:', error.stack);
-
-      try {
-        await this.prisma.payment_logs.create({
-          data: {
-            order_id: BigInt(0),
-            event_type: 'WEBHOOK_ERROR',
-            event_data: { error: error.message, stack: error.stack },
-            sepay_response: webhookData,
-            created_date: new Date(),
-          },
-        });
-      } catch (logError) {
-        this.logger.error('Failed to log error:', logError);
-      }
-
       return {
         success: false,
         message: 'Webhook processing failed',
