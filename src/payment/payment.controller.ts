@@ -65,10 +65,12 @@ export class PaymentController {
     try {
       const result = await this.paymentService.handleWebhook(webhookData);
       this.logger.log('✅ Webhook processed:', result);
-      return { success: true, received: true, result };
+
+      return { success: true };
     } catch (error) {
       this.logger.error('❌ Webhook error:', error.stack);
-      return { success: false, received: true, error: error.message };
+
+      return { success: true, error: 'processed_with_error' };
     }
   }
 
@@ -221,5 +223,18 @@ export class PaymentController {
     } catch (error) {
       return { success: false, error: error.message };
     }
+  }
+
+  @Get('webhook/sepay/connectivity-test')
+  async testWebhookConnectivity() {
+    return {
+      status: 'OK',
+      timestamp: new Date().toISOString(),
+      server_ip: process.env.SERVER_IP || 'unknown',
+      webhook_url: 'https://api.gaulermao.com/api/payment/webhook/sepay',
+      message: 'Webhook endpoint is accessible',
+      test_curl:
+        'curl -X POST https://api.gaulermao.com/api/payment/webhook/sepay -H "Content-Type: application/json" -d "{}"',
+    };
   }
 }

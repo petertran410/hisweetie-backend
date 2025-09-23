@@ -1,3 +1,4 @@
+// src/main.ts
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import * as express from 'express';
@@ -48,7 +49,23 @@ async function bootstrap() {
       'Accept',
       'Authorization',
       'X-Force-Signature',
+      'User-Agent',
     ],
+  });
+
+  app.use('/api/payment/webhook/sepay', (req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+    res.header(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization, X-Requested-With',
+    );
+
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
+
+    next();
   });
 
   const config = new DocumentBuilder().setTitle('Swagger-APIs-dieptra').build();
