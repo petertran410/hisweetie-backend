@@ -69,38 +69,13 @@ export class PaymentService {
         throw new BadRequestException('Order not found');
       }
 
-      if (order.payment_status === 'PAID') {
-        return {
-          success: true,
-          status: 'PAID',
-          orderId,
-          amount: Number(order.total),
-        };
-      }
-
-      if (order.payment_method === 'sepay_bank') {
-        const transaction = await this.sepayService.checkTransactions(
-          orderId,
-          Number(order.total),
-        );
-
-        if (transaction) {
-          await this.updateOrderPaymentStatus(orderId, 'PAID', transaction);
-          return {
-            success: true,
-            status: 'PAID',
-            orderId,
-            amount: Number(order.total),
-            transactionId: transaction.id,
-          };
-        }
-      }
-
       return {
         success: true,
-        status: 'PENDING',
+        status: order.payment_status || 'PENDING',
         orderId,
         amount: Number(order.total),
+        paymentMethod: order.payment_method,
+        orderStatus: order.status,
       };
     } catch (error) {
       this.logger.error(
@@ -116,138 +91,145 @@ export class PaymentService {
   async handleWebhook(webhookData: any) {
     try {
       this.logger.log('=== WEBHOOK PROCESSING START ===');
-      this.logger.log('Input data keys:', Object.keys(webhookData || {}));
       this.logger.log(
         'Full webhook data:',
         JSON.stringify(webhookData, null, 2),
       );
 
-      const possibleFields = {
-        content:
-          webhookData.content ||
-          webhookData.transaction_content ||
-          webhookData.transferContent ||
-          webhookData.description,
-        amount:
-          webhookData.transferAmount ||
-          webhookData.amount_in ||
-          webhookData.amount ||
-          webhookData.transferAmount,
-        type:
-          webhookData.transferType ||
-          webhookData.transfer_type ||
-          webhookData.type,
-        transactionId:
-          webhookData.id ||
-          webhookData.transactionId ||
-          webhookData.reference_code,
-        accountNumber: webhookData.accountNumber || webhookData.account_number,
-        bankName: webhookData.bankName || webhookData.bank_name,
+      // Map đúng field names theo SePay API
+      const mappedData = {
+        content: webhookData.content || webhookData.description,
+        transferAmount: webhookData.transferAmount,
+        transferType: webhookData.transferType,
+        transactionId: webhookData.referenceCode || webhookData.code,
+        accountNumber: webhookData.accountNumber,
+        gateway: webhookData.gateway,
+        transactionDate: webhookData.transactionDate,
+        accumulated: webhookData.accumulated,
+        subAccount: webhookData.subAccount,
       };
 
-      this.logger.log('Extracted possible fields:', possibleFields);
+      this.logger.log('Mapped data:', mappedData);
 
-      if (!possibleFields.type || possibleFields.type !== 'in') {
+      // Check if this is an incoming transaction
+      if (!mappedData.transferType || mappedData.transferType !== 'in') {
         this.logger.warn(
           'Not an incoming transaction. Type:',
-          possibleFields.type,
+          mappedData.transferType,
         );
         return { success: false, message: 'Not an incoming transaction' };
       }
 
-      const content = possibleFields.content || '';
-      this.logger.log('Transaction content:', content);
+      if (!mappedData.content || !mappedData.transferAmount) {
+        this.logger.error('Missing required fields: content or transferAmount');
+        return { success: false, message: 'Missing required webhook data' };
+      }
 
-      const orderPatterns = [
-        /DH(\d+)/i,
-        /(?:^|\s)(\d{8,})/,
-        /order[:\s]*(\d+)/i,
-      ];
-
+      // Extract order ID from content
+      const orderPatterns = [/DH(\d+)/i, /(?:^|\s)(\d+)(?:\s|$)/];
       let orderId = null;
+
       for (const pattern of orderPatterns) {
-        const match = content.match(pattern);
-        if (match) {
+        const match = mappedData.content.match(pattern);
+        if (match && match[1]) {
           orderId = match[1];
-          this.logger.log(`Found order ID with pattern ${pattern}:`, orderId);
           break;
         }
       }
 
       if (!orderId) {
-        this.logger.error('Order ID not found in content:', content);
-        this.logger.log(
-          'Tried patterns:',
-          orderPatterns.map((p) => p.toString()),
-        );
-        return { success: false, message: 'Order ID not found in content' };
+        this.logger.error('Order ID not found in content:', mappedData.content);
+        return { success: false, message: 'Order ID not found' };
       }
 
-      this.logger.log('Looking for order:', orderId);
+      this.logger.log('Extracted order ID:', orderId);
+
+      // Find order using correct model
       const order = await this.prisma.product_order.findFirst({
         where: {
           id: BigInt(orderId),
+          total: BigInt(mappedData.transferAmount),
+          payment_status: 'PENDING',
         },
       });
 
       if (!order) {
-        this.logger.error('Order not found in database:', orderId);
-        return { success: false, message: 'Order not found' };
-      }
-
-      if (order.total === null) {
-        this.logger.error('Order total is null:', orderId);
-        return { success: false, message: 'Order total is invalid' };
-      }
-
-      this.logger.log('Found order:', {
-        id: order.id.toString(),
-        total: order.total.toString(),
-        payment_status: order.payment_status,
-        payment_method: order.payment_method,
-      });
-
-      if (order.payment_status === 'PAID') {
-        this.logger.warn('Order already paid:', orderId);
-        return { success: true, message: 'Order already paid' };
-      }
-
-      const orderAmount = Number(order.total);
-      const webhookAmount = Number(possibleFields.amount);
-      const amountDiff = Math.abs(orderAmount - webhookAmount);
-
-      this.logger.log('Amount comparison:', {
-        orderAmount,
-        webhookAmount,
-        difference: amountDiff,
-        tolerance: 1000,
-      });
-
-      if (amountDiff > 1000) {
-        this.logger.error('Amount mismatch exceeds tolerance');
+        this.logger.error(
+          `Order not found: ID=${orderId}, Amount=${mappedData.transferAmount}`,
+        );
         return {
           success: false,
-          message: `Amount mismatch: expected ${orderAmount}, got ${webhookAmount}`,
+          message: 'Order not found or already processed',
         };
       }
 
-      this.logger.log('Updating order payment status...');
-      await this.updateOrderPaymentStatus(orderId, 'PAID', webhookData);
+      // Update order status
+      await this.prisma.product_order.update({
+        where: { id: BigInt(orderId) },
+        data: {
+          payment_status: 'PAID',
+          status: 'CONFIRMED',
+          updated_date: new Date(),
+          updated_by: 'SEPAY_WEBHOOK',
+        },
+      });
 
-      this.logger.log('=== WEBHOOK PROCESSING SUCCESS ===');
+      // Log payment event
+      await this.prisma.payment_logs.create({
+        data: {
+          order_id: BigInt(orderId),
+          event_type: 'PAYMENT_SUCCESS',
+          event_data: mappedData,
+          sepay_response: webhookData,
+          created_date: new Date(),
+          ip_address: 'SEPAY_SERVER',
+          user_agent: 'SEPAY_WEBHOOK',
+        },
+      });
+
+      // Save webhook data
+      await this.prisma.payment_webhooks.create({
+        data: {
+          webhook_id: mappedData.transactionId || `SEPAY_${Date.now()}`,
+          provider: 'sepay',
+          order_code: `DH${orderId}`,
+          transaction_id: mappedData.transactionId,
+          status: 'SUCCESS',
+          amount: BigInt(mappedData.transferAmount),
+          gateway_code: mappedData.gateway || 'BANK_TRANSFER',
+          signature: 'N/A',
+          raw_data: webhookData,
+          processed: true,
+          processed_at: new Date(),
+          created_date: new Date(),
+        },
+      });
+
+      this.logger.log(`✅ Order ${orderId} payment confirmed`);
       return {
         success: true,
         message: 'Payment processed successfully',
         orderId,
-        amount: webhookAmount,
       };
     } catch (error) {
-      this.logger.error('=== WEBHOOK PROCESSING ERROR ===');
-      this.logger.error('Error details:', error.stack);
-      return {
-        success: false,
-        message: `Webhook processing failed: ${error.message}`,
-      };
+      this.logger.error('Webhook processing failed:', error.stack);
+
+      // Log error
+      try {
+        await this.prisma.payment_logs.create({
+          data: {
+            order_id: BigInt(0), // Unknown order
+            event_type: 'WEBHOOK_ERROR',
+            event_data: { error: error.message },
+            sepay_response: webhookData,
+            created_date: new Date(),
+          },
+        });
+      } catch (logError) {
+        this.logger.error('Failed to log error:', logError);
+      }
+
+      return { success: false, message: 'Webhook processing failed' };
     }
   }
 
@@ -262,12 +244,17 @@ export class PaymentService {
         payment_status: status,
         status: status === 'PAID' ? 'CONFIRMED' : 'PENDING',
         updated_date: new Date(),
+        updated_by: 'SEPAY_WEBHOOK',
       },
     });
 
-    await this.logPaymentEvent(Number(orderId), 'PAYMENT_STATUS_UPDATED', {
-      status,
-      transactionData,
+    await this.prisma.payment_logs.create({
+      data: {
+        order_id: BigInt(orderId),
+        event_type: 'PAYMENT_STATUS_UPDATED',
+        event_data: { status, transactionData },
+        created_date: new Date(),
+      },
     });
   }
 
@@ -300,6 +287,11 @@ export class PaymentService {
       orderBy: { created_date: 'desc' },
     });
 
-    return { order, logs };
+    const webhooks = await this.prisma.payment_webhooks.findMany({
+      where: { order_code: `DH${orderId}` },
+      orderBy: { created_date: 'desc' },
+    });
+
+    return { order, logs, webhooks };
   }
 }

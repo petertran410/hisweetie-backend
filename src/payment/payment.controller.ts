@@ -151,4 +151,34 @@ export class PaymentController {
       webhook_url: 'https://api.gaulermao.com/api/payment/webhook/sepay',
     };
   }
+
+  @Get('webhook/sepay/test')
+  async testWebhookEndpoint() {
+    return {
+      status: 'OK',
+      timestamp: new Date().toISOString(),
+      message: 'SePay webhook endpoint is accessible',
+      url: this.configService.get('SEPAY_WEBHOOK_URL'),
+    };
+  }
+
+  @Post('webhook/test-manual')
+  @HttpCode(HttpStatus.OK)
+  async testManualWebhook(@Body() testData: any) {
+    const sampleData = {
+      gateway: 'VietinBank',
+      transactionDate: '2024-01-01 12:00:00',
+      accountNumber: '108877212192',
+      subAccount: '',
+      transferType: 'in',
+      transferAmount: 100000,
+      accumulated: 500000,
+      code: 'TEST123',
+      content: 'DH123456',
+      referenceCode: 'REF123',
+      description: 'Test payment DH123456',
+    };
+
+    return await this.paymentService.handleWebhook(testData || sampleData);
+  }
 }
