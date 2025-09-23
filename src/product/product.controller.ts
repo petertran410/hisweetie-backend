@@ -729,4 +729,15 @@ export class ProductController {
   async findProductBySlug(@Param('slug') slug: string) {
     return this.productService.findBySlug(slug);
   }
+
+  @Post('client/find-by-slugs')
+  async findBySlugs(@Body() body: { slugs: string[] }) {
+    const products = await Promise.allSettled(
+      body.slugs.map((slug) => this.productService.findBySlug(slug)),
+    );
+
+    return products
+      .filter((result) => result.status === 'fulfilled')
+      .map((result) => result.value);
+  }
 }
