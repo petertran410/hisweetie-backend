@@ -181,4 +181,45 @@ export class PaymentController {
 
     return await this.paymentService.handleWebhook(testData || sampleData);
   }
+
+  @Post('webhook/sepay/manual-test')
+  @HttpCode(HttpStatus.OK)
+  async manualTestWebhook(@Body() testData?: any) {
+    const sampleWebhookData = {
+      gateway: 'VietinBank',
+      transactionDate: '2025-09-23 14:30:00',
+      accountNumber: '108877212192',
+      subAccount: '',
+      transferType: 'in',
+      transferAmount: 100000,
+      accumulated: 500000,
+      code: 'TXN123456',
+      content: 'DH1 Thanh toan don hang',
+      referenceCode: 'REF123456',
+      description: 'Thanh toan don hang DH1',
+    };
+
+    this.logger.log('=== MANUAL WEBHOOK TEST ===');
+    this.logger.log('Test data:', testData || sampleWebhookData);
+
+    const result = await this.paymentService.handleWebhook(
+      testData || sampleWebhookData,
+    );
+
+    return {
+      testResult: result,
+      testData: testData || sampleWebhookData,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Get('order/:orderId/debug')
+  async debugOrderInfo(@Param('orderId') orderId: string) {
+    try {
+      const debugInfo = await this.paymentService.getOrderDebugInfo(orderId);
+      return { success: true, data: debugInfo };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
 }
