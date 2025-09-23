@@ -157,7 +157,7 @@ export class PaymentService {
           id: BigInt(orderId),
           total: BigInt(mappedData.transferAmount),
           payment_status: {
-            in: ['PENDING', 'UNPAID', null],
+            in: ['PENDING', 'UNPAID', ''],
           },
         },
       });
