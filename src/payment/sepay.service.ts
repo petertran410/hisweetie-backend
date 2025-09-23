@@ -59,7 +59,7 @@ export class SepayService {
   }
 
   generateQRCode(orderId: string, amount: number): string {
-    const content = `DH${orderId}`;
+    const content = `SEVQR+WEBDH${orderId}`;
     return `https://qr.sepay.vn/img?bank=${this.bankName}&acc=${this.bankAccount}&template=compact&amount=${amount}&des=${content}`;
   }
 
