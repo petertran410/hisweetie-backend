@@ -2,6 +2,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SepayService } from './sepay.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { KiotVietService } from 'src/kiotviet/kiotviet.service';
 
 @Injectable()
 export class PaymentService {
@@ -10,6 +11,7 @@ export class PaymentService {
   constructor(
     private prisma: PrismaService,
     private sepayService: SepayService,
+    private kiotVietService: KiotVietService,
   ) {}
 
   async createOrder(createPaymentDto: CreatePaymentDto) {
@@ -34,6 +36,18 @@ export class PaymentService {
           status: paymentMethod === 'cod' ? 'CONFIRMED' : 'PENDING',
         },
       });
+
+      for (const item of cartItems) {
+        await this.prisma.orders.create({
+          data: {
+            product_order_id: order.id,
+            product_id: BigInt(item.productId),
+            quantity: item.quantity,
+            created_date: new Date(),
+            created_by: 'SYSTEM',
+          },
+        });
+      }
 
       await this.logPaymentEvent(Number(order.id), 'ORDER_CREATED', {
         customerInfo,
@@ -178,6 +192,13 @@ export class PaymentService {
           payment_status: 'PENDING',
           payment_method: 'sepay_bank',
         },
+        include: {
+          orders: {
+            include: {
+              product: true,
+            },
+          },
+        },
       });
 
       if (!order) {
@@ -199,6 +220,95 @@ export class PaymentService {
           updated_by: 'SEPAY_WEBHOOK',
         },
       });
+
+      try {
+        if (!order.full_name || !order.phone) {
+          throw new Error(
+            'Missing required customer information (name or phone)',
+          );
+        }
+
+        const kiotCustomer = await this.kiotVietService.createCustomer({
+          name: order.full_name,
+          phone: order.phone,
+          email: order.email || undefined,
+          address: order.detailed_address || undefined,
+          provinceDistrict: order.province_district || undefined,
+          ward: order.ward || undefined,
+        });
+
+        const validOrderItems = order.orders.filter(
+          (orderItem) =>
+            orderItem.product &&
+            orderItem.product.kiotviet_id &&
+            orderItem.product.kiotviet_code &&
+            orderItem.quantity,
+        );
+
+        if (validOrderItems.length === 0) {
+          throw new Error('No valid products found for KiotViet sync');
+        }
+
+        const kiotOrderItems = validOrderItems.map((orderItem) => ({
+          productId: Number(orderItem.product!.kiotviet_id),
+          productCode: orderItem.product!.kiotviet_code!,
+          productName:
+            orderItem.product!.kiotviet_name ||
+            orderItem.product!.title ||
+            'Sản phẩm',
+          quantity: orderItem.quantity!,
+          price: Number(orderItem.product!.kiotviet_price || 0),
+        }));
+
+        const kiotOrder = await this.kiotVietService.createOrder({
+          customerId: kiotCustomer.id,
+          customerName: kiotCustomer.name,
+          items: kiotOrderItems,
+          total: Number(order.total),
+          description: `Đơn hàng web #${orderId} - ${order.note || ''}`,
+        });
+
+        this.logger.log(
+          `✅ Created KiotViet order: ${kiotOrder.code} for customer: ${kiotCustomer.id}`,
+        );
+
+        await this.prisma.payment_logs.create({
+          data: {
+            order_id: BigInt(orderId),
+            event_type: 'KIOTVIET_SYNC_SUCCESS',
+            event_data: {
+              kiotCustomer,
+              kiotOrder,
+              items: kiotOrderItems,
+              validItemsCount: validOrderItems.length,
+              totalItemsCount: order.orders.length,
+            },
+            created_date: new Date(),
+            ip_address: 'KIOTVIET_API',
+            user_agent: 'WEBHOOK_SYNC',
+          },
+        });
+      } catch (kiotError) {
+        this.logger.error('Failed to sync with KiotViet:', kiotError);
+
+        await this.prisma.payment_logs.create({
+          data: {
+            order_id: BigInt(orderId),
+            event_type: 'KIOTVIET_SYNC_ERROR',
+            event_data: {
+              error: kiotError.message,
+              orderData: {
+                customerName: order.full_name,
+                customerPhone: order.phone,
+                itemsCount: order.orders.length,
+              },
+            },
+            created_date: new Date(),
+            ip_address: 'KIOTVIET_API',
+            user_agent: 'WEBHOOK_SYNC',
+          },
+        });
+      }
 
       await this.prisma.payment_logs.create({
         data: {

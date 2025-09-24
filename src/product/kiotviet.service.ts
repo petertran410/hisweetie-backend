@@ -641,69 +641,6 @@ export class KiotVietService {
     }
   }
 
-  // async fullSync(): Promise<FullSyncResult> {
-  //   this.logger.log('Starting full KiotViet synchronization');
-
-  //   const allErrors: string[] = [];
-
-  //   try {
-  //     this.logger.log('🔄 Step 1/3: Syncing trademarks...');
-  //     const trademarksResult = await this.syncTrademarks();
-  //     allErrors.push(...trademarksResult.errors);
-
-  //     if (trademarksResult.success) {
-  //       this.logger.log(
-  //         `✅ Trademarks synced: ${trademarksResult.totalSynced} new, ${trademarksResult.totalUpdated} updated`,
-  //       );
-  //     } else {
-  //       this.logger.warn(
-  //         `⚠️ Trademarks sync had ${trademarksResult.errors.length} errors`,
-  //       );
-  //     }
-
-  //     this.logger.log('🔄 Step 2/3: Syncing categories...');
-  //     // const categoriesResult = await this.syncCategories();
-  //     // allErrors.push(...categoriesResult.errors);
-
-  //     // if (categoriesResult.success) {
-  //     //   this.logger.log(
-  //     //     `✅ Categories synced: ${categoriesResult.totalSynced} new, ${categoriesResult.totalUpdated} updated`,
-  //     //   );
-  //     // } else {
-  //     //   this.logger.warn(
-  //     //     `⚠️ Categories sync had ${categoriesResult.errors.length} errors`,
-  //     //   );
-  //     // }
-
-  //     this.logger.log('🔄 Step 3/3: Syncing products...');
-  //     const productsResult = await this.syncProducts();
-  //     allErrors.push(...productsResult.errors);
-
-  //     if (productsResult.success) {
-  //       this.logger.log(
-  //         `✅ Products synced: ${productsResult.totalSynced} new, ${productsResult.totalUpdated} updated`,
-  //       );
-  //     } else {
-  //       this.logger.warn(
-  //         `⚠️ Products sync had ${productsResult.errors.length} errors`,
-  //       );
-  //     }
-
-  //     const overallSuccess = allErrors.length === 0;
-
-  //     return {
-  //       success: overallSuccess,
-  //       errors: allErrors,
-  //       trademarks: trademarksResult,
-  //       categories: categoriesResult,
-  //       products: productsResult,
-  //     };
-  //   } catch (error) {
-  //     this.logger.error('Full sync failed:', error.message);
-  //     throw new BadRequestException(`Full sync failed: ${error.message}`);
-  //   }
-  // }
-
   async testConnection(): Promise<{
     success: boolean;
     message: string;
