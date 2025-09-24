@@ -17,13 +17,6 @@ export class PaymentService {
       createPaymentDto;
 
     try {
-      const simplifiedCartItems = cartItems.map((item) => ({
-        id: item.productId,
-        qty: item.quantity,
-        price: item.price,
-        title: item.title.substring(0, 50),
-      }));
-
       const order = await this.prisma.product_order.create({
         data: {
           total: BigInt(amounts.total),
@@ -79,6 +72,26 @@ export class PaymentService {
         throw new BadRequestException('Order not found');
       }
 
+      const paymentLog = await this.prisma.payment_logs.findFirst({
+        where: {
+          order_id: BigInt(orderId),
+          event_type: 'PAYMENT_SUCCESS',
+        },
+        orderBy: { created_date: 'desc' },
+      });
+
+      let transactionId = null;
+      let transactionDate = null;
+      let accountNumber = null;
+      let content = null;
+      if (paymentLog?.event_data && typeof paymentLog.event_data === 'object') {
+        const eventData = paymentLog.event_data as any;
+        transactionId = eventData?.transactionId?.toString() || null;
+        transactionDate = eventData?.transactionDate?.toString() || null;
+        accountNumber = eventData?.accountNumber.toString() || null;
+        content = eventData?.content.toString() || null;
+      }
+
       return {
         success: true,
         status: order.payment_status || 'PENDING',
@@ -86,6 +99,10 @@ export class PaymentService {
         amount: Number(order.total),
         paymentMethod: order.payment_method,
         orderStatus: order.status,
+        transactionId,
+        transactionDate,
+        accountNumber,
+        content,
       };
     } catch (error) {
       this.logger.error(
