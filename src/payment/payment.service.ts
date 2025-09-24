@@ -80,27 +80,43 @@ export class PaymentService {
         orderBy: { created_date: 'desc' },
       });
 
-      let transactionId = null;
-      let transactionDate = null;
-      let accountNumber = null;
-      let content = null;
+      let transactionId: string | null = null;
+      let gateway: string | null = null;
+      let transactionDate: string | null = null;
+      let referenceCode: string | null = null;
+      let accountNumber: string | null = null;
+      let content: string | null = null;
+
       if (paymentLog?.event_data && typeof paymentLog.event_data === 'object') {
         const eventData = paymentLog.event_data as any;
-        transactionId = eventData?.transactionId?.toString() || null;
-        transactionDate = eventData?.transactionDate?.toString() || null;
-        accountNumber = eventData?.accountNumber.toString() || null;
-        content = eventData?.content.toString() || null;
+
+        transactionId = eventData?.transactionId
+          ? String(eventData.transactionId)
+          : null;
+        gateway = eventData?.gateway ? String(eventData.gateway) : null;
+        transactionDate = eventData?.transactionDate
+          ? String(eventData.transactionDate)
+          : null;
+        referenceCode = eventData?.referenceCode
+          ? String(eventData.referenceCode)
+          : null;
+        accountNumber = eventData?.accountNumber
+          ? String(eventData.accountNumber)
+          : null;
+        content = eventData?.content ? String(eventData.content) : null;
       }
 
       return {
         success: true,
         status: order.payment_status || 'PENDING',
         orderId,
-        amount: Number(order.total),
-        paymentMethod: order.payment_method,
-        orderStatus: order.status,
+        amount: order.total ? Number(order.total) : 0,
+        paymentMethod: order.payment_method || '',
+        orderStatus: order.status || 'PENDING',
         transactionId,
+        gateway,
         transactionDate,
+        referenceCode,
         accountNumber,
         content,
       };
