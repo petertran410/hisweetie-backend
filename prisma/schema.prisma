@@ -225,10 +225,9 @@ model orders {
 
 model product_order {
   id             BigInt         @id @default(autoincrement())
-  created_by     String?
-  created_date   DateTime?      @db.DateTime(6)
+  created_date   DateTime?
   updated_by     String?
-  updated_date   DateTime?      @db.DateTime(6)
+  updated_date   DateTime?
   address        String?        @db.LongText
   detailed_address String?      @db.VarChar(500)
   province_district String?     @db.VarChar(255)
@@ -239,17 +238,10 @@ model product_order {
   phone          String?
   status         String?
   payment_status String?
-  product_list   String?
-  total_amount   BigInt?
   full_name      String?
   email          String?
-  user_full_name String?
-  user_id        String?
   orders         orders[]
   payment_logs   payment_logs[]
-  user           user?          @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-
-  @@index([user_id])
 }
 
 model review {
@@ -285,7 +277,6 @@ model user {
   authority        authority[]
   code_forgot_pass code_forgot_pass[]
   news             news[]
-  product_order    product_order[]
   review           review[]
 
   @@index([phone, email])

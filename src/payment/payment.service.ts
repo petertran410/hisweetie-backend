@@ -27,6 +27,7 @@ export class PaymentService {
       const order = await this.prisma.product_order.create({
         data: {
           total: BigInt(amounts.total),
+          created_date: new Date(),
           full_name: customerInfo.fullName,
           email: customerInfo.email,
           phone: customerInfo.phone,
@@ -38,7 +39,6 @@ export class PaymentService {
           payment_method: paymentMethod,
           payment_status: paymentMethod === 'cod' ? 'PAID' : 'PENDING',
           status: paymentMethod === 'cod' ? 'CONFIRMED' : 'PENDING',
-          product_list: JSON.stringify(simplifiedCartItems),
         },
       });
 
