@@ -53,22 +53,12 @@ export class PaymentController {
   @Post('webhook/sepay')
   @HttpCode(HttpStatus.OK)
   async handleSepayWebhook(@Body() webhookData: any, @Req() req: any) {
-    this.logger.log('🚨 SEPAY WEBHOOK CALLED 🚨');
-    this.logger.log('Timestamp:', new Date().toISOString());
-    this.logger.log('IP:', req.ip || req.connection.remoteAddress);
-    this.logger.log('User-Agent:', req.headers['user-agent']);
-    this.logger.log('Method:', req.method);
-    this.logger.log('URL:', req.url);
-    this.logger.log('Headers:', JSON.stringify(req.headers, null, 2));
-    this.logger.log('Body:', JSON.stringify(webhookData, null, 2));
-
     try {
       const result = await this.paymentService.handleWebhook(webhookData);
-      this.logger.log('✅ Webhook processed:', result);
 
       return { success: true };
     } catch (error) {
-      this.logger.error('❌ Webhook error:', error.stack);
+      this.logger.error('Webhook error:', error.stack);
 
       return { success: true, error: 'processed_with_error' };
     }
@@ -117,124 +107,6 @@ export class PaymentController {
           enabled: true,
         },
       ],
-    };
-  }
-
-  @Get('debug/:orderId')
-  async debugOrder(@Param('orderId') orderId: string) {
-    try {
-      const order = await this.paymentService.getOrderDebugInfo(orderId);
-      return { success: true, data: order };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }
-
-  @Post('webhook/test')
-  @HttpCode(HttpStatus.OK)
-  async testWebhook(@Body() testData: any) {
-    this.logger.log('Manual webhook test:', testData);
-
-    const sampleData = {
-      content: 'DH123456',
-      transferAmount: 100000,
-      transferType: 'in',
-      id: 'TEST_TXN_123',
-    };
-
-    return await this.paymentService.handleWebhook(testData || sampleData);
-  }
-
-  @Get('webhook/health')
-  async webhookHealth() {
-    return {
-      status: 'OK',
-      timestamp: new Date().toISOString(),
-      webhook_url: 'https://api.gaulermao.com/api/payment/webhook/sepay',
-    };
-  }
-
-  @Get('webhook/sepay/test')
-  async testWebhookEndpoint() {
-    return {
-      status: 'OK',
-      timestamp: new Date().toISOString(),
-      message: 'SePay webhook endpoint is accessible',
-      url: this.configService.get('SEPAY_WEBHOOK_URL'),
-    };
-  }
-
-  @Post('webhook/test-manual')
-  @HttpCode(HttpStatus.OK)
-  async testManualWebhook(@Body() testData: any) {
-    const sampleData = {
-      gateway: 'VietinBank',
-      transactionDate: '2024-01-01 12:00:00',
-      accountNumber: '108877212192',
-      subAccount: '',
-      transferType: 'in',
-      transferAmount: 100000,
-      accumulated: 500000,
-      code: 'TEST123',
-      content: 'DH123456',
-      referenceCode: 'REF123',
-      description: 'Test payment DH123456',
-    };
-
-    return await this.paymentService.handleWebhook(testData || sampleData);
-  }
-
-  @Post('webhook/sepay/manual-test')
-  @HttpCode(HttpStatus.OK)
-  async manualTestWebhook(@Body() testData?: any) {
-    const sampleWebhookData = {
-      gateway: 'VietinBank',
-      transactionDate: '2025-09-23 14:30:00',
-      accountNumber: '108877212192',
-      subAccount: '',
-      transferType: 'in',
-      transferAmount: 100000,
-      accumulated: 500000,
-      code: 'TXN123456',
-      content: 'DH1 Thanh toan don hang',
-      referenceCode: 'REF123456',
-      description: 'Thanh toan don hang DH1',
-    };
-
-    this.logger.log('=== MANUAL WEBHOOK TEST ===');
-    this.logger.log('Test data:', testData || sampleWebhookData);
-
-    const result = await this.paymentService.handleWebhook(
-      testData || sampleWebhookData,
-    );
-
-    return {
-      testResult: result,
-      testData: testData || sampleWebhookData,
-      timestamp: new Date().toISOString(),
-    };
-  }
-
-  @Get('order/:orderId/debug')
-  async debugOrderInfo(@Param('orderId') orderId: string) {
-    try {
-      const debugInfo = await this.paymentService.getOrderDebugInfo(orderId);
-      return { success: true, data: debugInfo };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }
-
-  @Get('webhook/sepay/connectivity-test')
-  async testWebhookConnectivity() {
-    return {
-      status: 'OK',
-      timestamp: new Date().toISOString(),
-      server_ip: process.env.SERVER_IP || 'unknown',
-      webhook_url: 'https://api.gaulermao.com/api/payment/webhook/sepay',
-      message: 'Webhook endpoint is accessible',
-      test_curl:
-        'curl -X POST https://api.gaulermao.com/api/payment/webhook/sepay -H "Content-Type: application/json" -d "{}"',
     };
   }
 }

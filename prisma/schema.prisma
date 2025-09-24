@@ -230,6 +230,9 @@ model product_order {
   updated_by     String?
   updated_date   DateTime?      @db.DateTime(6)
   address        String?        @db.LongText
+  detailed_address String?      @db.VarChar(500)
+  province_district String?     @db.VarChar(255)
+  ward          String?         @db.VarChar(255)
   note           String?        @db.LongText
   payment_method String?
   total          BigInt?
