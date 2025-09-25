@@ -84,6 +84,41 @@ export class KiotVietService {
     }
   }
 
+  // ✅ FIX: Validate branch trước khi tạo customer/order
+  async validateBranchId(): Promise<void> {
+    const token = await this.getAccessToken();
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(`${this.baseUrl}/branches`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Retailer: this.retailerName,
+          },
+        }),
+      );
+
+      this.logger.log('Available branches:', response.data.data);
+
+      const validBranch = response.data.data.find(
+        (branch) => branch.id === this.websiteBranchId,
+      );
+      if (!validBranch) {
+        throw new Error(
+          `❌ Branch ID ${this.websiteBranchId} not found! Available branches: ${response.data.data.map((b) => `${b.id}(${b.branchName})`).join(', ')}`,
+        );
+      }
+
+      this.logger.log('✅ Valid branch found:', validBranch);
+    } catch (error) {
+      this.logger.error(
+        '❌ Branch validation failed:',
+        error.response?.data || error.message,
+      );
+      throw error;
+    }
+  }
+
   async createCustomer(customerData: {
     name: string;
     phone: string;
@@ -92,6 +127,9 @@ export class KiotVietService {
     provinceDistrict?: string;
     ward?: string;
   }): Promise<any> {
+    // ✅ Validate branch trước khi tạo
+    await this.validateBranchId();
+
     const token = await this.getAccessToken();
 
     const websiteCustomerNote = `KHÁCH HÀNG TỪ WEBSITE - Đăng ký: ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })} | Nguồn: dieptra.com`;
@@ -107,18 +145,13 @@ export class KiotVietService {
       wardName: customerData.ward || '',
       locationName: customerData.provinceDistrict || '',
       comments: websiteCustomerNote,
-      branchId: [this.websiteBranchId],
+      branchId: [this.websiteBranchId], // ✅ ARRAY format cho customer API
     };
 
     this.logger.log(
       `📝 Creating customer for branch: Cửa Hàng Diệp Trà (${this.websiteBranchId})`,
     );
-    this.logger.log(`Customer data:`, {
-      name: payload.name,
-      phone: payload.contactNumber,
-      branchId: payload.branchId,
-      comments: payload.comments,
-    });
+    this.logger.log(`Customer payload:`, payload);
 
     try {
       const response = await firstValueFrom(
@@ -134,12 +167,11 @@ export class KiotVietService {
       this.logger.log(
         `✅ Created KiotViet customer: ${response.data.id} (${response.data.name})`,
       );
-      this.logger.log(`📝 Customer comments: ${websiteCustomerNote}`);
       return response.data;
     } catch (error) {
       this.logger.error(
         '❌ Failed to create KiotViet customer:',
-        error.response?.data || error,
+        JSON.stringify(error.response?.data || error.message, null, 2),
       );
       throw error;
     }
@@ -158,6 +190,9 @@ export class KiotVietService {
     total: number;
     description?: string;
   }): Promise<any> {
+    // ✅ Validate branch trước khi tạo
+    await this.validateBranchId();
+
     const token = await this.getAccessToken();
 
     const orderDetails = orderData.items.map((item) => ({
@@ -177,7 +212,7 @@ export class KiotVietService {
 
     const payload = {
       purchaseDate: new Date().toISOString(),
-      branchId: this.websiteBranchId,
+      branchId: this.websiteBranchId, // ✅ SINGLE VALUE cho order API
       discount: 0,
       description: finalDescription,
       method: 'Cash',
@@ -192,14 +227,7 @@ export class KiotVietService {
     this.logger.log(
       `📦 Creating order for branch: Cửa Hàng Diệp Trà (${this.websiteBranchId})`,
     );
-    this.logger.log(`Order data:`, {
-      customerId: orderData.customerId,
-      customerName: orderData.customerName,
-      itemsCount: orderData.items.length,
-      total: orderData.total,
-      branchId: this.websiteBranchId,
-      description: finalDescription,
-    });
+    this.logger.log(`Order payload:`, payload);
 
     try {
       const response = await firstValueFrom(
@@ -215,12 +243,63 @@ export class KiotVietService {
       this.logger.log(
         `✅ Created KiotViet order: ${response.data.code} (Total: ${orderData.total})`,
       );
-      this.logger.log(`📝 Order description: ${finalDescription}`);
       return response.data;
     } catch (error) {
       this.logger.error(
         '❌ Failed to create KiotViet order:',
-        error.response?.data || error,
+        JSON.stringify(error.response?.data || error.message, null, 2),
+      );
+      throw error;
+    }
+  }
+
+  // ✅ Method để handle payment success từ Sepay
+  async handlePaymentSuccess(paymentData: {
+    customerName: string;
+    phone: string;
+    email?: string;
+    address?: string;
+    items: Array<{
+      productId: number;
+      productCode: string;
+      productName: string;
+      quantity: number;
+      price: number;
+    }>;
+    amount: number;
+    orderId: string;
+    note?: string;
+  }): Promise<{ customer: any; order: any }> {
+    try {
+      this.logger.log(
+        `🔄 Processing payment success for order: ${paymentData.orderId}`,
+      );
+
+      // 1. Tạo customer trước
+      const customer = await this.createCustomer({
+        name: paymentData.customerName,
+        phone: paymentData.phone,
+        email: paymentData.email,
+        address: paymentData.address,
+      });
+
+      // 2. Tạo order với customerId từ step 1
+      const order = await this.createOrder({
+        customerId: customer.id,
+        customerName: customer.name,
+        items: paymentData.items,
+        total: paymentData.amount,
+        description: `Web order #${paymentData.orderId} - ${paymentData.note || ''}`,
+      });
+
+      this.logger.log(
+        `✅ Successfully processed payment for order: ${paymentData.orderId}`,
+      );
+      return { customer, order };
+    } catch (error) {
+      this.logger.error(
+        `❌ Failed to process payment for order ${paymentData.orderId}:`,
+        error.message,
       );
       throw error;
     }
@@ -228,17 +307,7 @@ export class KiotVietService {
 
   async testConnection(): Promise<{ success: boolean; message: string }> {
     try {
-      const token = await this.getAccessToken();
-
-      await firstValueFrom(
-        this.httpService.get(`${this.baseUrl}/customers?pageSize=1`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Retailer: this.retailerName,
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
+      await this.validateBranchId();
 
       return {
         success: true,
