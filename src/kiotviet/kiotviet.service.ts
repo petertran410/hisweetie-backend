@@ -1,5 +1,3 @@
-// src/kiotviet/kiotviet.service.ts - Sửa toàn bộ file với branchId cố định
-
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
@@ -96,6 +94,8 @@ export class KiotVietService {
   }): Promise<any> {
     const token = await this.getAccessToken();
 
+    const websiteCustomerNote = `KHÁCH HÀNG TỪ WEBSITE - Đăng ký: ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })} | Nguồn: dieptra.com`;
+
     const payload = {
       name: customerData.name,
       contactNumber: customerData.phone,
@@ -106,7 +106,7 @@ export class KiotVietService {
           .replace(/^,\s*|,\s*$/g, ''),
       wardName: customerData.ward || '',
       locationName: customerData.provinceDistrict || '',
-      comments: `Khách hàng web - ${new Date().toISOString()}`,
+      comments: websiteCustomerNote,
       branchId: [this.websiteBranchId],
     };
 
@@ -117,6 +117,7 @@ export class KiotVietService {
       name: payload.name,
       phone: payload.contactNumber,
       branchId: payload.branchId,
+      comments: payload.comments,
     });
 
     try {
@@ -133,6 +134,7 @@ export class KiotVietService {
       this.logger.log(
         `✅ Created KiotViet customer: ${response.data.id} (${response.data.name})`,
       );
+      this.logger.log(`📝 Customer comments: ${websiteCustomerNote}`);
       return response.data;
     } catch (error) {
       this.logger.error(
@@ -167,11 +169,17 @@ export class KiotVietService {
       isMaster: true,
     }));
 
+    const websiteNote = `ĐƠN HÀNG TỪ WEBSITE - ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`;
+    const customerNote = orderData.description
+      ? ` | Ghi chú KH: ${orderData.description}`
+      : '';
+    const finalDescription = `${websiteNote}${customerNote}`;
+
     const payload = {
       purchaseDate: new Date().toISOString(),
       branchId: this.websiteBranchId,
       discount: 0,
-      description: orderData.description || 'Đơn hàng từ website',
+      description: finalDescription,
       method: 'Cash',
       totalPayment: orderData.total,
       customer: {
@@ -190,6 +198,7 @@ export class KiotVietService {
       itemsCount: orderData.items.length,
       total: orderData.total,
       branchId: this.websiteBranchId,
+      description: finalDescription,
     });
 
     try {
@@ -206,6 +215,7 @@ export class KiotVietService {
       this.logger.log(
         `✅ Created KiotViet order: ${response.data.code} (Total: ${orderData.total})`,
       );
+      this.logger.log(`📝 Order description: ${finalDescription}`);
       return response.data;
     } catch (error) {
       this.logger.error(
