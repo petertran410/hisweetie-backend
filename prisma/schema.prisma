@@ -81,6 +81,7 @@ model product {
   @@index([kiotviet_trademark_id])
   @@index([is_from_kiotviet])
   @@index([slug])
+  client_review client_review[]
 }
 
 model category {
@@ -283,6 +284,101 @@ model user {
   @@index([phone, email])
   @@index([email])
   @@index([phone])
+}
+
+model client_user {
+  id                   String                     @id @db.VarChar(255)
+  email                String                     @unique @db.VarChar(255)
+  phone                String?                    @unique @db.VarChar(255)
+  password             String?                    @db.VarChar(255)
+  full_name            String?                    @db.VarChar(255)
+  address              String?                    @db.VarChar(500)
+  province             String?                    @db.VarChar(255)
+  district             String?                    @db.VarChar(255) 
+  ward                 String?                    @db.VarChar(255)
+  avatar_url           String?                    @db.VarChar(255)
+  date_of_birth        DateTime?                  @db.Date
+  gender               String?                    @db.VarChar(10)
+  is_active            Boolean                    @default(true) @db.Bit(1)
+  is_email_verified    Boolean                    @default(false) @db.Bit(1)
+  is_phone_verified    Boolean                    @default(false) @db.Bit(1)
+  registration_method  String                     @db.VarChar(20) // "email" or "form"
+  created_date         DateTime                   @default(now()) @db.DateTime(6)
+  updated_date         DateTime                   @updatedAt @db.DateTime(6)
+  last_login_date      DateTime?                  @db.DateTime(6)
+  
+  // Relations
+  client_user_verification_codes client_user_verification_code[]
+  client_reviews                  client_review[]
+  client_orders                   client_order[]
+
+  @@index([email])
+  @@index([phone])
+  @@index([is_active])
+  @@index([registration_method])
+  @@map("client_users")
+}
+
+model client_user_verification_code {
+  id           BigInt      @id @default(autoincrement())
+  client_user_id String    @db.VarChar(255)
+  code         String      @db.VarChar(10)
+  type         String      @db.VarChar(20) // "email_verification", "phone_verification", "password_reset"
+  expire_date  DateTime    @db.DateTime(6)
+  is_used      Boolean     @default(false) @db.Bit(1)
+  created_date DateTime    @default(now()) @db.DateTime(6)
+  
+  client_user  client_user @relation(fields: [client_user_id], references: [id], onDelete: Cascade)
+  
+  @@index([client_user_id])
+  @@index([code, type, expire_date])
+  @@map("client_user_verification_codes")
+}
+
+model client_review {
+  id           BigInt      @id @default(autoincrement())
+  client_user_id String    @db.VarChar(255)
+  product_id   BigInt
+  rating       Int         @db.TinyInt
+  comment      String?     @db.Text
+  is_verified  Boolean     @default(false) @db.Bit(1)
+  created_date DateTime    @default(now()) @db.DateTime(6)
+  updated_date DateTime    @updatedAt @db.DateTime(6)
+  
+  client_user  client_user @relation(fields: [client_user_id], references: [id], onDelete: Cascade)
+  product      product     @relation(fields: [product_id], references: [id])
+  
+  @@index([client_user_id])
+  @@index([product_id])
+  @@index([rating])
+  @@map("client_reviews")
+}
+
+model client_order {
+  id               BigInt      @id @default(autoincrement())
+  client_user_id   String      @db.VarChar(255)
+  order_code       String      @unique @db.VarChar(50)
+  full_name        String      @db.VarChar(255)
+  email            String      @db.VarChar(255)
+  phone            String      @db.VarChar(20)
+  address          String      @db.Text
+  province         String      @db.VarChar(255)
+  district         String      @db.VarChar(255)
+  ward             String      @db.VarChar(255)
+  note             String?     @db.Text
+  total_amount     Decimal     @db.Decimal(15, 2)
+  payment_method   String      @db.VarChar(50)
+  payment_status   String      @default("pending") @db.VarChar(20)
+  order_status     String      @default("pending") @db.VarChar(20)
+  created_date     DateTime    @default(now()) @db.DateTime(6)
+  updated_date     DateTime    @updatedAt @db.DateTime(6)
+  
+  client_user      client_user @relation(fields: [client_user_id], references: [id])
+  
+  @@index([client_user_id])
+  @@index([order_code])
+  @@index([order_status])
+  @@map("client_orders")
 }
 
 model sync_log {
