@@ -197,9 +197,29 @@ export class KiotVietService {
     total: number;
     description?: string;
   }): Promise<any> {
-    await this.validateBranchId();
-
     const token = await this.getAccessToken();
+
+    // ✅ DEBUG: Log input data
+    this.logger.log(
+      '🔍 CREATE ORDER INPUT:',
+      JSON.stringify(
+        {
+          customerId: orderData.customerId,
+          customerName: orderData.customerName,
+          customerNameLength: orderData.customerName?.length,
+          customerNameType: typeof orderData.customerName,
+          itemsCount: orderData.items.length,
+          total: orderData.total,
+        },
+        null,
+        2,
+      ),
+    );
+
+    // ✅ Check if customerName is empty
+    if (!orderData.customerName || orderData.customerName.trim() === '') {
+      throw new Error(`Customer name is empty: "${orderData.customerName}"`);
+    }
 
     const orderDetails = orderData.items.map((item) => ({
       productId: item.productId,
@@ -210,30 +230,22 @@ export class KiotVietService {
       isMaster: true,
     }));
 
-    const websiteNote = `ĐƠN HÀNG TỪ WEBSITE - ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`;
-    const customerNote = orderData.description
-      ? ` | Ghi chú KH: ${orderData.description}`
-      : '';
-    const finalDescription = `${websiteNote}${customerNote}`;
-
-    const payload = {
+    const payload: any = {
       purchaseDate: new Date().toISOString(),
-      branchId: this.websiteBranchId,
+      branchId: 635934,
       discount: 0,
-      description: finalDescription,
+      description: orderData.description || '',
       method: 'Cash',
       totalPayment: orderData.total,
       customer: {
         id: orderData.customerId,
-        name: orderData.customerName,
+        name: orderData.customerName.trim(), // ✅ Trim name
       },
       orderDetails,
     };
 
-    this.logger.log(
-      `📦 Creating order for branch: Cửa Hàng Diệp Trà (${this.websiteBranchId})`,
-    );
-    this.logger.log(`Order payload:`, payload);
+    // ✅ DEBUG: Log exact payload
+    this.logger.log('🔍 ORDER PAYLOAD:', JSON.stringify(payload, null, 2));
 
     try {
       const response = await firstValueFrom(
@@ -246,14 +258,12 @@ export class KiotVietService {
         }),
       );
 
-      this.logger.log(
-        `✅ Created KiotViet order: ${response.data.code} (Total: ${orderData.total})`,
-      );
+      this.logger.log(`✅ Created order: ${response.data.code}`);
       return response.data;
     } catch (error) {
       this.logger.error(
-        '❌ Failed to create KiotViet order:',
-        JSON.stringify(error.response?.data || error.message, null, 2),
+        '❌ Create order failed:',
+        JSON.stringify(error.response?.data, null, 2),
       );
       throw error;
     }
