@@ -127,12 +127,7 @@ export class KiotVietService {
     provinceDistrict?: string;
     ward?: string;
   }): Promise<any> {
-    // ✅ Validate branch trước khi tạo
-    await this.validateBranchId();
-
     const token = await this.getAccessToken();
-
-    const websiteCustomerNote = `KHÁCH HÀNG TỪ WEBSITE - Đăng ký: ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })} | Nguồn: dieptra.com`;
 
     const payload = {
       name: customerData.name,
@@ -144,14 +139,19 @@ export class KiotVietService {
           .replace(/^,\s*|,\s*$/g, ''),
       wardName: customerData.ward || '',
       locationName: customerData.provinceDistrict || '',
-      comments: websiteCustomerNote,
-      branchId: [this.websiteBranchId], // ✅ ARRAY format cho customer API
+      comments: `KHÁCH HÀNG TỪ WEBSITE - ${new Date().toLocaleString('vi-VN')}`,
+      branchId: [635934],
     };
 
-    this.logger.log(
-      `📝 Creating customer for branch: Cửa Hàng Diệp Trà (${this.websiteBranchId})`,
+    // ✅ LOG EVERYTHING
+    console.log('🔍 EXACT PAYLOAD:', JSON.stringify(payload, null, 2));
+    console.log('🔍 PAYLOAD KEYS:', Object.keys(payload));
+    console.log(
+      '🔍 BRANCH ID TYPE:',
+      typeof payload.branchId,
+      Array.isArray(payload.branchId),
     );
-    this.logger.log(`Customer payload:`, payload);
+    console.log('🔍 BRANCH ID VALUE:', payload.branchId);
 
     try {
       const response = await firstValueFrom(
@@ -164,15 +164,13 @@ export class KiotVietService {
         }),
       );
 
-      this.logger.log(
-        `✅ Created KiotViet customer: ${response.data.id} (${response.data.name})`,
-      );
       return response.data;
     } catch (error) {
-      this.logger.error(
-        '❌ Failed to create KiotViet customer:',
-        JSON.stringify(error.response?.data || error.message, null, 2),
+      console.log(
+        '❌ FULL ERROR RESPONSE:',
+        JSON.stringify(error.response?.data, null, 2),
       );
+      console.log('❌ REQUEST PAYLOAD WAS:', JSON.stringify(payload, null, 2));
       throw error;
     }
   }
