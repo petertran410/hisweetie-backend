@@ -132,7 +132,6 @@ export class KiotVietService {
 
     const cleanProvinceName = (province: string): string => {
       if (!province) return '';
-
       return province.replace(/^(Thành phố|Tỉnh)\s+/i, '').trim();
     };
 
@@ -154,7 +153,6 @@ export class KiotVietService {
     if (customerData.province?.trim()) {
       const cleanedProvince = cleanProvinceName(customerData.province);
       const originalDistrict = customerData.district?.trim() || '';
-
       payload.locationName = [cleanedProvince, originalDistrict]
         .filter(Boolean)
         .join(' - ');
@@ -172,9 +170,21 @@ export class KiotVietService {
       );
 
       this.logger.log(
-        `✅ Created customer: ${response.data.id} (${response.data.name})`,
+        '🔍 FULL API RESPONSE:',
+        JSON.stringify(response.data, null, 2),
       );
-      return response.data;
+      this.logger.log('🔍 RESPONSE KEYS:', Object.keys(response.data || {}));
+      this.logger.log(
+        '🔍 DATA FIELD:',
+        JSON.stringify(response.data.data, null, 2),
+      );
+
+      const customerData = response.data.data || response.data;
+
+      this.logger.log(
+        `✅ Created customer: ${customerData.id} (${customerData.name})`,
+      );
+      return customerData;
     } catch (error) {
       this.logger.error(
         '❌ Create customer failed:',
