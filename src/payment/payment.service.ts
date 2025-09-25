@@ -339,31 +339,6 @@ export class PaymentService {
     }
   }
 
-  private async updateOrderPaymentStatus(
-    orderId: string,
-    status: string,
-    transactionData?: any,
-  ) {
-    await this.prisma.product_order.update({
-      where: { id: BigInt(orderId) },
-      data: {
-        payment_status: status,
-        status: status === 'PAID' ? 'CONFIRMED' : 'PENDING',
-        updated_date: new Date(),
-        updated_by: 'SEPAY_WEBHOOK',
-      },
-    });
-
-    await this.prisma.payment_logs.create({
-      data: {
-        order_id: BigInt(orderId),
-        event_type: 'PAYMENT_STATUS_UPDATED',
-        event_data: { status, transactionData },
-        created_date: new Date(),
-      },
-    });
-  }
-
   private async logPaymentEvent(
     orderId: number,
     eventType: string,
