@@ -140,18 +140,8 @@ export class KiotVietService {
       wardName: customerData.ward || '',
       locationName: customerData.provinceDistrict || '',
       comments: `KHÁCH HÀNG TỪ WEBSITE - ${new Date().toLocaleString('vi-VN')}`,
-      branchId: [635934],
+      branchId: 635934,
     };
-
-    // ✅ LOG EVERYTHING
-    console.log('🔍 EXACT PAYLOAD:', JSON.stringify(payload, null, 2));
-    console.log('🔍 PAYLOAD KEYS:', Object.keys(payload));
-    console.log(
-      '🔍 BRANCH ID TYPE:',
-      typeof payload.branchId,
-      Array.isArray(payload.branchId),
-    );
-    console.log('🔍 BRANCH ID VALUE:', payload.branchId);
 
     try {
       const response = await firstValueFrom(
@@ -164,13 +154,12 @@ export class KiotVietService {
         }),
       );
 
+      this.logger.log(
+        `✅ Created customer: ${response.data.id} (${response.data.name})`,
+      );
       return response.data;
     } catch (error) {
-      console.log(
-        '❌ FULL ERROR RESPONSE:',
-        JSON.stringify(error.response?.data, null, 2),
-      );
-      console.log('❌ REQUEST PAYLOAD WAS:', JSON.stringify(payload, null, 2));
+      this.logger.error('❌ Create customer failed:', error.response?.data);
       throw error;
     }
   }
