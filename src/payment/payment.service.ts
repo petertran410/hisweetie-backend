@@ -28,7 +28,8 @@ export class PaymentService {
           phone: customerInfo.phone,
           address: customerInfo.address,
           detailed_address: customerInfo.detailedAddress,
-          province_district: customerInfo.provinceDistrict,
+          province: customerInfo.province,
+          district: customerInfo.district,
           ward: customerInfo.ward,
           note: customerInfo.note || '',
           payment_method: paymentMethod,
@@ -233,8 +234,9 @@ export class PaymentService {
           phone: order.phone,
           email: order.email || undefined,
           address: order.detailed_address || undefined,
-          provinceDistrict: order.province_district || undefined,
+          province: order.province || undefined,
           ward: order.ward || undefined,
+          district: order.district || undefined,
         });
 
         const validOrderItems = order.orders.filter(

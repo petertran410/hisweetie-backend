@@ -124,8 +124,9 @@ export class KiotVietService {
     phone: string;
     email?: string;
     address?: string;
-    provinceDistrict?: string;
+    province?: string;
     ward?: string;
+    district?: string;
   }): Promise<any> {
     const token = await this.getAccessToken();
 
@@ -134,11 +135,13 @@ export class KiotVietService {
       contactNumber: customerData.phone,
       email: customerData.email || '',
       address:
-        `${customerData.address || ''}, ${customerData.ward || ''}, ${customerData.provinceDistrict || ''}`
+        `${customerData.address || ''}, ${customerData.ward || ''}, ${customerData.province || ''}`
           .trim()
           .replace(/^,\s*|,\s*$/g, ''),
       wardName: customerData.ward || '',
-      locationName: customerData.provinceDistrict || '',
+      locationName: [customerData.province, customerData.district]
+        .filter(Boolean)
+        .join(' - '),
       comments: `KHÁCH HÀNG TỪ WEBSITE - ${new Date().toLocaleString('vi-VN')}`,
       branchId: 635934,
     };

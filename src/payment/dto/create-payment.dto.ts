@@ -43,11 +43,11 @@ export class CustomerInfoDto {
 
   @ApiProperty({
     description: 'Delivery address',
-    example: '123 Nguyễn Huệ, Quận 1, TP.HCM',
+    example: '123 Nguyễn Huệ',
   })
   @IsNotEmpty({ message: 'Địa chỉ không được để trống' })
   @IsString({ message: 'Địa chỉ phải là chuỗi ký tự' })
-  @Length(10, 500, { message: 'Địa chỉ phải từ 10-500 ký tự' })
+  @Length(5, 500, { message: 'Địa chỉ phải từ 5-500 ký tự' })
   address: string;
 
   @ApiProperty({
@@ -61,13 +61,22 @@ export class CustomerInfoDto {
   detailedAddress: string;
 
   @ApiProperty({
-    description: 'Province/City and District',
-    example: 'TP. Hồ Chí Minh - Quận 1',
+    description: 'Province/City',
+    example: 'Thành phố Hồ Chí Minh',
     required: true,
   })
-  @IsNotEmpty({ message: 'Tỉnh/TP - Huyện/Quận không được để trống' })
-  @IsString({ message: 'Tỉnh/TP - Huyện/Quận phải là chuỗi ký tự' })
-  provinceDistrict: string;
+  @IsNotEmpty({ message: 'Tỉnh/Thành phố không được để trống' })
+  @IsString({ message: 'Tỉnh/Thành phố phải là chuỗi ký tự' })
+  province: string;
+
+  @ApiProperty({
+    description: 'District',
+    example: 'Quận 1',
+    required: true,
+  })
+  @IsNotEmpty({ message: 'Quận/Huyện không được để trống' })
+  @IsString({ message: 'Quận/Huyện phải là chuỗi ký tự' })
+  district: string;
 
   @ApiProperty({
     description: 'Ward/Commune',
