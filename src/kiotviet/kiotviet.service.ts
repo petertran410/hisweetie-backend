@@ -1,3 +1,5 @@
+// src/kiotviet/kiotviet.service.ts - Sửa toàn bộ file với branchId cố định
+
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
@@ -10,6 +12,7 @@ export class KiotVietService {
   private readonly clientId: string;
   private readonly clientSecret: string;
   private readonly retailerName: string;
+  private readonly websiteBranchId = 635934;
   private accessToken: string;
 
   constructor(
@@ -45,6 +48,10 @@ export class KiotVietService {
       );
     }
     this.retailerName = retailerName;
+
+    this.logger.log(
+      `🏪 Using website branch: Cửa Hàng Diệp Trà (ID: ${this.websiteBranchId})`,
+    );
   }
 
   private async getAccessToken(): Promise<string> {
@@ -68,9 +75,13 @@ export class KiotVietService {
       );
 
       this.accessToken = response.data.access_token;
+      this.logger.log('✅ KiotViet access token obtained successfully');
       return this.accessToken;
     } catch (error) {
-      this.logger.error('Failed to get KiotViet access token:', error);
+      this.logger.error(
+        'Failed to get KiotViet access token:',
+        error.response?.data || error,
+      );
       throw error;
     }
   }
@@ -96,7 +107,17 @@ export class KiotVietService {
       wardName: customerData.ward || '',
       locationName: customerData.provinceDistrict || '',
       comments: `Khách hàng web - ${new Date().toISOString()}`,
+      branchId: [this.websiteBranchId],
     };
+
+    this.logger.log(
+      `📝 Creating customer for branch: Cửa Hàng Diệp Trà (${this.websiteBranchId})`,
+    );
+    this.logger.log(`Customer data:`, {
+      name: payload.name,
+      phone: payload.contactNumber,
+      branchId: payload.branchId,
+    });
 
     try {
       const response = await firstValueFrom(
@@ -109,11 +130,13 @@ export class KiotVietService {
         }),
       );
 
-      this.logger.log(`✅ Created KiotViet customer: ${response.data.id}`);
+      this.logger.log(
+        `✅ Created KiotViet customer: ${response.data.id} (${response.data.name})`,
+      );
       return response.data;
     } catch (error) {
       this.logger.error(
-        'Failed to create KiotViet customer:',
+        '❌ Failed to create KiotViet customer:',
         error.response?.data || error,
       );
       throw error;
@@ -146,7 +169,7 @@ export class KiotVietService {
 
     const payload = {
       purchaseDate: new Date().toISOString(),
-      branchId: 1,
+      branchId: this.websiteBranchId,
       discount: 0,
       description: orderData.description || 'Đơn hàng từ website',
       method: 'Cash',
@@ -157,6 +180,17 @@ export class KiotVietService {
       },
       orderDetails,
     };
+
+    this.logger.log(
+      `📦 Creating order for branch: Cửa Hàng Diệp Trà (${this.websiteBranchId})`,
+    );
+    this.logger.log(`Order data:`, {
+      customerId: orderData.customerId,
+      customerName: orderData.customerName,
+      itemsCount: orderData.items.length,
+      total: orderData.total,
+      branchId: this.websiteBranchId,
+    });
 
     try {
       const response = await firstValueFrom(
@@ -169,14 +203,49 @@ export class KiotVietService {
         }),
       );
 
-      this.logger.log(`✅ Created KiotViet order: ${response.data.code}`);
+      this.logger.log(
+        `✅ Created KiotViet order: ${response.data.code} (Total: ${orderData.total})`,
+      );
       return response.data;
     } catch (error) {
       this.logger.error(
-        'Failed to create KiotViet order:',
+        '❌ Failed to create KiotViet order:',
         error.response?.data || error,
       );
       throw error;
     }
+  }
+
+  async testConnection(): Promise<{ success: boolean; message: string }> {
+    try {
+      const token = await this.getAccessToken();
+
+      await firstValueFrom(
+        this.httpService.get(`${this.baseUrl}/customers?pageSize=1`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Retailer: this.retailerName,
+            'Content-Type': 'application/json',
+          },
+        }),
+      );
+
+      return {
+        success: true,
+        message: `Connected successfully to KiotViet. Using branch: Cửa Hàng Diệp Trà (ID: ${this.websiteBranchId})`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Connection failed: ${error.message}`,
+      };
+    }
+  }
+
+  getBranchInfo(): { id: number; name: string } {
+    return {
+      id: this.websiteBranchId,
+      name: 'Cửa Hàng Diệp Trà',
+    };
   }
 }
