@@ -130,21 +130,35 @@ export class KiotVietService {
   }): Promise<any> {
     const token = await this.getAccessToken();
 
-    const payload = {
+    const cleanProvinceName = (province: string): string => {
+      if (!province) return '';
+
+      return province.replace(/^(Thành phố|Tỉnh)\s+/i, '').trim();
+    };
+
+    const payload: any = {
       name: customerData.name,
       contactNumber: customerData.phone,
-      email: customerData.email || '',
-      address:
-        `${customerData.address || ''}, ${customerData.ward || ''}, ${customerData.province || ''}`
-          .trim()
-          .replace(/^,\s*|,\s*$/g, ''),
-      wardName: customerData.ward || '',
-      locationName: [customerData.province, customerData.district]
-        .filter(Boolean)
-        .join(' - '),
-      comments: `KHÁCH HÀNG TỪ WEBSITE - ${new Date().toLocaleString('vi-VN')}`,
+      address: customerData.address || '',
       branchId: 635934,
     };
+
+    if (customerData.email?.trim()) {
+      payload.email = customerData.email.trim();
+    }
+
+    if (customerData.ward?.trim()) {
+      payload.wardName = customerData.ward.trim();
+    }
+
+    if (customerData.province?.trim()) {
+      const cleanedProvince = cleanProvinceName(customerData.province);
+      const originalDistrict = customerData.district?.trim() || '';
+
+      payload.locationName = [cleanedProvince, originalDistrict]
+        .filter(Boolean)
+        .join(' - ');
+    }
 
     try {
       const response = await firstValueFrom(
@@ -162,7 +176,10 @@ export class KiotVietService {
       );
       return response.data;
     } catch (error) {
-      this.logger.error('❌ Create customer failed:', error.response?.data);
+      this.logger.error(
+        '❌ Create customer failed:',
+        JSON.stringify(error.response?.data, null, 2),
+      );
       throw error;
     }
   }
@@ -180,7 +197,6 @@ export class KiotVietService {
     total: number;
     description?: string;
   }): Promise<any> {
-    // ✅ Validate branch trước khi tạo
     await this.validateBranchId();
 
     const token = await this.getAccessToken();
@@ -202,7 +218,7 @@ export class KiotVietService {
 
     const payload = {
       purchaseDate: new Date().toISOString(),
-      branchId: this.websiteBranchId, // ✅ SINGLE VALUE cho order API
+      branchId: this.websiteBranchId,
       discount: 0,
       description: finalDescription,
       method: 'Cash',
