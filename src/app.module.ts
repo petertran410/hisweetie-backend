@@ -12,6 +12,7 @@ import { FileModule } from './file/file.module';
 import { PagesModule } from './pages/pages.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PaymentModule } from './payment/payment.module';
+import { ClientUserModule } from './client_user/client_user.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { PaymentModule } from './payment/payment.module';
     FileModule,
     PagesModule,
     PaymentModule,
+    ClientUserModule,
   ],
   controllers: [],
   providers: [],
