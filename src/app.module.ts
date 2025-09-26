@@ -13,6 +13,7 @@ import { PagesModule } from './pages/pages.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PaymentModule } from './payment/payment.module';
 import { ClientUserModule } from './client_user/client_user.module';
+import { ClientAuthModule } from './auth/client-auth/client-auth.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { ClientUserModule } from './client_user/client_user.module';
     PagesModule,
     PaymentModule,
     ClientUserModule,
+    ClientAuthModule,
   ],
   controllers: [],
   providers: [],

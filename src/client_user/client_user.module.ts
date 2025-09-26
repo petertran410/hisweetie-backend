@@ -5,5 +5,6 @@ import { ClientUserController } from './client_user.controller';
 @Module({
   controllers: [ClientUserController],
   providers: [ClientUserService],
+  exports: [ClientUserService],
 })
 export class ClientUserModule {}
