@@ -83,7 +83,7 @@ export class ClientAuthService {
     const newUser = await this.clientUserService.create(registerDto);
 
     const payload = {
-      sub: newUser.client_id,
+      sub: Number(newUser.client_id),
       email: newUser.email,
       type: 'client',
     };
@@ -99,7 +99,7 @@ export class ClientAuthService {
     });
 
     const userResponse = {
-      client_id: newUser.client_id,
+      client_id: Number(newUser.client_id),
       full_name: newUser.full_name,
       email: newUser.email,
       phone: newUser.phone,
@@ -127,7 +127,7 @@ export class ClientAuthService {
     }
 
     const payload = {
-      sub: user.client_id,
+      sub: Number(user.client_id), // Convert BigInt to Number
       email: user.email,
       type: 'client',
     };
@@ -143,7 +143,7 @@ export class ClientAuthService {
     });
 
     const userResponse = {
-      client_id: user.client_id,
+      client_id: Number(user.client_id), // Convert BigInt to Number
       full_name: user.full_name,
       email: user.email,
       phone: user.phone,
@@ -164,49 +164,52 @@ export class ClientAuthService {
     const decoded = await this.validateRefreshToken(refreshToken);
 
     const users = await this.prisma.client_user.findMany({
-      where: { client_id: decoded.sub },
+      where: { client_id: Number(decoded.sub) },
     });
 
-    let validUser: client_user | null = null;
-
-    for (const user of users) {
-      if (
-        user.refresh_token &&
-        (await bcrypt.compare(refreshToken, user.refresh_token))
-      ) {
-        validUser = user;
-        break;
-      }
+    if (users.length === 0) {
+      throw new UnauthorizedException('User not found');
     }
 
-    if (!validUser) {
+    const user = users[0];
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid token');
+    }
+
+    const isValidRefreshToken = await bcrypt.compare(
+      refreshToken,
+      user.refresh_token,
+    );
+
+    if (!isValidRefreshToken) {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
     const payload = {
-      sub: validUser.client_id,
-      email: validUser.email,
+      sub: Number(user.client_id),
+      email: user.email,
       type: 'client',
     };
 
     const newAccessToken = this.generateAccessToken(payload);
     const newRefreshToken = this.generateRefreshToken(payload);
 
-    const hashedRefreshToken = await bcrypt.hash(newRefreshToken, 10);
+    const hashedNewRefreshToken = await bcrypt.hash(newRefreshToken, 10);
 
     await this.prisma.client_user.update({
-      where: { client_id: validUser.client_id },
-      data: { refresh_token: hashedRefreshToken },
+      where: { client_id: user.client_id },
+      data: { refresh_token: hashedNewRefreshToken },
     });
 
     const userResponse = {
-      client_id: validUser.client_id,
-      full_name: validUser.full_name,
-      email: validUser.email,
-      phone: validUser.phone,
-      avatar: validUser.avatar,
-      face_app_id: validUser.face_app_id,
-      role: validUser.role,
+      client_id: Number(user.client_id), // Convert BigInt to Number
+      full_name: user.full_name,
+      email: user.email,
+      phone: user.phone,
+      avatar: user.avatar,
+      face_app_id: user.face_app_id,
+      role: user.role,
     };
 
     return {
