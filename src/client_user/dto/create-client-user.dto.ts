@@ -13,20 +13,20 @@ export class ClientUserType {
   client_id?: number;
 
   @ApiPropertyOptional({ type: 'string', format: 'binary' })
-  avatar?: string;
+  avatar?: string | null;
 
   @ApiProperty({ default: 'Ngọc Nhân' })
   @Matches(/\D+/g, { message: 'Invalid name!' })
-  full_name: string;
+  full_name?: string | null;
 
   @ApiProperty({ default: 'nhantran4102002@gmail.com' })
   @IsEmail(undefined, { message: 'Invalid email!' })
-  email: string;
+  email?: string | null;
 
   @ApiProperty({ default: 'Nhantran@4102002' })
-  pass_word: string;
+  pass_word?: string | null;
 
   @ApiProperty({ default: '0901391300' })
   @IsNumberString(undefined, { message: 'Invalid phone number!' })
-  phone: string;
+  phone?: string | null;
 }
