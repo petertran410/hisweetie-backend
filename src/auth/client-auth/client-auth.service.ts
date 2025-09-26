@@ -52,6 +52,10 @@ export class ClientAuthService {
     const expiresIn =
       this.configService.get<string>('TOKEN_EXPIRES_IN') || '7d';
 
+    if (!secretKey) {
+      throw new Error('APP_SECRET_KEY is not defined in environment variables');
+    }
+
     const token = await this.jwtService.signAsync(
       {
         sub: user.client_id,

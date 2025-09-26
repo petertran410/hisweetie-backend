@@ -18,6 +18,12 @@ import { ClientUserModule } from '../../client_user/client_user.module';
         const secretKey = configService.get<string>('APP_SECRET_KEY');
         const expiresIn = configService.get<string>('TOKEN_EXPIRES_IN') || '7d';
 
+        if (!secretKey) {
+          throw new Error(
+            'APP_SECRET_KEY is not defined in environment variables',
+          );
+        }
+
         return {
           secret: secretKey,
           signOptions: {
