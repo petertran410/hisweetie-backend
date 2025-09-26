@@ -73,12 +73,43 @@ export class ClientUserService {
     return client_user;
   }
 
-  async update(client_id: number, data: ClientUserType) {
-    const client_user = await this.prisma.client_user.update({
+  async update(client_id: number, data: Partial<ClientUserType>) {
+    const existingUser = await this.prisma.client_user.findUnique({
+      where: { client_id },
+    });
+
+    if (!existingUser) {
+      throw new NotFoundException(`User with ID ${client_id} not found`);
+    }
+
+    if (data.email || data.phone) {
+      const conflictUser = await this.prisma.client_user.findFirst({
+        where: {
+          AND: [
+            { client_id: { not: client_id } },
+            {
+              OR: [
+                data.email ? { email: data.email } : {},
+                data.phone ? { phone: data.phone } : {},
+              ].filter((condition) => Object.keys(condition).length > 0),
+            },
+          ],
+        },
+      });
+
+      if (conflictUser) {
+        throw new ConflictException(
+          'User with this email or phone already exists',
+        );
+      }
+    }
+
+    const updatedUser = await this.prisma.client_user.update({
       where: { client_id },
       data,
     });
-    return client_user;
+
+    return updatedUser;
   }
 
   async changePassword(

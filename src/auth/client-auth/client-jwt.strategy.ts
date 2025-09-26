@@ -42,9 +42,13 @@ export class ClientJwtStrategy extends PassportStrategy(
     return {
       clientId: user.client_id,
       email: user.email,
+      full_name: user.full_name,
       phone: user.phone,
-      fullName: user.full_name,
       avatar: user.avatar,
+      detailed_address: user.detailed_address,
+      province: user.province,
+      district: user.district,
+      ward: user.ward,
     };
   }
 }
