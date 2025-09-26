@@ -30,8 +30,11 @@ export class ClientAuthController {
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Register new client user' })
-  @ApiResponse({ status: 201, description: 'User registered successfully' })
+  @ApiOperation({ summary: 'Register new client user with auto refresh token' })
+  @ApiResponse({
+    status: 201,
+    description: 'User registered successfully with refresh token',
+  })
   @ApiResponse({ status: 409, description: 'User already exists' })
   @UsePipes(new ValidationPipe())
   async register(@Body() registerDto: ClientRegisterDto) {
@@ -43,6 +46,26 @@ export class ClientAuthController {
       }
       throw new HttpException(
         'Registration failed',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('auto-login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Auto login using refresh token (after register)' })
+  @ApiResponse({ status: 200, description: 'Auto login successful' })
+  @ApiResponse({ status: 401, description: 'Invalid refresh token' })
+  @UsePipes(new ValidationPipe())
+  async autoLogin(@Body() refreshTokenDto: RefreshTokenDto) {
+    try {
+      return await this.clientAuthService.autoLogin(refreshTokenDto);
+    } catch (error) {
+      if (error.status && error.status !== 500) {
+        throw error;
+      }
+      throw new HttpException(
+        'Auto login failed',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
@@ -115,14 +138,5 @@ export class ClientAuthController {
       message: 'Profile retrieved successfully',
       user: client,
     };
-  }
-
-  @Get('token-status')
-  @ApiOperation({ summary: 'Check refresh token status' })
-  @ApiResponse({ status: 200, description: 'Returns token status' })
-  async checkTokenStatus(@Body() refreshTokenDto: RefreshTokenDto) {
-    return await this.clientAuthService.checkTokenStatus(
-      refreshTokenDto.refresh_token,
-    );
   }
 }
