@@ -7,6 +7,7 @@ import {
   IsDateString,
   IsNumberString,
   Matches,
+  Length,
 } from 'class-validator';
 
 export class ClientUserType {
@@ -29,4 +30,71 @@ export class ClientUserType {
   @ApiProperty({ default: '0901391300' })
   @IsNumberString(undefined, { message: 'Invalid phone number!' })
   phone?: string | null;
+}
+
+export class UpdateClientUserDto {
+  @ApiProperty({
+    description: 'Full name',
+    example: 'Nguyễn Văn A',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @Length(2, 100)
+  full_name?: string;
+
+  @ApiProperty({
+    description: 'Email address',
+    example: 'user@example.com',
+    required: false,
+  })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @ApiProperty({
+    description: 'Phone number',
+    example: '0987654321',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @Length(10, 11)
+  phone?: string;
+
+  @ApiProperty({
+    description: 'Detailed address',
+    example: '123 Nguyễn Huệ',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  detailed_address?: string;
+
+  @ApiProperty({
+    description: 'Province/City',
+    example: 'Thành phố Hồ Chí Minh',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  province?: string;
+
+  @ApiProperty({
+    description: 'District',
+    example: 'Quận 1',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  district?: string;
+
+  @ApiProperty({
+    description: 'Ward/Commune',
+    example: 'Phường Bến Nghé',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  ward?: string;
 }
