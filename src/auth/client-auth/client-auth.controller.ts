@@ -19,6 +19,7 @@ import {
 import { ClientAuthService } from './client-auth.service';
 import { ClientRegisterDto } from './dto/client-register.dto';
 import { ClientLoginDto } from './dto/client-login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ClientJwtAuthGuard } from './client-jwt-auth.guard';
 import { CurrentClient } from './current-client.decorator';
 
@@ -64,6 +65,43 @@ export class ClientAuthController {
     }
   }
 
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Refresh access token using refresh token' })
+  @ApiResponse({ status: 200, description: 'Token refreshed successfully' })
+  @ApiResponse({ status: 401, description: 'Invalid refresh token' })
+  @UsePipes(new ValidationPipe())
+  async refreshToken(@Body() refreshTokenDto: RefreshTokenDto) {
+    try {
+      return await this.clientAuthService.refreshToken(refreshTokenDto);
+    } catch (error) {
+      if (error.status && error.status !== 500) {
+        throw error;
+      }
+      throw new HttpException(
+        'Token refresh failed',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(ClientJwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Logout client user' })
+  @ApiResponse({ status: 200, description: 'Logout successful' })
+  async logout(@CurrentClient() client: any) {
+    try {
+      return await this.clientAuthService.logout(client.clientId);
+    } catch (error) {
+      throw new HttpException(
+        'Logout failed',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   @Get('profile')
   @UseGuards(ClientJwtAuthGuard)
   @ApiBearerAuth()
@@ -77,5 +115,14 @@ export class ClientAuthController {
       message: 'Profile retrieved successfully',
       user: client,
     };
+  }
+
+  @Get('token-status')
+  @ApiOperation({ summary: 'Check refresh token status' })
+  @ApiResponse({ status: 200, description: 'Returns token status' })
+  async checkTokenStatus(@Body() refreshTokenDto: RefreshTokenDto) {
+    return await this.clientAuthService.checkTokenStatus(
+      refreshTokenDto.refresh_token,
+    );
   }
 }
