@@ -9,7 +9,8 @@ import { ClientUserService } from '../../client_user/client_user.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClientRegisterDto } from './dto/client-register.dto';
 import { ClientLoginDto } from './dto/client-login.dto';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { client_user } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class ClientAuthService {
@@ -19,23 +20,6 @@ export class ClientAuthService {
     private clientUserService: ClientUserService,
     private prisma: PrismaService,
   ) {}
-
-  private generateRefreshToken(payload: any): string {
-    const secretKey = this.configService.get<string>('APP_SECRET_KEY');
-    const refreshTokenExpiry = '30d';
-
-    if (!secretKey) {
-      throw new Error('APP_SECRET_KEY is not defined in environment variables');
-    }
-
-    return this.jwtService.sign(
-      { ...payload, type: 'refresh' },
-      {
-        expiresIn: refreshTokenExpiry,
-        secret: secretKey,
-      },
-    );
-  }
 
   private generateAccessToken(payload: any): string {
     const secretKey = this.configService.get<string>('APP_SECRET_KEY');
@@ -52,10 +36,21 @@ export class ClientAuthService {
     });
   }
 
-  private generateTokens(payload: any) {
-    const accessToken = this.generateAccessToken(payload);
-    const refreshToken = this.generateRefreshToken(payload);
-    return { accessToken, refreshToken };
+  private generateRefreshToken(payload: any): string {
+    const secretKey = this.configService.get<string>('APP_SECRET_KEY');
+    const refreshTokenExpiry = '30d';
+
+    if (!secretKey) {
+      throw new Error('APP_SECRET_KEY is not defined in environment variables');
+    }
+
+    return this.jwtService.sign(
+      { ...payload, type: 'refresh' },
+      {
+        expiresIn: refreshTokenExpiry,
+        secret: secretKey,
+      },
+    );
   }
 
   private async validateRefreshToken(token: string): Promise<any> {
@@ -85,26 +80,37 @@ export class ClientAuthService {
       );
     }
 
-    // Tạo user trước
     const newUser = await this.clientUserService.create(registerDto);
 
-    // Tạo refresh token ngay sau khi tạo user
     const payload = {
       sub: newUser.client_id,
       email: newUser.email,
       type: 'client',
     };
 
+    const accessToken = this.generateAccessToken(payload);
     const refreshToken = this.generateRefreshToken(payload);
+
+    const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
 
     await this.prisma.client_user.update({
       where: { client_id: newUser.client_id },
-      data: { refresh_token: refreshToken },
+      data: { refresh_token: hashedRefreshToken },
     });
 
-    const { pass_word, ...userResponse } = newUser;
+    const userResponse = {
+      client_id: newUser.client_id,
+      full_name: newUser.full_name,
+      email: newUser.email,
+      phone: newUser.phone,
+      avatar: newUser.avatar,
+      face_app_id: newUser.face_app_id,
+      role: newUser.role,
+    };
+
     return {
-      message: 'Registration successful',
+      message: 'Registration successful - auto logged in',
+      access_token: accessToken,
       refresh_token: refreshToken,
       user: userResponse,
     };
@@ -120,78 +126,6 @@ export class ClientAuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    if (user.refresh_token) {
-      try {
-        const decoded = await this.validateRefreshToken(user.refresh_token);
-
-        // If refresh token is still valid, generate new access token but keep refresh token
-        const payload = {
-          sub: user.client_id,
-          email: user.email,
-          type: 'client',
-        };
-
-        const newAccessToken = this.generateAccessToken(payload);
-
-        const { pass_word, refresh_token, ...userResponse } = user;
-        return {
-          message: 'Login successful - existing session',
-          access_token: newAccessToken,
-          refresh_token: user.refresh_token,
-          user: userResponse,
-        };
-      } catch (error) {
-        // Refresh token is expired or invalid, continue with normal flow
-      }
-    }
-
-    // Generate new tokens
-    const payload = {
-      sub: user.client_id,
-      email: user.email,
-      type: 'client',
-    };
-
-    const { accessToken, refreshToken } = this.generateTokens(payload);
-
-    // Save refresh token to database
-    await this.prisma.client_user.update({
-      where: { client_id: user.client_id },
-      data: { refresh_token: refreshToken },
-    });
-
-    const {
-      pass_word,
-      refresh_token: old_refresh_token,
-      ...userResponse
-    } = user;
-    return {
-      message: 'Login successful - new session',
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      user: userResponse,
-    };
-  }
-
-  // Thêm method auto-login bằng refresh token
-  async autoLogin(refreshTokenDto: RefreshTokenDto) {
-    const decoded = await this.validateRefreshToken(
-      refreshTokenDto.refresh_token,
-    );
-
-    // Find user with this refresh token
-    const user = await this.prisma.client_user.findFirst({
-      where: {
-        client_id: decoded.sub,
-        refresh_token: refreshTokenDto.refresh_token,
-      },
-    });
-
-    if (!user) {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-
-    // Generate access token (keep existing refresh token)
     const payload = {
       sub: user.client_id,
       email: user.email,
@@ -199,63 +133,91 @@ export class ClientAuthService {
     };
 
     const accessToken = this.generateAccessToken(payload);
+    const refreshToken = this.generateRefreshToken(payload);
 
-    const { pass_word, refresh_token, ...userResponse } = user;
-    return {
-      message: 'Auto login successful',
-      access_token: accessToken,
-      refresh_token: user.refresh_token,
-      user: userResponse,
-    };
-  }
+    const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
 
-  async refreshToken(refreshTokenDto: RefreshTokenDto) {
-    const decoded = await this.validateRefreshToken(
-      refreshTokenDto.refresh_token,
-    );
-
-    // Find user with this refresh token
-    const user = await this.prisma.client_user.findFirst({
-      where: {
-        client_id: decoded.sub,
-        refresh_token: refreshTokenDto.refresh_token,
-      },
-    });
-
-    if (!user) {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-
-    // Generate new tokens
-    const payload = {
-      sub: user.client_id,
-      email: user.email,
-      type: 'client',
-    };
-
-    const { accessToken, refreshToken } = this.generateTokens(payload);
-
-    // Update refresh token in database
     await this.prisma.client_user.update({
       where: { client_id: user.client_id },
-      data: { refresh_token: refreshToken },
+      data: { refresh_token: hashedRefreshToken },
     });
 
-    const {
-      pass_word,
-      refresh_token: old_refresh_token,
-      ...userResponse
-    } = user;
+    const userResponse = {
+      client_id: user.client_id,
+      full_name: user.full_name,
+      email: user.email,
+      phone: user.phone,
+      avatar: user.avatar,
+      face_app_id: user.face_app_id,
+      role: user.role,
+    };
+
     return {
-      message: 'Token refreshed successfully',
+      message: 'Login successful',
       access_token: accessToken,
       refresh_token: refreshToken,
       user: userResponse,
     };
   }
 
+  async refreshTokenFromCookie(refreshToken: string) {
+    const decoded = await this.validateRefreshToken(refreshToken);
+
+    const users = await this.prisma.client_user.findMany({
+      where: { client_id: decoded.sub },
+    });
+
+    let validUser: client_user | null = null;
+
+    for (const user of users) {
+      if (
+        user.refresh_token &&
+        (await bcrypt.compare(refreshToken, user.refresh_token))
+      ) {
+        validUser = user;
+        break;
+      }
+    }
+
+    if (!validUser) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    const payload = {
+      sub: validUser.client_id,
+      email: validUser.email,
+      type: 'client',
+    };
+
+    const newAccessToken = this.generateAccessToken(payload);
+    const newRefreshToken = this.generateRefreshToken(payload);
+
+    const hashedRefreshToken = await bcrypt.hash(newRefreshToken, 10);
+
+    await this.prisma.client_user.update({
+      where: { client_id: validUser.client_id },
+      data: { refresh_token: hashedRefreshToken },
+    });
+
+    const userResponse = {
+      client_id: validUser.client_id,
+      full_name: validUser.full_name,
+      email: validUser.email,
+      phone: validUser.phone,
+      avatar: validUser.avatar,
+      face_app_id: validUser.face_app_id,
+      role: validUser.role,
+    };
+
+    return {
+      message: 'Token refreshed successfully',
+      access_token: newAccessToken,
+      refresh_token: newRefreshToken,
+      user: userResponse,
+    };
+  }
+
   async logout(clientId: number) {
-    // Remove refresh token from database
     await this.prisma.client_user.update({
       where: { client_id: clientId },
       data: { refresh_token: null },
