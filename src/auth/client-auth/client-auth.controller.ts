@@ -8,6 +8,7 @@ import {
   ValidationPipe,
   Get,
   UseGuards,
+  HttpException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -32,8 +33,18 @@ export class ClientAuthController {
   @ApiResponse({ status: 201, description: 'User registered successfully' })
   @ApiResponse({ status: 409, description: 'User already exists' })
   @UsePipes(new ValidationPipe())
-  register(@Body() registerDto: ClientRegisterDto) {
-    return this.clientAuthService.register(registerDto);
+  async register(@Body() registerDto: ClientRegisterDto) {
+    try {
+      return await this.clientAuthService.register(registerDto);
+    } catch (error) {
+      if (error.status && error.status !== 500) {
+        throw error;
+      }
+      throw new HttpException(
+        'Registration failed',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   @Post('login')
@@ -42,8 +53,15 @@ export class ClientAuthController {
   @ApiResponse({ status: 200, description: 'Login successful' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   @UsePipes(new ValidationPipe())
-  login(@Body() loginDto: ClientLoginDto) {
-    return this.clientAuthService.login(loginDto);
+  async login(@Body() loginDto: ClientLoginDto) {
+    try {
+      return await this.clientAuthService.login(loginDto);
+    } catch (error) {
+      if (error.status && error.status !== 500) {
+        throw error;
+      }
+      throw new HttpException('Login failed', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 
   @Get('profile')

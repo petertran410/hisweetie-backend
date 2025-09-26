@@ -4,13 +4,13 @@ import {
   ConflictException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { ClientUserType } from './dto/create-client-user.dto';
 
 @Injectable()
 export class ClientUserService {
-  prisma = new PrismaClient();
+  constructor(private prisma: PrismaService) {}
 
   async findAll() {
     const data = await this.prisma.client_user.findMany();
@@ -25,7 +25,7 @@ export class ClientUserService {
   }
 
   async findName(clientName: string) {
-    let data = await this.prisma.client_user.findMany({
+    const data = await this.prisma.client_user.findMany({
       where: {
         full_name: {
           contains: clientName,
@@ -66,7 +66,7 @@ export class ClientUserService {
     if (!data.pass_word) {
       throw new Error('Password is required');
     }
-    const hashedPassword = await bcrypt.hash(data.pass_word, 20);
+    const hashedPassword = await bcrypt.hash(data.pass_word, 10);
     const client_user = await this.prisma.client_user.create({
       data: { ...data, pass_word: hashedPassword },
     });

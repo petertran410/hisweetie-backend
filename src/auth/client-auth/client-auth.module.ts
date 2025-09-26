@@ -6,10 +6,12 @@ import { ClientAuthController } from './client-auth.controller';
 import { ClientAuthService } from './client-auth.service';
 import { ClientJwtStrategy } from './client-jwt.strategy';
 import { ClientUserModule } from '../../client_user/client_user.module';
+import { PrismaModule } from '../../prisma/prisma.module';
 
 @Module({
   imports: [
     ClientUserModule,
+    PrismaModule,
     PassportModule.register({ defaultStrategy: 'client-jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
