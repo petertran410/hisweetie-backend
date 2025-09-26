@@ -177,6 +177,10 @@ export class ClientAuthService {
       throw new UnauthorizedException('Invalid token');
     }
 
+    if (!user.refresh_token) {
+      throw new UnauthorizedException('No refresh token found');
+    }
+
     const isValidRefreshToken = await bcrypt.compare(
       refreshToken,
       user.refresh_token,
