@@ -127,7 +127,7 @@ export class ClientAuthService {
     }
 
     const payload = {
-      sub: Number(user.client_id), // Convert BigInt to Number
+      sub: Number(user.client_id),
       email: user.email,
       type: 'client',
     };
@@ -143,7 +143,7 @@ export class ClientAuthService {
     });
 
     const userResponse = {
-      client_id: Number(user.client_id), // Convert BigInt to Number
+      client_id: Number(user.client_id),
       full_name: user.full_name,
       email: user.email,
       phone: user.phone,
@@ -207,7 +207,7 @@ export class ClientAuthService {
     });
 
     const userResponse = {
-      client_id: Number(user.client_id), // Convert BigInt to Number
+      client_id: Number(user.client_id),
       full_name: user.full_name,
       email: user.email,
       phone: user.phone,

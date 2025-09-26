@@ -786,7 +786,7 @@ export class ProductService {
     const ofCategories = product.category
       ? [
           {
-            id: product.category.id,
+            id: Number(product.category.id),
             name: product.category.name,
           },
         ]
