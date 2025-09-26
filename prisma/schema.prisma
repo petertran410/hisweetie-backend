@@ -295,6 +295,10 @@ model client_user {
   face_app_id         String?         @db.VarChar(255)
   role                String?         @db.VarChar(50)
   refresh_token       String?         @db.Text
+  detailed_address    String?         @db.VarChar(500)
+  province            String?         @db.VarChar(255)
+  district            String?         @db.VarChar(255)
+  ward                String?         @db.VarChar(255)
 }
 
 model sync_log {
