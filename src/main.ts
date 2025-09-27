@@ -8,32 +8,28 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  // Enable cookie parser
   app.use(cookieParser());
 
-  // Serve static files TRƯỚC KHI apply global prefix
   app.useStaticAssets(join(__dirname, '..', 'public'), {
     prefix: '/public/',
   });
 
-  // Enable CORS với credentials
-  // app.enableCors({
-  //   origin: [
-  //     'http://localhost:3000',
-  //     'http://localhost:3210',
-  //     'http://14.224.212.102:3333',
-  //     'https://dieptra.com',
-  //     'https://cms.gaulermao.com',
-  //     'https://www.dieptra.com',
-  //   ],
-  //   credentials: true,
-  //   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  //   allowedHeaders: ['Content-Type', 'Authorization'],
-  // });
+  app.enableCors({
+    origin: [
+      'http://localhost:3000',
+      'http://localhost:3210',
+      'http://14.224.212.102:3333',
+      'https://dieptra.com',
+      'https://cms.gaulermao.com',
+      'https://www.dieptra.com',
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
 
-  app.enableCors();
+  // app.enableCors();
 
-  // Apply global prefix AFTER static assets
   app.setGlobalPrefix('api');
 
   const config = new DocumentBuilder()
