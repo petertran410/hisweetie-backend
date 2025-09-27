@@ -18,6 +18,7 @@ async function bootstrap() {
     origin: [
       'http://localhost:3000',
       'http://localhost:3210',
+      'http://localhost:3333',
       'http://14.224.212.102:3333',
       'https://dieptra.com',
       'https://cms.gaulermao.com',
@@ -25,7 +26,7 @@ async function bootstrap() {
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Force-Signature'],
   });
 
   // app.enableCors();
