@@ -17,19 +17,21 @@ async function bootstrap() {
   });
 
   // Enable CORS với credentials
-  app.enableCors({
-    origin: [
-      'http://localhost:3000',
-      'http://localhost:3210',
-      'http://14.224.212.102:3333',
-      'https://dieptra.com',
-      'https://cms.gaulermao.com',
-      'https://www.dieptra.com',
-    ],
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  });
+  // app.enableCors({
+  //   origin: [
+  //     'http://localhost:3000',
+  //     'http://localhost:3210',
+  //     'http://14.224.212.102:3333',
+  //     'https://dieptra.com',
+  //     'https://cms.gaulermao.com',
+  //     'https://www.dieptra.com',
+  //   ],
+  //   credentials: true,
+  //   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  //   allowedHeaders: ['Content-Type', 'Authorization'],
+  // });
+
+  app.enableCors();
 
   // Apply global prefix AFTER static assets
   app.setGlobalPrefix('api');
