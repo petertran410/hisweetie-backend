@@ -7,7 +7,7 @@ import { ClientAuthController } from './client-auth.controller';
 import { ClientJwtStrategy } from './client-jwt.strategy';
 import { ClientUserModule } from '../../client_user/client_user.module';
 import { PrismaModule } from '../../prisma/prisma.module';
-import { KiotVietService } from 'src/product/kiotviet.service';
+import { KiotVietService } from '../../kiotviet/kiotviet.service';
 
 @Module({
   imports: [
