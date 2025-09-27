@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { HttpModule } from '@nestjs/axios';
 import { ClientAuthService } from './client-auth.service';
 import { ClientAuthController } from './client-auth.controller';
 import { ClientJwtStrategy } from './client-jwt.strategy';
@@ -13,6 +14,10 @@ import { KiotVietService } from '../../kiotviet/kiotviet.service';
   imports: [
     ClientUserModule,
     PrismaModule,
+    HttpModule.register({
+      timeout: 60000,
+      maxRedirects: 10,
+    }),
     PassportModule.register({ defaultStrategy: 'client-jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
