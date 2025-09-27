@@ -7,10 +7,14 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { ClientUserType } from './dto/create-client-user.dto';
+import { KiotVietService } from '../kiotviet/kiotviet.service';
 
 @Injectable()
 export class ClientUserService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private kiotVietService: KiotVietService,
+  ) {}
 
   async findAll() {
     const data = await this.prisma.client_user.findMany();
@@ -91,7 +95,7 @@ export class ClientUserService {
               OR: [
                 data.email ? { email: data.email } : {},
                 data.phone ? { phone: data.phone } : {},
-              ].filter((condition) => Object.keys(condition).length > 0),
+              ],
             },
           ],
         },
@@ -108,6 +112,28 @@ export class ClientUserService {
       where: { client_id },
       data,
     });
+
+    if (existingUser.kiotviet_customer_id) {
+      try {
+        await this.kiotVietService.updateCustomer(
+          existingUser.kiotviet_customer_id,
+          {
+            name: data.full_name || existingUser.full_name || undefined,
+            phone: data.phone || existingUser.phone || undefined,
+            email: data.email || existingUser.email || undefined,
+            address:
+              data.detailed_address ||
+              existingUser.detailed_address ||
+              undefined,
+            province: data.province || existingUser.province || undefined,
+            district: data.district || existingUser.district || undefined,
+            ward: data.ward || existingUser.ward || undefined,
+          },
+        );
+      } catch (error) {
+        console.error('Failed to update Kiot customer:', error.message);
+      }
+    }
 
     return updatedUser;
   }

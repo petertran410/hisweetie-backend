@@ -1,4 +1,3 @@
-// src/product/kiotviet.service.ts - STREAMLINED FOR MINIMAL SYNC
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, PrismaClient } from '@prisma/client';

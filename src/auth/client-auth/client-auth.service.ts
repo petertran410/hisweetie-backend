@@ -9,16 +9,17 @@ import { ClientUserService } from '../../client_user/client_user.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClientRegisterDto } from './dto/client-register.dto';
 import { ClientLoginDto } from './dto/client-login.dto';
-import { client_user } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { KiotVietService } from '../../kiotviet/kiotviet.service';
 
 @Injectable()
 export class ClientAuthService {
   constructor(
-    private jwtService: JwtService,
-    private configService: ConfigService,
-    private clientUserService: ClientUserService,
     private prisma: PrismaService,
+    private clientUserService: ClientUserService,
+    private configService: ConfigService,
+    private jwtService: JwtService,
+    private kiotVietService: KiotVietService,
   ) {}
 
   private generateAccessToken(payload: any): string {
@@ -81,6 +82,25 @@ export class ClientAuthService {
     }
 
     const newUser = await this.clientUserService.create(registerDto);
+
+    try {
+      const kiotCustomer = await this.kiotVietService.createCustomer({
+        name: newUser.full_name || 'Unknown User',
+        phone: newUser.phone || '',
+        email: newUser.email || undefined,
+        address: newUser.detailed_address || '',
+        province: newUser.province || '',
+        district: newUser.district || '',
+        ward: newUser.ward || '',
+      });
+
+      await this.prisma.client_user.update({
+        where: { client_id: newUser.client_id },
+        data: { kiotviet_customer_id: kiotCustomer.id },
+      });
+    } catch (error) {
+      console.error('Failed to create Kiot customer:', error.message);
+    }
 
     const payload = {
       sub: Number(newUser.client_id),

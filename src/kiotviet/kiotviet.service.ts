@@ -194,6 +194,73 @@ export class KiotVietService {
     }
   }
 
+  async updateCustomer(
+    customerId: number,
+    customerData: {
+      name?: string;
+      phone?: string;
+      email?: string;
+      address?: string;
+      province?: string;
+      ward?: string;
+      district?: string;
+    },
+  ): Promise<any> {
+    const token = await this.getAccessToken();
+
+    const cleanProvinceName = (province: string): string => {
+      if (!province) return '';
+      return province.replace(/^(Thành phố|Tỉnh)\s+/i, '').trim();
+    };
+
+    const payload: any = {};
+
+    if (customerData.name) payload.name = customerData.name;
+    if (customerData.phone) payload.contactNumber = customerData.phone;
+    if (customerData.email) payload.email = customerData.email.trim();
+    if (customerData.address) payload.address = customerData.address;
+
+    if (customerData.ward) {
+      payload.wardName = customerData.ward.trim();
+    }
+
+    if (customerData.province) {
+      const cleanedProvince = cleanProvinceName(customerData.province);
+      const originalDistrict = customerData.district || '';
+      payload.locationName = [cleanedProvince, originalDistrict]
+        .filter(Boolean)
+        .join(' - ');
+    }
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.put(
+          `${this.baseUrl}/customers/${customerId}`,
+          payload,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Retailer: this.retailerName,
+              'Content-Type': 'application/json',
+            },
+          },
+        ),
+      );
+
+      const updatedCustomer = response.data.data || response.data;
+      this.logger.log(
+        `✅ Updated customer: ${customerId} (${updatedCustomer.name})`,
+      );
+      return updatedCustomer;
+    } catch (error) {
+      this.logger.error(
+        '❌ Update customer failed:',
+        JSON.stringify(error.response?.data, null, 2),
+      );
+      throw error;
+    }
+  }
+
   async createOrder(orderData: {
     customerId: number;
     customerName: string;
@@ -209,7 +276,6 @@ export class KiotVietService {
   }): Promise<any> {
     const token = await this.getAccessToken();
 
-    // ✅ DEBUG: Log input data
     this.logger.log(
       '🔍 CREATE ORDER INPUT:',
       JSON.stringify(
@@ -226,7 +292,6 @@ export class KiotVietService {
       ),
     );
 
-    // ✅ Check if customerName is empty
     if (!orderData.customerName || orderData.customerName.trim() === '') {
       throw new Error(`Customer name is empty: "${orderData.customerName}"`);
     }
@@ -247,14 +312,14 @@ export class KiotVietService {
       description: orderData.description || '',
       method: 'Cash',
       totalPayment: orderData.total,
+      saleChannelId: 496738,
       customer: {
         id: orderData.customerId,
-        name: orderData.customerName.trim(), // ✅ Trim name
+        name: orderData.customerName.trim(),
       },
       orderDetails,
     };
 
-    // ✅ DEBUG: Log exact payload
     this.logger.log('🔍 ORDER PAYLOAD:', JSON.stringify(payload, null, 2));
 
     try {
@@ -279,7 +344,6 @@ export class KiotVietService {
     }
   }
 
-  // ✅ Method để handle payment success từ Sepay
   async handlePaymentSuccess(paymentData: {
     customerName: string;
     phone: string;
@@ -309,7 +373,6 @@ export class KiotVietService {
         address: paymentData.address,
       });
 
-      // 2. Tạo order với customerId từ step 1
       const order = await this.createOrder({
         customerId: customer.id,
         customerName: customer.name,

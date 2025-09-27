@@ -35,11 +35,11 @@ export class ClientAuthController {
     const isProduction = process.env.NODE_ENV === 'production';
 
     response.cookie('refresh_token', refreshToken, {
-      httpOnly: true, // Không accessible từ JavaScript
-      secure: isProduction, // HTTPS only trong production
-      sameSite: isProduction ? 'none' : 'lax', // CSRF protection
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      path: '/', // Available for entire app
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      path: '/',
     });
   }
 
@@ -98,10 +98,8 @@ export class ClientAuthController {
     try {
       const result = await this.clientAuthService.login(loginDto);
 
-      // Set refresh token trong httpOnly cookie
       this.setRefreshTokenCookie(response, result.refresh_token);
 
-      // Return response without refresh_token
       const { refresh_token, ...responseData } = result;
       return responseData;
     } catch (error) {

@@ -7,6 +7,7 @@ import { ClientAuthController } from './client-auth.controller';
 import { ClientJwtStrategy } from './client-jwt.strategy';
 import { ClientUserModule } from '../../client_user/client_user.module';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { KiotVietService } from 'src/product/kiotviet.service';
 
 @Module({
   imports: [
@@ -36,7 +37,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
     }),
   ],
   controllers: [ClientAuthController],
-  providers: [ClientAuthService, ClientJwtStrategy],
+  providers: [ClientAuthService, ClientJwtStrategy, KiotVietService],
   exports: [ClientAuthService, ClientJwtStrategy, PassportModule],
 })
 export class ClientAuthModule {}

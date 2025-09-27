@@ -30,6 +30,12 @@ export class ClientUserType {
   @ApiProperty({ default: '0901391300' })
   @IsNumberString(undefined, { message: 'Invalid phone number!' })
   phone?: string | null;
+
+  detailed_address?: string | null;
+  province?: string | null;
+  district?: string | null;
+  ward?: string | null;
+  kiotviet_customer_id?: number | null;
 }
 
 export class UpdateClientUserDto {
