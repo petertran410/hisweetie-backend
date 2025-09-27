@@ -12,12 +12,13 @@ async function bootstrap() {
   // Enable CORS với credentials
   app.enableCors({
     origin: [
-      'http://localhost:3000',
+      'https://dieptra.com',
+      'https://www.dieptra.com',
+      'http://localhost:3333',
       'http://localhost:3210',
       'http://14.224.212.102:3333',
-      'https://dieptra.com',
       'https://cms.gaulermao.com',
-      'https://www.dieptra.com',
+      'https://www.dieptra.com/',
     ], // Frontend URLs
     credentials: true, // Cho phép cookies
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
