@@ -229,15 +229,74 @@ export class PaymentService {
           );
         }
 
-        const kiotCustomer = await this.kiotVietService.createCustomer({
-          name: order.full_name,
-          phone: order.phone,
-          email: order.email || undefined,
-          address: order.detailed_address || undefined,
-          province: order.province || undefined,
-          ward: order.ward || undefined,
-          district: order.district || undefined,
+        const clientUser = await this.prisma.client_user.findFirst({
+          where: {
+            OR: [{ phone: order.phone }, { email: order.email || undefined }],
+          },
         });
+
+        let kiotCustomer;
+
+        if (clientUser && clientUser.kiotviet_customer_id) {
+          this.logger.log(
+            `Found existing KiotViet customer ID: ${clientUser.kiotviet_customer_id}`,
+          );
+
+          const hasChanges =
+            order.phone !== clientUser.phone ||
+            order.email !== clientUser.email ||
+            order.detailed_address !== clientUser.detailed_address ||
+            order.province !== clientUser.province ||
+            order.district !== clientUser.district ||
+            order.ward !== clientUser.ward;
+
+          if (hasChanges) {
+            this.logger.log(
+              'Customer info changed, updating KiotViet customer...',
+            );
+            kiotCustomer = await this.kiotVietService.updateCustomer(
+              clientUser.kiotviet_customer_id,
+              {
+                name: order.full_name,
+                phone: order.phone,
+                email: order.email || undefined,
+                address: order.detailed_address || undefined,
+                province: order.province || undefined,
+                ward: order.ward || undefined,
+                district: order.district || undefined,
+              },
+            );
+          } else {
+            kiotCustomer = {
+              id: clientUser.kiotviet_customer_id,
+              code: clientUser.kiot_code,
+              name: order.full_name,
+            };
+          }
+        } else {
+          this.logger.log(
+            'No KiotViet customer found, creating new customer...',
+          );
+          kiotCustomer = await this.kiotVietService.createCustomer({
+            name: order.full_name,
+            phone: order.phone,
+            email: order.email || undefined,
+            address: order.detailed_address || undefined,
+            province: order.province || undefined,
+            ward: order.ward || undefined,
+            district: order.district || undefined,
+          });
+
+          if (clientUser) {
+            await this.prisma.client_user.update({
+              where: { client_id: clientUser.client_id },
+              data: {
+                kiotviet_customer_id: kiotCustomer.id,
+                kiot_code: kiotCustomer.code,
+              },
+            });
+          }
+        }
 
         const validOrderItems = order.orders.filter(
           (orderItem) =>
@@ -271,7 +330,19 @@ export class PaymentService {
         });
 
         this.logger.log(
-          `✅ Created KiotViet order: ${kiotOrder.code} for customer: ${kiotCustomer.id}`,
+          `✅ Created KiotViet order: ${kiotOrder.code} for customer: ${kiotCustomer.id} (${kiotCustomer.code})`,
+        );
+
+        await this.prisma.product_order.update({
+          where: { id: BigInt(orderId) },
+          data: {
+            order_kiot_id: kiotOrder.id,
+            order_kiot_code: kiotOrder.code,
+          },
+        });
+
+        this.logger.log(
+          `✅ Saved KiotViet order info to database: ID=${kiotOrder.id}, Code=${kiotOrder.code}`,
         );
 
         await this.prisma.payment_logs.create({
@@ -307,7 +378,7 @@ export class PaymentService {
             },
             created_date: new Date(),
             ip_address: 'KIOTVIET_API',
-            user_agent: 'WEBHOOK_SYNC',
+            user_agent: 'WEBHOOK_ERROR',
           },
         });
       }
