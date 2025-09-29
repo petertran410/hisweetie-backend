@@ -242,6 +242,8 @@ model product_order {
   full_name        String?
   email            String?
   orders           orders[]
+  order_kiot_id    Int?
+  order_kiot_code  String?
   payment_logs     payment_logs[]
 }
 
