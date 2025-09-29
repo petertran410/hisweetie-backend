@@ -96,7 +96,10 @@ export class ClientAuthService {
 
       await this.prisma.client_user.update({
         where: { client_id: newUser.client_id },
-        data: { kiotviet_customer_id: kiotCustomer.id },
+        data: {
+          kiotviet_customer_id: kiotCustomer.id,
+          kiot_code: kiotCustomer.code,
+        },
       });
     } catch (error) {
       console.error('Failed to create Kiot customer:', error.message);
