@@ -148,41 +148,45 @@ export class CategoryService {
   }
 
   async findOne(id: number) {
-    try {
-      const category = await this.prisma.category.findUnique({
-        where: { id: BigInt(id) },
-        include: {
-          product: {
-            select: { id: true, title: true, kiotviet_name: true },
-          },
-          parent: {
-            select: { id: true, name: true },
-          },
+    const category = await this.prisma.category.findUnique({
+      where: { id: BigInt(id) },
+      include: {
+        product: {
+          select: { id: true, title: true, kiotviet_name: true },
         },
-      });
-
-      if (!category) {
-        throw new NotFoundException('Category not found');
-      }
-
-      return {
-        success: true,
-        data: {
-          ...category,
-          id: Number(category.id),
-          parent_id: category.parent_id ? Number(category.parent_id) : null,
-          parent_name: category.parent?.name,
-          products: category.product.map((p) => ({
-            id: Number(p.id),
-            name: p.title || p.kiotviet_name,
-          })),
+        parent: {
+          select: { id: true, name: true },
         },
-        message: 'Category fetched successfully',
-      };
-    } catch (error) {
-      this.logger.error(`Error fetching category ${id}: ${error.message}`);
-      throw error;
+      },
+    });
+
+    if (!category) {
+      throw new NotFoundException(`Category with ID ${id} not found`);
     }
+
+    return {
+      success: true,
+      data: {
+        id: Number(category.id),
+        name: category.name,
+        description: category.description,
+        title_meta: category.title_meta,
+        slug: category.slug,
+        priority: category.priority,
+        level: category.level,
+        path: category.path,
+        product_count: category.product_count,
+        direct_product_count: category.direct_product_count,
+        child_count: category.child_count,
+        parent_id: category.parent_id ? Number(category.parent_id) : null,
+        parent_name: category.parent?.name,
+        products: category.product.map((p) => ({
+          id: Number(p.id),
+          name: p.title || p.kiotviet_name,
+        })),
+      },
+      message: 'Category fetched successfully',
+    };
   }
 
   async update(id: number, updateCategoryDto: UpdateCategoryDto) {
