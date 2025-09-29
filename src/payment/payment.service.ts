@@ -235,49 +235,20 @@ export class PaymentService {
           },
         });
 
-        let kiotCustomer;
+        let kiotCustomerId: number;
+        let kiotCustomerCode: string;
 
         if (clientUser && clientUser.kiotviet_customer_id) {
           this.logger.log(
-            `Found existing KiotViet customer ID: ${clientUser.kiotviet_customer_id}`,
+            `Using existing KiotViet customer ID: ${clientUser.kiotviet_customer_id}`,
           );
-
-          const hasChanges =
-            order.phone !== clientUser.phone ||
-            order.email !== clientUser.email ||
-            order.detailed_address !== clientUser.detailed_address ||
-            order.province !== clientUser.province ||
-            order.district !== clientUser.district ||
-            order.ward !== clientUser.ward;
-
-          if (hasChanges) {
-            this.logger.log(
-              'Customer info changed, updating KiotViet customer...',
-            );
-            kiotCustomer = await this.kiotVietService.updateCustomer(
-              clientUser.kiotviet_customer_id,
-              {
-                name: order.full_name,
-                phone: order.phone,
-                email: order.email || undefined,
-                address: order.detailed_address || undefined,
-                province: order.province || undefined,
-                ward: order.ward || undefined,
-                district: order.district || undefined,
-              },
-            );
-          } else {
-            kiotCustomer = {
-              id: clientUser.kiotviet_customer_id,
-              code: clientUser.kiot_code,
-              name: order.full_name,
-            };
-          }
+          kiotCustomerId = clientUser.kiotviet_customer_id;
+          kiotCustomerCode = clientUser.kiot_code || '';
         } else {
           this.logger.log(
             'No KiotViet customer found, creating new customer...',
           );
-          kiotCustomer = await this.kiotVietService.createCustomer({
+          const kiotCustomer = await this.kiotVietService.createCustomer({
             name: order.full_name,
             phone: order.phone,
             email: order.email || undefined,
@@ -287,12 +258,15 @@ export class PaymentService {
             district: order.district || undefined,
           });
 
+          kiotCustomerId = kiotCustomer.id;
+          kiotCustomerCode = kiotCustomer.code;
+
           if (clientUser) {
             await this.prisma.client_user.update({
               where: { client_id: clientUser.client_id },
               data: {
-                kiotviet_customer_id: kiotCustomer.id,
-                kiot_code: kiotCustomer.code,
+                kiotviet_customer_id: kiotCustomerId,
+                kiot_code: kiotCustomerCode,
               },
             });
           }
@@ -321,16 +295,36 @@ export class PaymentService {
           price: Number(orderItem.product!.kiotviet_price || 0),
         }));
 
+        const fullAddress = [
+          order.detailed_address,
+          order.ward,
+          order.district,
+          order.province,
+        ]
+          .filter(Boolean)
+          .join(', ');
+
+        const locationName = [order.province, order.district]
+          .filter(Boolean)
+          .join(' - ');
+
         const kiotOrder = await this.kiotVietService.createOrder({
-          customerId: kiotCustomer.id,
-          customerName: kiotCustomer.name,
+          customerId: kiotCustomerId,
+          customerName: order.full_name,
           items: kiotOrderItems,
           total: Number(order.total),
           description: `Đơn hàng web #${orderId} - ${order.note || ''}`,
+          deliveryInfo: {
+            receiver: order.full_name,
+            contactNumber: order.phone,
+            address: fullAddress,
+            locationName: locationName,
+            wardName: order.ward || '',
+          },
         });
 
         this.logger.log(
-          `✅ Created KiotViet order: ${kiotOrder.code} for customer: ${kiotCustomer.id} (${kiotCustomer.code})`,
+          `✅ Created KiotViet order: ${kiotOrder.code} for customer: ${kiotCustomerId} (${kiotCustomerCode})`,
         );
 
         await this.prisma.product_order.update({
@@ -341,18 +335,20 @@ export class PaymentService {
           },
         });
 
-        this.logger.log(
-          `✅ Saved KiotViet order info to database: ID=${kiotOrder.id}, Code=${kiotOrder.code}`,
-        );
-
         await this.prisma.payment_logs.create({
           data: {
             order_id: BigInt(orderId),
             event_type: 'KIOTVIET_SYNC_SUCCESS',
             event_data: {
-              kiotCustomer,
+              kiotCustomerId,
+              kiotCustomerCode,
               kiotOrder,
               items: kiotOrderItems,
+              deliveryInfo: {
+                receiver: order.full_name,
+                contactNumber: order.phone,
+                address: fullAddress,
+              },
               validItemsCount: validOrderItems.length,
               totalItemsCount: order.orders.length,
             },

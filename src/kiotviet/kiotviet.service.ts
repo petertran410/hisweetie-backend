@@ -273,24 +273,15 @@ export class KiotVietService {
     }>;
     total: number;
     description?: string;
+    deliveryInfo?: {
+      receiver: string;
+      contactNumber: string;
+      address: string;
+      locationName?: string;
+      wardName?: string;
+    };
   }): Promise<any> {
     const token = await this.getAccessToken();
-
-    this.logger.log(
-      '🔍 CREATE ORDER INPUT:',
-      JSON.stringify(
-        {
-          customerId: orderData.customerId,
-          customerName: orderData.customerName,
-          customerNameLength: orderData.customerName?.length,
-          customerNameType: typeof orderData.customerName,
-          itemsCount: orderData.items.length,
-          total: orderData.total,
-        },
-        null,
-        2,
-      ),
-    );
 
     if (!orderData.customerName || orderData.customerName.trim() === '') {
       throw new Error(`Customer name is empty: "${orderData.customerName}"`);
@@ -319,6 +310,16 @@ export class KiotVietService {
       },
       orderDetails,
     };
+
+    if (orderData.deliveryInfo) {
+      payload.orderDelivery = {
+        receiver: orderData.deliveryInfo.receiver,
+        contactNumber: orderData.deliveryInfo.contactNumber,
+        address: orderData.deliveryInfo.address,
+        locationName: orderData.deliveryInfo.locationName || '',
+        wardName: orderData.deliveryInfo.wardName || '',
+      };
+    }
 
     this.logger.log('🔍 ORDER PAYLOAD:', JSON.stringify(payload, null, 2));
 
