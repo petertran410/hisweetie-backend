@@ -81,68 +81,44 @@ export class PaymentService {
     try {
       const order = await this.prisma.product_order.findUnique({
         where: { id: BigInt(orderId) },
+        select: {
+          id: true,
+          payment_status: true,
+          status: true,
+          total: true,
+          order_kiot_id: true,
+          order_kiot_code: true,
+          created_date: true,
+        },
       });
 
       if (!order) {
-        throw new BadRequestException('Order not found');
-      }
-
-      const paymentLog = await this.prisma.payment_logs.findFirst({
-        where: {
-          order_id: BigInt(orderId),
-          event_type: 'PAYMENT_SUCCESS',
-        },
-        orderBy: { created_date: 'desc' },
-      });
-
-      let transactionId: string | null = null;
-      let gateway: string | null = null;
-      let transactionDate: string | null = null;
-      let referenceCode: string | null = null;
-      let accountNumber: string | null = null;
-      let content: string | null = null;
-
-      if (paymentLog?.event_data && typeof paymentLog.event_data === 'object') {
-        const eventData = paymentLog.event_data as any;
-
-        transactionId = eventData?.transactionId
-          ? String(eventData.transactionId)
-          : null;
-        gateway = eventData?.gateway ? String(eventData.gateway) : null;
-        transactionDate = eventData?.transactionDate
-          ? String(eventData.transactionDate)
-          : null;
-        referenceCode = eventData?.referenceCode
-          ? String(eventData.referenceCode)
-          : null;
-        accountNumber = eventData?.accountNumber
-          ? String(eventData.accountNumber)
-          : null;
-        content = eventData?.content ? String(eventData.content) : null;
+        return {
+          success: false,
+          status: 'NOT_FOUND',
+          message: 'Order not found',
+        };
       }
 
       return {
-        success: true,
-        status: order.payment_status || 'PENDING',
-        orderId,
-        amount: order.total ? Number(order.total) : 0,
-        paymentMethod: order.payment_method || '',
-        orderStatus: order.status || 'PENDING',
-        transactionId,
-        gateway,
-        transactionDate,
-        referenceCode,
-        accountNumber,
-        content,
+        success: order.payment_status === 'PAID',
+        status:
+          order.payment_status === 'PAID' ? 'SUCCESS' : order.payment_status,
+        orderId: orderId,
+        orderKiotCode: order.order_kiot_code,
+        amount: Number(order.total),
+        message:
+          order.payment_status === 'PAID'
+            ? 'Payment successful'
+            : 'Payment pending',
       };
     } catch (error) {
-      this.logger.error(
-        `Failed to check payment status for ${orderId}:`,
-        error,
-      );
-      throw new BadRequestException(
-        `Failed to check payment status: ${error.message}`,
-      );
+      this.logger.error('Error checking payment status:', error);
+      return {
+        success: false,
+        status: 'ERROR',
+        message: error.message,
+      };
     }
   }
 
@@ -313,18 +289,13 @@ export class PaymentService {
           customerName: order.full_name,
           items: kiotOrderItems,
           total: Number(order.total),
-          description: `Đơn hàng web #${orderId} - ${order.note || ''}`,
-          deliveryInfo: {
-            receiver: order.full_name,
-            contactNumber: order.phone,
-            address: fullAddress,
-            locationName: locationName,
-            wardName: order.ward || '',
-          },
+          description: order.note
+            ? `Đơn hàng web #${orderId} - ${order.note}`
+            : `Đơn hàng web #${orderId}`,
         });
 
         this.logger.log(
-          `✅ Created KiotViet order: ${kiotOrder.code} for customer: ${kiotCustomerId} (${kiotCustomerCode})`,
+          `✅ Created KiotViet order: ${kiotOrder.code} for customer: ${kiotCustomerId}`,
         );
 
         await this.prisma.product_order.update({
