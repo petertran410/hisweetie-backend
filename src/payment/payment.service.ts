@@ -19,6 +19,28 @@ export class PaymentService {
       createPaymentDto;
 
     try {
+      if (paymentMethod === 'sepay_bank') {
+        const cancelledCount = await this.prisma.product_order.updateMany({
+          where: {
+            OR: [{ phone: customerInfo.phone }, { email: customerInfo.email }],
+            payment_method: 'sepay_bank',
+            payment_status: 'PENDING',
+          },
+          data: {
+            status: 'CANCELLED',
+            payment_status: 'CANCELLED',
+            updated_date: new Date(),
+            updated_by: 'SYSTEM_AUTO_CANCEL',
+          },
+        });
+
+        if (cancelledCount.count > 0) {
+          this.logger.log(
+            `Cancelled ${cancelledCount.count} pending orders for user: ${customerInfo.phone || customerInfo.email}`,
+          );
+        }
+      }
+
       const order = await this.prisma.product_order.create({
         data: {
           total: BigInt(amounts.total),
