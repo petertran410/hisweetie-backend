@@ -176,7 +176,7 @@ export class PaymentService {
       }
 
       const orderMatch = mappedData.content.match(
-        /SEVQR Thanh Toan Don Hang co ID (\d+)/i,
+        /SEVQR Thanh Toan Don Hang (\d+)/i,
       );
       if (!orderMatch) {
         this.logger.warn('No order ID found in content:', mappedData.content);

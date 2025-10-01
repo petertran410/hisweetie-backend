@@ -59,7 +59,7 @@ export class SepayService {
   }
 
   generateQRCode(orderId: string, amount: number): string {
-    const content = `SEVQR Thanh Toan Don Hang co ID ${orderId}`;
+    const content = `SEVQR Thanh Toan Don Hang ${orderId}`;
     return `https://qr.sepay.vn/img?bank=${this.bankName}&acc=${this.bankAccount}&template=compact&amount=${amount}&des=${encodeURIComponent(content)}`;
   }
 
@@ -82,7 +82,7 @@ export class SepayService {
       }
 
       const transactions = response.data?.transactions || [];
-      const orderContent = `SEVQR Thanh Toan Don Hang co ID ${orderId}`;
+      const orderContent = `SEVQR Thanh Toan Don Hang ${orderId}`;
 
       const matchingTransaction = transactions.find(
         (tx: any) =>
