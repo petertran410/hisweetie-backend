@@ -50,6 +50,19 @@ export class PaymentController {
     }
   }
 
+  @Get('order-details/:orderId')
+  async getOrderDetails(@Param('orderId') orderId: string) {
+    try {
+      return await this.paymentService.getOrderDetails(orderId);
+    } catch (error) {
+      this.logger.error(`Get order details failed for ${orderId}:`, error);
+      return {
+        success: false,
+        message: error.message || 'Failed to get order details',
+      };
+    }
+  }
+
   @Post('webhook/sepay')
   @HttpCode(HttpStatus.OK)
   async handleSepayWebhook(@Body() webhookData: any, @Req() req: any) {

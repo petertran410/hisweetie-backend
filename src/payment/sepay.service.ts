@@ -59,8 +59,8 @@ export class SepayService {
   }
 
   generateQRCode(orderId: string, amount: number): string {
-    const content = `SEVQR DHWEB${orderId}`;
-    return `https://qr.sepay.vn/img?bank=${this.bankName}&acc=${this.bankAccount}&template=compact&amount=${amount}&des=${content}`;
+    const content = `SEVQR Thanh Toan Don Hang co ID ${orderId}`;
+    return `https://qr.sepay.vn/img?bank=${this.bankName}&acc=${this.bankAccount}&template=compact&amount=${amount}&des=${encodeURIComponent(content)}`;
   }
 
   async checkTransactions(orderId: string, amount: number): Promise<any> {
@@ -82,7 +82,7 @@ export class SepayService {
       }
 
       const transactions = response.data?.transactions || [];
-      const orderContent = `SEVQR DHWEB${orderId}`;
+      const orderContent = `SEVQR Thanh Toan Don Hang co ID ${orderId}`;
 
       const matchingTransaction = transactions.find(
         (tx: any) =>

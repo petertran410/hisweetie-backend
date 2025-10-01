@@ -175,7 +175,9 @@ export class PaymentService {
         return { success: true, message: 'Not an incoming transfer' };
       }
 
-      const orderMatch = mappedData.content.match(/SEVQR[\s+]DHWEB(\d+)/i);
+      const orderMatch = mappedData.content.match(
+        /SEVQR Thanh Toan Don Hang co ID (\d+)/i,
+      );
       if (!orderMatch) {
         this.logger.warn('No order ID found in content:', mappedData.content);
         return { success: true, message: 'No order ID found' };
@@ -397,6 +399,84 @@ export class PaymentService {
         success: false,
         message: 'Webhook processing failed',
         error: error.message,
+      };
+    }
+  }
+
+  async getOrderDetails(orderId: string) {
+    try {
+      const order = await this.prisma.product_order.findUnique({
+        where: { id: BigInt(orderId) },
+        select: {
+          id: true,
+          full_name: true,
+          email: true,
+          phone: true,
+          address: true,
+          detailed_address: true,
+          province: true,
+          district: true,
+          ward: true,
+          total: true,
+          payment_status: true,
+          status: true,
+          payment_method: true,
+          order_kiot_code: true,
+          created_date: true,
+        },
+      });
+
+      if (!order) {
+        return {
+          success: false,
+          message: 'Order not found',
+        };
+      }
+
+      const paymentSuccessLog = await this.prisma.payment_logs.findFirst({
+        where: {
+          order_id: BigInt(orderId),
+          event_type: 'PAYMENT_SUCCESS',
+        },
+        orderBy: { created_date: 'desc' },
+      });
+
+      let transactionDate = null;
+      let transactionContent = null;
+
+      if (paymentSuccessLog && paymentSuccessLog.event_data) {
+        const eventData = paymentSuccessLog.event_data as any;
+        transactionDate = eventData.transactionDate || null;
+        transactionContent = eventData.content || null;
+      }
+
+      return {
+        success: true,
+        order: {
+          id: order.id.toString(),
+          fullName: order.full_name,
+          email: order.email,
+          phone: order.phone,
+          address: order.address,
+          detailedAddress: order.detailed_address,
+          province: order.province,
+          district: order.district,
+          ward: order.ward,
+          total: Number(order.total),
+          paymentStatus: order.payment_status,
+          status: order.status,
+          paymentMethod: order.payment_method,
+          orderKiotCode: order.order_kiot_code,
+          createdDate: order.created_date,
+          transactionDate,
+          transactionContent,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error getting order details:', error);
+      return {
+        success: false,
+        message: error.message,
       };
     }
   }
