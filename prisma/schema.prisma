@@ -247,6 +247,15 @@ model product_order {
   payment_logs     payment_logs[]
 }
 
+model pending_orders {
+  id           String    @id @db.VarChar(255)
+  order_data   Json
+  created_date DateTime? @default(now()) @db.DateTime(6)
+  expired_at   DateTime  @db.DateTime(6)
+
+  @@index([expired_at])
+}
+
 model review {
   id           BigInt    @id @default(autoincrement())
   created_by   String?   @db.VarChar(255)
