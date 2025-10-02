@@ -489,12 +489,13 @@ export class ProductController {
     @Query('pageSize') pageSize: string = '15',
     @Query('pageNumber') pageNumber: string = '0',
     @Query('title') title?: string,
-    @Query('title_meta') title_meta?: string,
     @Query('categoryId') categoryId?: string,
     @Query('categoryIds') categoryIds?: string,
     @Query('is_visible') is_visible?: string,
     @Query('orderBy') orderBy?: string,
     @Query('isDesc') isDesc?: string,
+    @Query('excludeProductId') excludeProductId?: string,
+    @Query('randomize') randomize?: string,
   ) {
     const filters: any = {
       includeHidden: false,
@@ -521,6 +522,14 @@ export class ProductController {
     if (orderBy) {
       filters.orderBy = orderBy;
       filters.isDesc = isDesc === 'true';
+    }
+
+    if (excludeProductId) {
+      filters.excludeProductId = +excludeProductId;
+    }
+
+    if (randomize === 'true') {
+      filters.randomize = true;
     }
 
     return this.productService.searchForCMS({

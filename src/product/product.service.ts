@@ -1278,26 +1278,28 @@ export class ProductService {
     pageSize: number;
     pageNumber: number;
     title?: string;
-    title_meta?: string;
     categoryId?: number;
     categoryIds?: number[];
     visibilityFilter?: boolean;
     includeHidden?: boolean;
     orderBy?: string;
     isDesc?: boolean;
+    excludeProductId?: number;
+    randomize?: boolean;
   }) {
     try {
       const {
         pageSize,
         pageNumber,
         title,
-        title_meta,
         categoryId,
         categoryIds,
         visibilityFilter,
         includeHidden = true,
         orderBy = 'id',
         isDesc = true,
+        excludeProductId,
+        randomize = false,
       } = params;
 
       const skip = pageNumber * pageSize;
@@ -1325,66 +1327,86 @@ export class ProductService {
         where.category_id = BigInt(categoryId);
       }
 
-      const orderByClause: Prisma.productOrderByWithRelationInput =
-        this.buildSortClause(orderBy, isDesc);
+      if (excludeProductId) {
+        where.id = {
+          not: BigInt(excludeProductId),
+        };
+      }
 
-      const [products, total, visibleCount, hiddenCount] = await Promise.all([
-        this.prisma.product.findMany({
+      if (randomize) {
+        const allProducts = await this.prisma.product.findMany({
           where,
-          skip,
-          take,
-          orderBy: orderByClause,
           include: {
             category: {
               select: {
                 id: true,
                 name: true,
+                slug: true,
                 description: true,
                 parent_id: true,
                 path: true,
-                slug: true,
-                title_meta: true,
+                level: true,
               },
             },
           },
+        });
+
+        const shuffled = allProducts.sort(() => Math.random() - 0.5);
+        const selectedProducts = shuffled.slice(0, pageSize);
+
+        const transformedProducts = selectedProducts.map((product) =>
+          this.transformProductForCMS(product),
+        );
+
+        return {
+          content: transformedProducts,
+          totalElements: allProducts.length,
+          totalPages: Math.ceil(allProducts.length / pageSize),
+          pageNumber,
+          pageSize,
+        };
+      }
+
+      const orderByClause = this.buildSortClause(orderBy, isDesc);
+
+      const [products, total] = await Promise.all([
+        this.prisma.product.findMany({
+          where,
+          include: {
+            category: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                description: true,
+                parent_id: true,
+                path: true,
+                level: true,
+              },
+            },
+          },
+          orderBy: orderByClause,
+          skip,
+          take,
         }),
         this.prisma.product.count({ where }),
-        this.prisma.product.count({
-          where: { ...where, is_visible: true },
-        }),
-        this.prisma.product.count({
-          where: { ...where, is_visible: false },
-        }),
       ]);
 
-      const transformedProducts = products.map(this.transformProductForCMS);
+      const transformedProducts = products.map((product) =>
+        this.transformProductForCMS(product),
+      );
 
       return {
-        success: true,
         content: transformedProducts,
         totalElements: total,
         totalPages: Math.ceil(total / pageSize),
         pageNumber,
         pageSize,
-        filters: {
-          categoryId,
-          categoryIds,
-          title,
-          includeHidden,
-          visibilityFilter,
-        },
-        statistics: {
-          total,
-          visible: visibleCount,
-          hidden: hiddenCount,
-          visibilityFilter,
-        },
-        message: 'Products fetched successfully for CMS',
       };
     } catch (error) {
-      this.logger.error('Failed to search products for CMS:', error.message);
+      this.logger.error('Failed to search products:', error.message);
       throw new BadRequestException(
-        `Failed to search products for CMS: ${error.message}`,
+        `Failed to search products: ${error.message}`,
       );
     }
   }
