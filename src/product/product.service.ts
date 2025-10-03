@@ -805,6 +805,18 @@ export class ProductService {
           level: product.category.level,
         }
       : null;
+
+    let imagesUrl: string[] = [];
+    if (product.images_url) {
+      imagesUrl = JSON.parse(product.images_url);
+    } else if (
+      product.kiotviet_images &&
+      Array.isArray(product.kiotviet_images) &&
+      product.kiotviet_images.length > 0
+    ) {
+      imagesUrl = [product.kiotviet_images[0]];
+    }
+
     return {
       id: Number(product.id),
       title: productTitle,
@@ -821,7 +833,7 @@ export class ProductService {
       rate: product.rate,
       isFeatured: product.is_featured === true,
       isVisible: product.is_visible === true,
-      imagesUrl: product.images_url ? JSON.parse(product.images_url) : [],
+      imagesUrl: imagesUrl,
       featuredThumbnail: product.featured_thumbnail,
       recipeThumbnail: product.recipe_thumbnail,
       kiotViet: {
