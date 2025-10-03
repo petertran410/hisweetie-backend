@@ -747,7 +747,11 @@ export class ProductService {
           rate: product.rate,
           isFeatured: product.is_featured === true,
           isVisible: product.is_visible === true,
-          imagesUrl: imagesUrl,
+          imagesUrl: product.kiotviet_images
+            ? Array.isArray(product.kiotviet_images)
+              ? product.kiotviet_images
+              : []
+            : [],
 
           // Category information từ schema category
           categoryId: product.category_id ? Number(product.category_id) : null,
@@ -842,7 +846,7 @@ export class ProductService {
       rate: product.rate,
       isFeatured: product.is_featured === true,
       isVisible: product.is_visible === true,
-      imagesUrl: imagesUrl,
+      imagesUrl: product.images_url ? JSON.parse(product.images_url) : [],
       featuredThumbnail: product.featured_thumbnail,
       recipeThumbnail: product.recipe_thumbnail,
       kiotViet: {
