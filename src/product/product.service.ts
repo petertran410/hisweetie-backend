@@ -1334,9 +1334,14 @@ export class ProductService {
       }
 
       if (title) {
+        const searchTerm = title.trim();
         where.OR = [
-          { title: { contains: title } },
-          { kiotviet_name: { contains: title } },
+          { title: { equals: searchTerm } },
+          { kiotviet_name: { equals: searchTerm } },
+          { title: { startsWith: searchTerm } },
+          { kiotviet_name: { startsWith: searchTerm } },
+          { title: { contains: searchTerm } },
+          { kiotviet_name: { contains: searchTerm } },
         ];
       }
 
@@ -1393,6 +1398,9 @@ export class ProductService {
       const [products, total] = await Promise.all([
         this.prisma.product.findMany({
           where,
+          skip,
+          take,
+          orderBy: orderByClause,
           include: {
             category: {
               select: {
@@ -1406,9 +1414,6 @@ export class ProductService {
               },
             },
           },
-          orderBy: orderByClause,
-          skip,
-          take,
         }),
         this.prisma.product.count({ where }),
       ]);
@@ -1425,9 +1430,9 @@ export class ProductService {
         pageSize,
       };
     } catch (error) {
-      this.logger.error('Failed to search products:', error.message);
+      this.logger.error('Failed to search products for CMS:', error.message);
       throw new BadRequestException(
-        `Failed to search products: ${error.message}`,
+        `Failed to search products for CMS: ${error.message}`,
       );
     }
   }
