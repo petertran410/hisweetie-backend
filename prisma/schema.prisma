@@ -309,12 +309,10 @@ model client_user {
   ward                     String?    @db.VarChar(255)
   kiotviet_customer_id     Int?
   kiot_code                String?
+  verification_code        String?    @db.VarChar(6)
+  verification_code_expires DateTime? @db.DateTime(6)
   is_verified              Boolean    @default(false) @db.Bit(1)
 }
-
-// model client_otp_verification {
-
-// }
 
 model sync_log {
   id            Int       @id @default(autoincrement())
