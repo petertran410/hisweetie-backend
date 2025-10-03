@@ -14,9 +14,19 @@ import * as nodemailer from 'nodemailer';
 import { ClientRegisterDto } from './dto/client-register.dto';
 import { ClientLoginDto } from './dto/client-login.dto';
 
+interface PendingRegistration {
+  full_name: string;
+  email: string;
+  phone: string;
+  hashedPassword: string;
+  verificationCode: string;
+  expiresAt: Date;
+}
+
 @Injectable()
 export class ClientAuthService {
   private transporter: nodemailer.Transporter;
+  private pendingRegistrations = new Map<string, PendingRegistration>();
 
   constructor(
     private prisma: PrismaService,
@@ -34,6 +44,17 @@ export class ClientAuthService {
         pass: this.configService.get('MAIL_PASSWORD'),
       },
     });
+
+    setInterval(() => this.cleanupExpiredRegistrations(), 5 * 60 * 1000);
+  }
+
+  private cleanupExpiredRegistrations() {
+    const now = new Date();
+    for (const [email, data] of this.pendingRegistrations.entries()) {
+      if (now > data.expiresAt) {
+        this.pendingRegistrations.delete(email);
+      }
+    }
   }
 
   private generateAccessToken(payload: any): string {
@@ -69,20 +90,21 @@ export class ClientAuthService {
       );
     }
 
+    if (this.pendingRegistrations.has(registerDto.email)) {
+      this.pendingRegistrations.delete(registerDto.email);
+    }
+
     const verificationCode = this.generateVerificationCode();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
     const hashedPassword = await bcrypt.hash(registerDto.pass_word, 10);
 
-    await this.prisma.client_user.create({
-      data: {
-        full_name: registerDto.full_name,
-        email: registerDto.email,
-        phone: registerDto.phone,
-        pass_word: hashedPassword,
-        verification_code: verificationCode,
-        verification_code_expires: expiresAt,
-        is_verified: false,
-      },
+    this.pendingRegistrations.set(registerDto.email, {
+      full_name: registerDto.full_name,
+      email: registerDto.email,
+      phone: registerDto.phone,
+      hashedPassword,
+      verificationCode,
+      expiresAt,
     });
 
     await this.transporter.sendMail({
@@ -110,34 +132,34 @@ export class ClientAuthService {
   }
 
   async verifyEmail(email: string, code: string) {
-    const user = await this.prisma.client_user.findFirst({
-      where: { email, is_verified: false },
-    });
+    const pendingData = this.pendingRegistrations.get(email);
 
-    if (!user) {
-      throw new BadRequestException('Invalid email or already verified');
+    if (!pendingData) {
+      throw new BadRequestException(
+        'No pending registration found for this email',
+      );
     }
 
-    if (!user.verification_code || !user.verification_code_expires) {
-      throw new BadRequestException('No verification code found');
-    }
-
-    if (new Date() > user.verification_code_expires) {
+    if (new Date() > pendingData.expiresAt) {
+      this.pendingRegistrations.delete(email);
       throw new BadRequestException('Verification code expired');
     }
 
-    if (user.verification_code !== code) {
+    if (pendingData.verificationCode !== code) {
       throw new BadRequestException('Invalid verification code');
     }
 
-    await this.prisma.client_user.update({
-      where: { client_id: user.client_id },
+    const user = await this.prisma.client_user.create({
       data: {
+        full_name: pendingData.full_name,
+        email: pendingData.email,
+        phone: pendingData.phone,
+        pass_word: pendingData.hashedPassword,
         is_verified: true,
-        verification_code: null,
-        verification_code_expires: null,
       },
     });
+
+    this.pendingRegistrations.delete(email);
 
     try {
       const kiotCustomer = await this.kiotVietService.createCustomer({
