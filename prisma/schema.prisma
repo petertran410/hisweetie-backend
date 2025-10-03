@@ -297,22 +297,24 @@ model user {
 }
 
 model client_user {
-  client_id           Int             @id @default(autoincrement())
-  full_name           String?         @db.Text
-  email               String?         @unique(map: "email") @db.VarChar(500)
-  kiotviet_customer_id  Int?
-  kiot_code           String?
-  phone               String?         @db.VarChar(255)
-  avatar              String?         @db.VarChar(255)
-  pass_word           String?         @db.VarChar(255)
-  face_app_id         String?         @db.VarChar(255)
-  role                String?         @db.VarChar(50)
-  refresh_token       String?         @db.Text
-  detailed_address    String?         @db.VarChar(500)
-  province            String?         @db.VarChar(255)
-  district            String?         @db.VarChar(255)
-  ward                String?         @db.VarChar(255)
+  client_id                Int     @id @default(autoincrement())
+  full_name                String?    @db.Text
+  email                    String?    @unique @db.VarChar(500)
+  phone                    String?    @db.VarChar(255)
+  pass_word                String?    @db.VarChar(255)
+  refresh_token            String?    @db.Text
+  detailed_address         String?    @db.VarChar(500)
+  province                 String?    @db.VarChar(255)
+  district                 String?    @db.VarChar(255)
+  ward                     String?    @db.VarChar(255)
+  kiotviet_customer_id     Int?
+  kiot_code                String?
+  is_verified              Boolean    @default(false) @db.Bit(1)
 }
+
+// model client_otp_verification {
+
+// }
 
 model sync_log {
   id            Int       @id @default(autoincrement())
