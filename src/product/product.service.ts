@@ -864,7 +864,7 @@ export class ProductService {
       let imagesUrlString: string | null = null;
       if (createProductDto.images_url) {
         if (Array.isArray(createProductDto.images_url)) {
-          imagesUrlString = createProductDto.images_url.join(',');
+          imagesUrlString = JSON.stringify(createProductDto.images_url);
         } else {
           imagesUrlString = createProductDto.images_url;
         }
@@ -967,7 +967,7 @@ export class ProductService {
         } else if (Array.isArray(updateProductDto.images_url)) {
           imagesUrlString = JSON.stringify(updateProductDto.images_url);
         } else {
-          imagesUrlString = JSON.stringify([updateProductDto.images_url]);
+          imagesUrlString = updateProductDto.images_url;
         }
       }
 
