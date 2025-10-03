@@ -1455,16 +1455,9 @@ export class ProductService {
   }
 
   private transformProductForCMS(product: any) {
-    let imagesUrl: string[] = [];
-    if (product.images_url) {
-      imagesUrl = JSON.parse(product.images_url);
-    } else if (
-      product.kiotviet_images &&
-      Array.isArray(product.kiotviet_images) &&
-      product.kiotviet_images.length > 0
-    ) {
-      imagesUrl = [product.kiotviet_images[0]];
-    }
+    const imagesUrl: string[] = product.images_url
+      ? JSON.parse(product.images_url)
+      : [];
 
     return {
       id: Number(product.id),
