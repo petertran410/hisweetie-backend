@@ -956,9 +956,9 @@ export class ProductService {
         if (updateProductDto.images_url === null) {
           imagesUrlString = null;
         } else if (Array.isArray(updateProductDto.images_url)) {
-          imagesUrlString = updateProductDto.images_url.join(',');
+          imagesUrlString = JSON.stringify(updateProductDto.images_url);
         } else {
-          imagesUrlString = updateProductDto.images_url;
+          imagesUrlString = JSON.stringify([updateProductDto.images_url]);
         }
       }
 
