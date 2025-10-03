@@ -274,7 +274,11 @@ export class ClientAuthService {
         where: { client_id: decoded.sub },
       });
 
-      if (!user || !user.refresh_token) {
+      if (!user) {
+        throw new UnauthorizedException('User not found');
+      }
+
+      if (!user.refresh_token) {
         throw new UnauthorizedException('Invalid refresh token');
       }
 

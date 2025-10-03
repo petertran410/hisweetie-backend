@@ -220,7 +220,10 @@ export class ClientAuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Check authentication status using cookie' })
   @ApiResponse({ status: 200, description: 'Authentication status checked' })
-  async checkAuth(@Req() request: Request) {
+  async checkAuth(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
     try {
       const refreshToken = request.cookies?.refresh_token;
 
@@ -237,6 +240,7 @@ export class ClientAuthController {
         user: result.user,
       };
     } catch (error) {
+      this.clearRefreshTokenCookie(response);
       return { authenticated: false, message: 'Invalid refresh token' };
     }
   }
