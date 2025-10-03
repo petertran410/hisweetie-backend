@@ -1,72 +1,60 @@
 import {
   Injectable,
-  UnauthorizedException,
   ConflictException,
+  UnauthorizedException,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { ClientUserService } from '../../client_user/client_user.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ClientUserService } from '../../client_user/client_user.service';
+import { KiotVietService } from '../../kiotviet/kiotviet.service';
+import * as bcrypt from 'bcrypt';
+import * as nodemailer from 'nodemailer';
 import { ClientRegisterDto } from './dto/client-register.dto';
 import { ClientLoginDto } from './dto/client-login.dto';
-import * as bcrypt from 'bcrypt';
-import { KiotVietService } from '../../kiotviet/kiotviet.service';
 
 @Injectable()
 export class ClientAuthService {
+  private transporter: nodemailer.Transporter;
+
   constructor(
     private prisma: PrismaService,
-    private clientUserService: ClientUserService,
-    private configService: ConfigService,
     private jwtService: JwtService,
+    private configService: ConfigService,
+    private clientUserService: ClientUserService,
     private kiotVietService: KiotVietService,
-  ) {}
-
-  private generateAccessToken(payload: any): string {
-    const secretKey = this.configService.get<string>('APP_SECRET_KEY');
-    const accessTokenExpiry =
-      this.configService.get<string>('TOKEN_EXPIRES_IN') || '7d';
-
-    if (!secretKey) {
-      throw new Error('APP_SECRET_KEY is not defined in environment variables');
-    }
-
-    return this.jwtService.sign(payload, {
-      expiresIn: accessTokenExpiry,
-      secret: secretKey,
+  ) {
+    this.transporter = nodemailer.createTransport({
+      host: this.configService.get('MAIL_HOST'),
+      port: this.configService.get('MAIL_PORT'),
+      secure: false,
+      auth: {
+        user: this.configService.get('MAIL_USER'),
+        pass: this.configService.get('MAIL_PASSWORD'),
+      },
     });
   }
 
-  private generateRefreshToken(payload: any): string {
-    const secretKey = this.configService.get<string>('APP_SECRET_KEY');
-    const refreshTokenExpiry = '30d';
+  private generateAccessToken(payload: any): string {
+    return this.jwtService.sign(payload, {
+      secret: this.configService.get('APP_SECRET_KEY'),
+      expiresIn: this.configService.get('TOKEN_EXPIRES_IN'),
+    });
+  }
 
-    if (!secretKey) {
-      throw new Error('APP_SECRET_KEY is not defined in environment variables');
-    }
-
+  generateRefreshToken(payload: any): string {
     return this.jwtService.sign(
       { ...payload, type: 'refresh' },
       {
-        expiresIn: refreshTokenExpiry,
-        secret: secretKey,
+        secret: this.configService.get('APP_SECRET_KEY'),
+        expiresIn: '30d',
       },
     );
   }
 
-  private async validateRefreshToken(token: string): Promise<any> {
-    try {
-      const secretKey = this.configService.get<string>('APP_SECRET_KEY');
-      const decoded = this.jwtService.verify(token, { secret: secretKey });
-
-      if (decoded.type !== 'refresh') {
-        throw new UnauthorizedException('Invalid token type');
-      }
-
-      return decoded;
-    } catch (error) {
-      throw new UnauthorizedException('Invalid or expired refresh token');
-    }
+  private generateVerificationCode(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
   async register(registerDto: ClientRegisterDto) {
@@ -81,21 +69,89 @@ export class ClientAuthService {
       );
     }
 
-    const newUser = await this.clientUserService.create(registerDto);
+    const verificationCode = this.generateVerificationCode();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    const hashedPassword = await bcrypt.hash(registerDto.pass_word, 10);
+
+    await this.prisma.client_user.create({
+      data: {
+        full_name: registerDto.full_name,
+        email: registerDto.email,
+        phone: registerDto.phone,
+        pass_word: hashedPassword,
+        verification_code: verificationCode,
+        verification_code_expires: expiresAt,
+        is_verified: false,
+      },
+    });
+
+    await this.transporter.sendMail({
+      from: this.configService.get('MAIL_FROM'),
+      to: registerDto.email,
+      subject: 'Mã xác thực đăng ký tài khoản - Diệp Trà',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #065FD4;">Xác thực tài khoản Diệp Trà</h2>
+          <p>Xin chào <strong>${registerDto.full_name}</strong>,</p>
+          <p>Mã xác thực của bạn là:</p>
+          <div style="background: #f5f5f5; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #065FD4;">
+            ${verificationCode}
+          </div>
+          <p style="color: #666;">Mã có hiệu lực trong <strong>10 phút</strong>.</p>
+          <p>Trân trọng,<br>Đội ngũ Diệp Trà</p>
+        </div>
+      `,
+    });
+
+    return {
+      message: 'Verification code sent to your email',
+      email: registerDto.email,
+    };
+  }
+
+  async verifyEmail(email: string, code: string) {
+    const user = await this.prisma.client_user.findFirst({
+      where: { email, is_verified: false },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Invalid email or already verified');
+    }
+
+    if (!user.verification_code || !user.verification_code_expires) {
+      throw new BadRequestException('No verification code found');
+    }
+
+    if (new Date() > user.verification_code_expires) {
+      throw new BadRequestException('Verification code expired');
+    }
+
+    if (user.verification_code !== code) {
+      throw new BadRequestException('Invalid verification code');
+    }
+
+    await this.prisma.client_user.update({
+      where: { client_id: user.client_id },
+      data: {
+        is_verified: true,
+        verification_code: null,
+        verification_code_expires: null,
+      },
+    });
 
     try {
       const kiotCustomer = await this.kiotVietService.createCustomer({
-        name: newUser.full_name || 'Unknown User',
-        phone: newUser.phone || '',
-        email: newUser.email || undefined,
-        address: newUser.detailed_address || '',
-        province: newUser.province || '',
-        district: newUser.district || '',
-        ward: newUser.ward || '',
+        name: user.full_name || 'Unknown User',
+        phone: user.phone || '',
+        email: user.email || undefined,
+        address: user.detailed_address || '',
+        province: user.province || '',
+        district: user.district || '',
+        ward: user.ward || '',
       });
 
       await this.prisma.client_user.update({
-        where: { client_id: newUser.client_id },
+        where: { client_id: user.client_id },
         data: {
           kiotviet_customer_id: kiotCustomer.id,
           kiot_code: kiotCustomer.code,
@@ -106,33 +162,29 @@ export class ClientAuthService {
     }
 
     const payload = {
-      sub: Number(newUser.client_id),
-      email: newUser.email,
+      sub: Number(user.client_id),
+      email: user.email,
       type: 'client',
     };
 
     const accessToken = this.generateAccessToken(payload);
     const refreshToken = this.generateRefreshToken(payload);
-
     const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
 
     await this.prisma.client_user.update({
-      where: { client_id: newUser.client_id },
+      where: { client_id: user.client_id },
       data: { refresh_token: hashedRefreshToken },
     });
 
     const userResponse = {
-      client_id: Number(newUser.client_id),
-      full_name: newUser.full_name,
-      email: newUser.email,
-      phone: newUser.phone,
-      avatar: newUser.avatar,
-      face_app_id: newUser.face_app_id,
-      role: newUser.role,
+      client_id: Number(user.client_id),
+      full_name: user.full_name,
+      email: user.email,
+      phone: user.phone,
     };
 
     return {
-      message: 'Registration successful - auto logged in',
+      message: 'Email verified successfully',
       access_token: accessToken,
       refresh_token: refreshToken,
       user: userResponse,
@@ -149,6 +201,12 @@ export class ClientAuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
+    if (!user.is_verified) {
+      throw new UnauthorizedException(
+        'Email not verified. Please verify your email first',
+      );
+    }
+
     const payload = {
       sub: Number(user.client_id),
       email: user.email,
@@ -157,7 +215,6 @@ export class ClientAuthService {
 
     const accessToken = this.generateAccessToken(payload);
     const refreshToken = this.generateRefreshToken(payload);
-
     const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
 
     await this.prisma.client_user.update({
@@ -170,9 +227,6 @@ export class ClientAuthService {
       full_name: user.full_name,
       email: user.email,
       phone: user.phone,
-      avatar: user.avatar,
-      face_app_id: user.face_app_id,
-      role: user.role,
     };
 
     return {
@@ -184,67 +238,49 @@ export class ClientAuthService {
   }
 
   async refreshTokenFromCookie(refreshToken: string) {
-    const decoded = await this.validateRefreshToken(refreshToken);
+    try {
+      const secretKey = this.configService.get<string>('APP_SECRET_KEY');
+      const decoded = this.jwtService.verify(refreshToken, {
+        secret: secretKey,
+      });
 
-    const users = await this.prisma.client_user.findMany({
-      where: { client_id: Number(decoded.sub) },
-    });
+      if (decoded.type !== 'refresh') {
+        throw new UnauthorizedException('Invalid token type');
+      }
 
-    if (users.length === 0) {
-      throw new UnauthorizedException('User not found');
+      const user = await this.prisma.client_user.findUnique({
+        where: { client_id: decoded.sub },
+      });
+
+      if (!user || !user.refresh_token) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      const isValid = await bcrypt.compare(refreshToken, user.refresh_token);
+      if (!isValid) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      const payload = {
+        sub: Number(user.client_id),
+        email: user.email,
+        type: 'client',
+      };
+
+      const newAccessToken = this.generateAccessToken(payload);
+
+      return {
+        access_token: newAccessToken,
+        user: {
+          client_id: Number(user.client_id),
+          full_name: user.full_name,
+          email: user.email,
+          phone: user.phone,
+        },
+      };
+    } catch (error) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
     }
-
-    const user = users[0];
-
-    if (!user) {
-      throw new UnauthorizedException('Invalid token');
-    }
-
-    if (!user.refresh_token) {
-      throw new UnauthorizedException('No refresh token found');
-    }
-
-    const isValidRefreshToken = await bcrypt.compare(
-      refreshToken,
-      user.refresh_token,
-    );
-
-    if (!isValidRefreshToken) {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-
-    const payload = {
-      sub: Number(user.client_id),
-      email: user.email,
-      type: 'client',
-    };
-
-    const newAccessToken = this.generateAccessToken(payload);
-    const newRefreshToken = this.generateRefreshToken(payload);
-
-    const hashedNewRefreshToken = await bcrypt.hash(newRefreshToken, 10);
-
-    await this.prisma.client_user.update({
-      where: { client_id: user.client_id },
-      data: { refresh_token: hashedNewRefreshToken },
-    });
-
-    const userResponse = {
-      client_id: Number(user.client_id),
-      full_name: user.full_name,
-      email: user.email,
-      phone: user.phone,
-      avatar: user.avatar,
-      face_app_id: user.face_app_id,
-      role: user.role,
-    };
-
-    return {
-      message: 'Token refreshed successfully',
-      access_token: newAccessToken,
-      refresh_token: newRefreshToken,
-      user: userResponse,
-    };
   }
 
   async logout(clientId: number) {
@@ -252,9 +288,6 @@ export class ClientAuthService {
       where: { client_id: clientId },
       data: { refresh_token: null },
     });
-
-    return {
-      message: 'Logout successful',
-    };
+    return { message: 'Logout successful' };
   }
 }

@@ -70,7 +70,6 @@ export class ClientUserController {
         full_name: updatedUser.full_name,
         email: updatedUser.email,
         phone: updatedUser.phone,
-        avatar: updatedUser.avatar,
         detailed_address: updatedUser.detailed_address,
         province: updatedUser.province,
         district: updatedUser.district,

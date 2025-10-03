@@ -54,24 +54,47 @@ export class ClientAuthController {
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Register new client user with auto login' })
+  @ApiOperation({
+    summary: 'Register new client user and send verification code',
+  })
   @ApiResponse({
     status: 201,
-    description: 'User registered successfully with auto login',
+    description: 'Verification code sent to email',
   })
   @ApiResponse({ status: 409, description: 'User already exists' })
   @UsePipes(new ValidationPipe())
-  async register(
-    @Body() registerDto: ClientRegisterDto,
+  async register(@Body() registerDto: ClientRegisterDto) {
+    try {
+      const result = await this.clientAuthService.register(registerDto);
+      return result;
+    } catch (error) {
+      if (error.status && error.status !== 500) {
+        throw error;
+      }
+      throw new HttpException(
+        'Registration failed',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('verify-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify email with code' })
+  @ApiResponse({ status: 200, description: 'Email verified successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid or expired code' })
+  async verifyEmail(
+    @Body() body: { email: string; code: string },
     @Res({ passthrough: true }) response: Response,
   ) {
     try {
-      const result = await this.clientAuthService.register(registerDto);
+      const result = await this.clientAuthService.verifyEmail(
+        body.email,
+        body.code,
+      );
 
-      // Set refresh token trong httpOnly cookie
       this.setRefreshTokenCookie(response, result.refresh_token);
 
-      // Return response without refresh_token
       const { refresh_token, ...responseData } = result;
       return responseData;
     } catch (error) {
@@ -79,7 +102,7 @@ export class ClientAuthController {
         throw error;
       }
       throw new HttpException(
-        'Registration failed',
+        'Email verification failed',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
@@ -129,14 +152,18 @@ export class ClientAuthController {
       const result =
         await this.clientAuthService.refreshTokenFromCookie(refreshToken);
 
-      // Set new refresh token trong httpOnly cookie
-      this.setRefreshTokenCookie(response, result.refresh_token);
+      const payload = {
+        sub: result.user.client_id,
+        email: result.user.email,
+        type: 'client',
+      };
 
-      // Return response without refresh_token
-      const { refresh_token, ...responseData } = result;
-      return responseData;
+      const newRefreshToken =
+        this.clientAuthService.generateRefreshToken(payload);
+      this.setRefreshTokenCookie(response, newRefreshToken);
+
+      return { access_token: result.access_token, user: result.user };
     } catch (error) {
-      // Clear invalid cookie
       this.clearRefreshTokenCookie(response);
 
       if (error.status && error.status !== 500) {

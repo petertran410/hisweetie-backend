@@ -44,7 +44,6 @@ export class ClientJwtStrategy extends PassportStrategy(
       email: user.email,
       full_name: user.full_name,
       phone: user.phone,
-      avatar: user.avatar,
       detailed_address: user.detailed_address,
       province: user.province,
       district: user.district,
