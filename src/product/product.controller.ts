@@ -676,12 +676,23 @@ export class ProductController {
         orderBy: { id: 'desc' },
       });
 
-      const transformedProducts = products.map((product) => {
+      const transformedProducts = products.map((product: any) => {
         const productTitle =
           product.title || product.kiotviet_name || 'Untitled Product';
         const productPrice = product.kiotviet_price
           ? Number(product.kiotviet_price)
           : null;
+
+        let imagesUrl: string[] = [];
+        if (product.images_url) {
+          imagesUrl = JSON.parse(product.images_url);
+        } else if (
+          product.kiotviet_images &&
+          Array.isArray(product.kiotviet_images) &&
+          product.kiotviet_images.length > 0
+        ) {
+          imagesUrl = [product.kiotviet_images[0]];
+        }
 
         return {
           id: Number(product.id),
@@ -694,11 +705,7 @@ export class ProductController {
           rate: product.rate,
           isFeatured: product.is_featured === true,
           isVisible: product.is_visible === true,
-          imagesUrl: product.kiotviet_images
-            ? Array.isArray(product.kiotviet_images)
-              ? product.kiotviet_images
-              : []
-            : [],
+          imagesUrl: imagesUrl,
           featuredThumbnail: product.featured_thumbnail,
           recipeThumbnail: product.recipe_thumbnail,
           category: product.category
