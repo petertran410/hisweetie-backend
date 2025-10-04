@@ -787,10 +787,6 @@ export class ProductService {
   }
 
   private transformProduct(product: any) {
-    // ✅ THÊM LOG ĐỂ DEBUG
-    console.log('🔍 DEBUG product.images_url:', product.images_url);
-    console.log('🔍 DEBUG product keys:', Object.keys(product));
-
     const productTitle =
       product.title ||
       product.kiotviet_name ||
@@ -1751,8 +1747,6 @@ export class ProductService {
           category: true,
         },
       });
-
-      console.log(products);
 
       const exactMatch = products.find((product) => {
         const productTitle = product.title || product.kiotviet_name;
