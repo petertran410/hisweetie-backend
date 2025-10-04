@@ -787,6 +787,10 @@ export class ProductService {
   }
 
   private transformProduct(product: any) {
+    // ✅ THÊM LOG ĐỂ DEBUG
+    console.log('🔍 DEBUG product.images_url:', product.images_url);
+    console.log('🔍 DEBUG product keys:', Object.keys(product));
+
     const productTitle =
       product.title ||
       product.kiotviet_name ||
@@ -846,7 +850,7 @@ export class ProductService {
       rate: product.rate,
       isFeatured: product.is_featured === true,
       isVisible: product.is_visible === true,
-      imagesUrl: product.images_url ? JSON.parse(product.images_url) : [],
+      imagesUrl: imagesUrl,
       featuredThumbnail: product.featured_thumbnail,
       recipeThumbnail: product.recipe_thumbnail,
       kiotViet: {
@@ -1367,17 +1371,7 @@ export class ProductService {
         const allProducts = await this.prisma.product.findMany({
           where,
           include: {
-            category: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
-                description: true,
-                parent_id: true,
-                path: true,
-                level: true,
-              },
-            },
+            category: true,
           },
         });
 
@@ -1406,17 +1400,7 @@ export class ProductService {
           take,
           orderBy: orderByClause,
           include: {
-            category: {
-              select: {
-                id: true,
-                name: true,
-                slug: true,
-                description: true,
-                parent_id: true,
-                path: true,
-                level: true,
-              },
-            },
+            category: true,
           },
         }),
         this.prisma.product.count({ where }),
@@ -1475,7 +1459,7 @@ export class ProductService {
       kiotviet_images: product.kiotviet_images,
       kiotviet_description: product.kiotviet_description,
 
-      imagesUrl: imagesUrl,
+      imagesUrl: product.images_url,
 
       description: product.description,
       general_description: product.general_description,
@@ -1764,19 +1748,11 @@ export class ProductService {
           OR: [{ title: { not: null } }, { kiotviet_name: { not: null } }],
         },
         include: {
-          category: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-              description: true,
-              parent_id: true,
-              path: true,
-              level: true,
-            },
-          },
+          category: true,
         },
       });
+
+      console.log(products);
 
       const exactMatch = products.find((product) => {
         const productTitle = product.title || product.kiotviet_name;
@@ -1784,7 +1760,7 @@ export class ProductService {
       });
 
       if (exactMatch) {
-        return this.transformProductWithHierarchy(exactMatch);
+        return this.transformProduct(exactMatch);
       }
 
       throw new NotFoundException(`Product not found: ${slug}`);
