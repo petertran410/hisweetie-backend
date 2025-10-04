@@ -727,13 +727,18 @@ export class ProductService {
       const transformedProducts = products.map((product: any) => {
         let imagesUrl: string[] = [];
         if (product.images_url) {
-          imagesUrl = JSON.parse(product.images_url);
-        } else if (
+          try {
+            imagesUrl = JSON.parse(product.images_url);
+          } catch (e) {
+            imagesUrl = [];
+          }
+        }
+        if (
+          imagesUrl.length === 0 &&
           product.kiotviet_images &&
-          Array.isArray(product.kiotviet_images) &&
-          product.kiotviet_images.length > 0
+          Array.isArray(product.kiotviet_images)
         ) {
-          imagesUrl = [product.kiotviet_images[0]];
+          imagesUrl = product.kiotviet_images;
         }
 
         return {
@@ -747,13 +752,7 @@ export class ProductService {
           rate: product.rate,
           isFeatured: product.is_featured === true,
           isVisible: product.is_visible === true,
-          imagesUrl: product.kiotviet_images
-            ? Array.isArray(product.kiotviet_images)
-              ? product.kiotviet_images
-              : []
-            : [],
-
-          // Category information từ schema category
+          imagesUrl: imagesUrl,
           categoryId: product.category_id ? Number(product.category_id) : null,
           category: product.category,
           ofCategories: product.category
@@ -1610,6 +1609,7 @@ export class ProductService {
           id: true,
           category_id: true,
           category_slug: true,
+          images_url: true,
           description: true,
           general_description: true,
           instruction: true,
