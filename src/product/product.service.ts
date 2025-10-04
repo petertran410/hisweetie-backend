@@ -821,13 +821,18 @@ export class ProductService {
 
     let imagesUrl: string[] = [];
     if (product.images_url) {
-      imagesUrl = JSON.parse(product.images_url);
-    } else if (
+      try {
+        imagesUrl = JSON.parse(product.images_url);
+      } catch (e) {
+        imagesUrl = [];
+      }
+    }
+    if (
+      imagesUrl.length === 0 &&
       product.kiotviet_images &&
-      Array.isArray(product.kiotviet_images) &&
-      product.kiotviet_images.length > 0
+      Array.isArray(product.kiotviet_images)
     ) {
-      imagesUrl = [product.kiotviet_images[0]];
+      imagesUrl = product.kiotviet_images;
     }
 
     return {
@@ -846,7 +851,7 @@ export class ProductService {
       rate: product.rate,
       isFeatured: product.is_featured === true,
       isVisible: product.is_visible === true,
-      imagesUrl: product.images_url ? JSON.parse(product.images_url) : [],
+      imagesUrl: imagesUrl,
       featuredThumbnail: product.featured_thumbnail,
       recipeThumbnail: product.recipe_thumbnail,
       kiotViet: {
@@ -1422,9 +1427,48 @@ export class ProductService {
         this.prisma.product.count({ where }),
       ]);
 
-      const transformedProducts = products.map((product) =>
-        this.transformProductForCMS(product),
-      );
+      const transformedProducts = products.map((product: any) => {
+        let imagesUrl: string[] = [];
+        if (product.images_url) {
+          try {
+            imagesUrl = JSON.parse(product.images_url);
+          } catch (e) {
+            imagesUrl = [];
+          }
+        }
+        if (
+          imagesUrl.length === 0 &&
+          product.kiotviet_images &&
+          Array.isArray(product.kiotviet_images)
+        ) {
+          imagesUrl = product.kiotviet_images;
+        }
+
+        return {
+          id: Number(product.id),
+          title: product.title || product.kiotviet_name || 'Untitled Product',
+          title_meta: product.title_meta ?? '',
+          price: product.kiotviet_price ? Number(product.kiotviet_price) : null,
+          general_description: product.general_description,
+          description: product.description,
+          instruction: product.instruction,
+          rate: product.rate,
+          isFeatured: product.is_featured === true,
+          isVisible: product.is_visible === true,
+          imagesUrl: imagesUrl,
+          categoryId: product.category_id ? Number(product.category_id) : null,
+          category: product.category,
+          ofCategories: product.category
+            ? [
+                {
+                  id: Number(product.category.id),
+                  name: product.category.name,
+                  description: product.category.description,
+                },
+              ]
+            : [],
+        };
+      });
 
       return {
         content: transformedProducts,
@@ -1459,9 +1503,21 @@ export class ProductService {
   }
 
   private transformProductForCMS(product: any) {
-    const imagesUrl: string[] = product.images_url
-      ? JSON.parse(product.images_url)
-      : [];
+    let imagesUrl: string[] = [];
+    if (product.images_url) {
+      try {
+        imagesUrl = JSON.parse(product.images_url);
+      } catch (e) {
+        imagesUrl = [];
+      }
+    }
+    if (
+      imagesUrl.length === 0 &&
+      product.kiotviet_images &&
+      Array.isArray(product.kiotviet_images)
+    ) {
+      imagesUrl = product.kiotviet_images;
+    }
 
     return {
       id: Number(product.id),
