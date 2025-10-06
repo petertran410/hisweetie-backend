@@ -122,8 +122,8 @@ export class PaymentService {
           ward: customerInfo.ward,
           note: customerInfo.note || '',
           payment_method: 'cod',
-          payment_status: 'PENDING',
-          status: 'PENDING',
+          payment_status: 'COD',
+          status: 'CREATED ORDER',
         },
       });
 
@@ -192,16 +192,11 @@ export class PaymentService {
           price: Number(item.product!.kiotviet_price || 0),
         }));
 
-        const fullAddress = [
-          orderData.detailed_address,
-          orderData.ward,
-          orderData.district,
-          orderData.province,
-        ]
-          .filter(Boolean)
-          .join(', ');
+        const cleanedProvince = orderData.province
+          ? orderData.province.replace(/^(Thành phố|Tỉnh)\s+/i, '').trim()
+          : '';
 
-        const locationName = [orderData.province, orderData.district]
+        const locationName = [cleanedProvince, orderData.district]
           .filter(Boolean)
           .join(' - ');
 
@@ -211,15 +206,15 @@ export class PaymentService {
           items: kiotOrderItems,
           total: Number(orderData.total),
           description: orderData.note
-            ? `Đơn hàng COD #${orderId} - ${orderData.note}`
-            : `Đơn hàng COD #${orderId}`,
-          // deliveryInfo: {
-          //   receiver: orderData.full_name!,
-          //   contactNumber: orderData.phone!,
-          //   address: fullAddress,
-          //   locationName: locationName,
-          //   wardName: orderData.ward || '',
-          // },
+            ? `Ghi chú: ${orderData.note}`
+            : 'Đơn hàng COD',
+          deliveryInfo: {
+            receiver: orderData.full_name!,
+            contactNumber: orderData.phone!,
+            address: orderData.detailed_address || orderData.address || '',
+            locationName: locationName,
+            wardName: orderData.ward || '',
+          },
         });
 
         await this.prisma.product_order.update({
