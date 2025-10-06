@@ -665,7 +665,7 @@ export class ProductService {
       const {
         pageSize,
         pageNumber,
-        categoryId, // Chỉ sử dụng category_id
+        categoryId,
         orderBy = 'id',
         isDesc = true,
         title,
@@ -678,12 +678,10 @@ export class ProductService {
 
       const where: Prisma.productWhereInput = {};
 
-      // Visibility filter
       if (!includeHidden) {
         where.is_visible = true;
       }
 
-      // Title search
       if (title) {
         where.OR = [
           { title: { contains: title } },
@@ -754,7 +752,16 @@ export class ProductService {
             : [],
 
           categoryId: product.category_id ? Number(product.category_id) : null,
-          category: product.category,
+          category: product.category
+            ? {
+                id: Number(product.category.id),
+                name: product.category.name,
+                description: product.category.description,
+                parent_id: product.category.parent_id
+                  ? Number(product.category.parent_id)
+                  : null,
+              }
+            : null,
           ofCategories: product.category
             ? [
                 {
@@ -791,6 +798,7 @@ export class ProductService {
       product.kiotviet_name ||
       product.title_meta ||
       'Untitled Product';
+
     const productPrice = product.kiotviet_price
       ? Number(product.kiotviet_price)
       : null;
@@ -858,7 +866,6 @@ export class ProductService {
         kiotviet_description: product.kiotviet_description,
       },
       isFromKiotViet: product.is_from_kiotviet === true,
-      reviews: product.review || [],
     };
   }
 
@@ -1481,6 +1488,16 @@ export class ProductService {
             slug: product.category.slug,
           }
         : null,
+
+      ofCategories: product.category
+        ? [
+            {
+              id: Number(product.category.id),
+              name: product.category.name,
+              description: product.category.description,
+            },
+          ]
+        : [],
 
       kiotviet_data: {
         id: product.kiotviet_id ? Number(product.kiotviet_id) : null,
