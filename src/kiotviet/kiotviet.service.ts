@@ -345,6 +345,90 @@ export class KiotVietService {
     }
   }
 
+  async createCODOrder(orderData: {
+    customerId: number;
+    customerName: string;
+    items: Array<{
+      productId: number;
+      productCode: string;
+      productName: string;
+      quantity: number;
+      price: number;
+    }>;
+    total: number;
+    description?: string;
+    deliveryInfo?: {
+      receiver: string;
+      contactNumber: string;
+      address: string;
+      locationName?: string;
+      wardName?: string;
+    };
+  }): Promise<any> {
+    const token = await this.getAccessToken();
+
+    if (!orderData.customerName || orderData.customerName.trim() === '') {
+      throw new Error(`Customer name is empty: "${orderData.customerName}"`);
+    }
+
+    const orderDetails = orderData.items.map((item) => ({
+      productId: item.productId,
+      productCode: item.productCode,
+      productName: item.productName,
+      quantity: item.quantity,
+      price: item.price,
+      isMaster: true,
+    }));
+
+    const payload: any = {
+      purchaseDate: new Date().toISOString(),
+      branchId: 635934,
+      discount: 0,
+      description: orderData.description || '',
+      method: 'Cash',
+      total: orderData.total,
+      saleChannelId: 496738,
+      customer: {
+        id: orderData.customerId,
+        name: orderData.customerName.trim(),
+      },
+      orderDetails,
+    };
+
+    if (orderData.deliveryInfo) {
+      payload.orderDelivery = {
+        receiver: orderData.deliveryInfo.receiver,
+        contactNumber: orderData.deliveryInfo.contactNumber,
+        address: orderData.deliveryInfo.address,
+        locationName: orderData.deliveryInfo.locationName || '',
+        wardName: orderData.deliveryInfo.wardName || '',
+      };
+    }
+
+    this.logger.log('🔍 ORDER PAYLOAD:', JSON.stringify(payload, null, 2));
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(`${this.baseUrl}/orders`, payload, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Retailer: this.retailerName,
+            'Content-Type': 'application/json',
+          },
+        }),
+      );
+
+      this.logger.log(`✅ Created order: ${response.data.code}`);
+      return response.data;
+    } catch (error) {
+      this.logger.error(
+        '❌ Create order failed:',
+        JSON.stringify(error.response?.data, null, 2),
+      );
+      throw error;
+    }
+  }
+
   async handlePaymentSuccess(paymentData: {
     customerName: string;
     phone: string;

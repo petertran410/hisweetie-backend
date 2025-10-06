@@ -205,7 +205,7 @@ export class PaymentService {
           .filter(Boolean)
           .join(' - ');
 
-        const kiotOrder = await this.kiotVietService.createOrder({
+        const kiotOrder = await this.kiotVietService.createCODOrder({
           customerId: clientUser.kiotviet_customer_id,
           customerName: orderData.full_name!,
           items: kiotOrderItems,
@@ -213,13 +213,13 @@ export class PaymentService {
           description: orderData.note
             ? `Đơn hàng COD #${orderId} - ${orderData.note}`
             : `Đơn hàng COD #${orderId}`,
-          deliveryInfo: {
-            receiver: orderData.full_name!,
-            contactNumber: orderData.phone!,
-            address: fullAddress,
-            locationName: locationName,
-            wardName: orderData.ward || '',
-          },
+          // deliveryInfo: {
+          //   receiver: orderData.full_name!,
+          //   contactNumber: orderData.phone!,
+          //   address: fullAddress,
+          //   locationName: locationName,
+          //   wardName: orderData.ward || '',
+          // },
         });
 
         await this.prisma.product_order.update({
