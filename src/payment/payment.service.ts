@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SepayService } from './sepay.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { KiotVietService } from 'src/kiotviet/kiotviet.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class PaymentService {
@@ -96,6 +97,174 @@ export class PaymentService {
     } catch (error) {
       this.logger.error('Failed to create order:', error);
       throw new BadRequestException(`Failed to create order: ${error.message}`);
+    }
+  }
+
+  async createCODOrder(createPaymentDto: CreatePaymentDto) {
+    const { customerInfo, cartItems, amounts } = createPaymentDto;
+
+    try {
+      const order = await this.prisma.product_order.create({
+        data: {
+          total: BigInt(amounts.total),
+          created_date: new Date(),
+          full_name: customerInfo.fullName,
+          email: customerInfo.email,
+          phone: customerInfo.phone,
+          address: customerInfo.address,
+          detailed_address: customerInfo.detailedAddress,
+          province: customerInfo.province,
+          district: customerInfo.district,
+          ward: customerInfo.ward,
+          note: customerInfo.note || '',
+          payment_method: 'cod',
+          payment_status: 'PENDING',
+          status: 'PENDING',
+        },
+      });
+
+      for (const item of cartItems) {
+        await this.prisma.orders.create({
+          data: {
+            product_order_id: order.id,
+            product_id: BigInt(item.productId),
+            quantity: item.quantity,
+            created_date: new Date(),
+            created_by: 'SYSTEM',
+          },
+        });
+      }
+
+      await this.logPaymentEvent(Number(order.id), 'COD_ORDER_CREATED', {
+        customerInfo,
+        cartItems,
+        amounts,
+      });
+
+      try {
+        const orderId = Number(order.id);
+
+        const clientUser = await this.prisma.client_user.findUnique({
+          where: { email: customerInfo.email },
+        });
+
+        if (!clientUser?.kiotviet_customer_id) {
+          throw new Error('KiotViet customer not found');
+        }
+
+        const orderData = await this.prisma.product_order.findUnique({
+          where: { id: order.id },
+          include: {
+            orders: {
+              include: {
+                product: true,
+              },
+            },
+          },
+        });
+
+        if (!orderData) {
+          throw new Error('Order not found');
+        }
+
+        const validOrderItems = orderData.orders.filter(
+          (item) =>
+            item.product &&
+            item.product.kiotviet_id &&
+            item.product.kiotviet_code &&
+            item.quantity,
+        );
+
+        if (validOrderItems.length === 0) {
+          throw new Error('No valid products');
+        }
+
+        const kiotOrderItems = validOrderItems.map((item) => ({
+          productId: Number(item.product!.kiotviet_id),
+          productCode: item.product!.kiotviet_code!,
+          productName:
+            item.product!.kiotviet_name || item.product!.title || 'Sản phẩm',
+          quantity: item.quantity!,
+          price: Number(item.product!.kiotviet_price || 0),
+        }));
+
+        const fullAddress = [
+          orderData.detailed_address,
+          orderData.ward,
+          orderData.district,
+          orderData.province,
+        ]
+          .filter(Boolean)
+          .join(', ');
+
+        const locationName = [orderData.province, orderData.district]
+          .filter(Boolean)
+          .join(' - ');
+
+        const kiotOrder = await this.kiotVietService.createOrder({
+          customerId: clientUser.kiotviet_customer_id,
+          customerName: orderData.full_name!,
+          items: kiotOrderItems,
+          total: Number(orderData.total),
+          description: orderData.note
+            ? `Đơn hàng COD #${orderId} - ${orderData.note}`
+            : `Đơn hàng COD #${orderId}`,
+          deliveryInfo: {
+            receiver: orderData.full_name!,
+            contactNumber: orderData.phone!,
+            address: fullAddress,
+            locationName: locationName,
+            wardName: orderData.ward || '',
+          },
+        });
+
+        await this.prisma.product_order.update({
+          where: { id: order.id },
+          data: {
+            order_kiot_id: kiotOrder.id,
+            order_kiot_code: kiotOrder.code,
+          },
+        });
+
+        this.logger.log(`✅ Created KiotViet COD order: ${kiotOrder.code}`);
+
+        await this.prisma.payment_logs.create({
+          data: {
+            order_id: BigInt(orderId),
+            event_type: 'KIOTVIET_COD_SYNC_SUCCESS',
+            event_data: {
+              kiotCustomerId: clientUser.kiotviet_customer_id,
+              kiotOrder,
+            },
+            created_date: new Date(),
+          },
+        });
+      } catch (kiotError) {
+        this.logger.error('KiotViet sync error:', kiotError);
+
+        await this.prisma.payment_logs.create({
+          data: {
+            order_id: BigInt(Number(order.id)),
+            event_type: 'KIOTVIET_COD_SYNC_ERROR',
+            event_data: {
+              error: kiotError.message,
+            },
+            created_date: new Date(),
+          },
+        });
+      }
+
+      return {
+        success: true,
+        orderId: order.id.toString(),
+        paymentMethod: 'cod',
+        total: amounts.total,
+      };
+    } catch (error) {
+      this.logger.error('Failed to create COD order:', error);
+      throw new BadRequestException(
+        `Failed to create COD order: ${error.message}`,
+      );
     }
   }
 

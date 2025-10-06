@@ -122,4 +122,17 @@ export class PaymentController {
       ],
     };
   }
+
+  @Post('create-cod-order')
+  async createCODOrder(@Body() createPaymentDto: CreatePaymentDto) {
+    try {
+      return await this.paymentService.createCODOrder(createPaymentDto);
+    } catch (error) {
+      this.logger.error('COD order creation failed:', error);
+      return {
+        success: false,
+        message: error.message || 'Failed to create COD order',
+      };
+    }
+  }
 }

@@ -301,7 +301,7 @@ export class KiotVietService {
       branchId: 635934,
       discount: 0,
       description: orderData.description || '',
-      method: 'Cash',
+      method: 'Transfer',
       totalPayment: orderData.total,
       saleChannelId: 496738,
       customer: {
