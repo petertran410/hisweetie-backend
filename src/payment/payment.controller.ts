@@ -8,6 +8,9 @@ import {
   HttpStatus,
   Logger,
   Req,
+  BadRequestException,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { PaymentService } from './payment.service';
 import { SepayService } from './sepay.service';
@@ -124,15 +127,18 @@ export class PaymentController {
   }
 
   @Post('create-cod-order')
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async createCODOrder(@Body() createPaymentDto: CreatePaymentDto) {
     try {
+      if (!createPaymentDto.amounts) {
+        throw new BadRequestException('Missing amounts data');
+      }
       return await this.paymentService.createCODOrder(createPaymentDto);
     } catch (error) {
       this.logger.error('COD order creation failed:', error);
-      return {
-        success: false,
-        message: error.message || 'Failed to create COD order',
-      };
+      throw new BadRequestException(
+        `Failed to create COD order: ${error.message}`,
+      );
     }
   }
 }

@@ -103,6 +103,10 @@ export class PaymentService {
   async createCODOrder(createPaymentDto: CreatePaymentDto) {
     const { customerInfo, cartItems, amounts } = createPaymentDto;
 
+    if (!amounts || !amounts.total) {
+      throw new BadRequestException('Invalid amounts data');
+    }
+
     try {
       const order = await this.prisma.product_order.create({
         data: {
