@@ -753,7 +753,6 @@ export class ProductService {
               : []
             : [],
 
-          // Category information từ schema category
           categoryId: product.category_id ? Number(product.category_id) : null,
           category: product.category,
           ofCategories: product.category
@@ -850,7 +849,7 @@ export class ProductService {
       featuredThumbnail: product.featured_thumbnail,
       recipeThumbnail: product.recipe_thumbnail,
       kiotViet: {
-        id: product.kiotviet_id ? product.kiotviet_id.toString() : null,
+        id: product.kiotviet_id ? Number(product.kiotviet_id) : null,
         code: product.kiotviet_code,
         name: product.kiotviet_name,
         price: product.kiotviet_price ? Number(product.kiotviet_price) : null,
@@ -1744,7 +1743,17 @@ export class ProductService {
           OR: [{ title: { not: null } }, { kiotviet_name: { not: null } }],
         },
         include: {
-          category: true,
+          category: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              description: true,
+              parent_id: true,
+              path: true,
+              level: true,
+            },
+          },
         },
       });
 
