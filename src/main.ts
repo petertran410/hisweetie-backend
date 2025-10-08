@@ -1,10 +1,9 @@
-import { NestFactory, Reflector } from '@nestjs/core';
+import { NestFactory } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import * as cookieParser from 'cookie-parser';
 import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { ClientJwtAuthGuard } from './auth/client-auth/client-jwt-auth.guard';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -31,9 +30,6 @@ async function bootstrap() {
   });
 
   app.setGlobalPrefix('api');
-
-  const reflector = app.get(Reflector);
-  app.useGlobalGuards(new ClientJwtAuthGuard(reflector));
 
   const config = new DocumentBuilder()
     .setTitle('API Documentation')

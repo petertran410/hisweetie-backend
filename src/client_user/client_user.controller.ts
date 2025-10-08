@@ -24,14 +24,14 @@ import { UpdateClientUserDto } from './dto/create-client-user.dto';
 
 @ApiTags('client-user')
 @Controller('client-user')
+@UseGuards(ClientJwtAuthGuard)
+@ApiBearerAuth()
 export class ClientUserController {
   constructor(
     private readonly clientUserService: ClientUserService,
     private configService: ConfigService,
   ) {}
 
-  @UseGuards(ClientJwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get orders of current client user' })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
@@ -56,8 +56,6 @@ export class ClientUserController {
   }
 
   @Patch('profile')
-  @UseGuards(ClientJwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Update current client user profile' })
   @ApiResponse({
     status: 200,
