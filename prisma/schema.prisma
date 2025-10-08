@@ -236,11 +236,11 @@ model product_order {
   note             String?        @db.LongText
   payment_method   String?
   total            BigInt?
-  phone            String?        @unique
+  phone            String?
   status           String?
   payment_status   String?
   full_name        String?
-  email            String?        @unique
+  email            String?
   orders           orders[]
   order_kiot_id    Int?
   order_kiot_code  String?

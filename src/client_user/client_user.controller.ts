@@ -76,7 +76,6 @@ export class ClientUserController {
     };
   }
 
-  @Get('my-orders')
   @UseGuards(ClientJwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get orders of current client user' })
@@ -87,6 +86,7 @@ export class ClientUserController {
     status: 200,
     description: 'Returns user orders',
   })
+  @Get('my-orders')
   async getMyOrders(
     @CurrentClient() client: any,
     @Query('page') page: string = '1',
