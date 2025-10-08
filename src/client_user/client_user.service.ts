@@ -178,19 +178,10 @@ export class ClientUserService {
     limit: number = 10,
     status?: string,
   ) {
-    const client = await this.prisma.client_user.findUnique({
-      where: { client_id: clientId },
-      select: { email: true, phone: true },
-    });
-
-    if (!client) {
-      throw new Error('Client user not found');
-    }
-
     const skip = (page - 1) * limit;
 
     const where: any = {
-      OR: [{ email: client.email }, { phone: client.phone }],
+      client_user_id: clientId,
     };
 
     if (status) {

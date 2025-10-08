@@ -4,6 +4,7 @@ import { SepayService } from './sepay.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { KiotVietService } from 'src/kiotviet/kiotviet.service';
 import { Prisma } from '@prisma/client';
+import { async } from 'rxjs';
 
 @Injectable()
 export class PaymentService {
@@ -42,13 +43,33 @@ export class PaymentService {
         }
       }
 
+      const clientUserId = await this.prisma.client_user.findUnique({
+        where: {
+          phone: customerInfo.phone,
+        },
+        select: {
+          client_id: true,
+          full_name: true,
+          phone: true,
+          email: true,
+          province: true,
+          district: true,
+          ward: true,
+          detailed_address: true,
+        },
+      });
+
       const order = await this.prisma.product_order.create({
         data: {
+          client_user_id: clientUserId?.client_id,
           total: BigInt(amounts.total),
           created_date: new Date(),
-          full_name: customerInfo.fullName,
-          email: customerInfo.email,
-          phone: customerInfo.phone,
+          // full_name: customerInfo.fullName,
+          // email: customerInfo.email,
+          // phone: customerInfo.phone,
+          full_name: clientUserId?.full_name,
+          email: clientUserId?.email,
+          phone: clientUserId?.phone,
           address: customerInfo.address,
           detailed_address: customerInfo.detailedAddress,
           province: customerInfo.province,
@@ -107,14 +128,34 @@ export class PaymentService {
       throw new BadRequestException('Invalid amounts data');
     }
 
+    const clientUserId = await this.prisma.client_user.findUnique({
+      where: {
+        phone: customerInfo.phone,
+      },
+      select: {
+        client_id: true,
+        full_name: true,
+        phone: true,
+        email: true,
+        province: true,
+        district: true,
+        ward: true,
+        detailed_address: true,
+      },
+    });
+
     try {
       const order = await this.prisma.product_order.create({
         data: {
+          client_user_id: clientUserId?.client_id,
           total: BigInt(amounts.total),
           created_date: new Date(),
-          full_name: customerInfo.fullName,
-          email: customerInfo.email,
-          phone: customerInfo.phone,
+          // full_name: customerInfo.fullName,
+          // email: customerInfo.email,
+          // phone: customerInfo.phone,
+          full_name: clientUserId?.full_name,
+          email: clientUserId?.email,
+          phone: clientUserId?.phone,
           address: customerInfo.address,
           detailed_address: customerInfo.detailedAddress,
           province: customerInfo.province,
