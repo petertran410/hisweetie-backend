@@ -20,7 +20,16 @@ export class ClientJwtAuthGuard extends AuthGuard('client-jwt') {
     return super.canActivate(context);
   }
 
-  handleRequest(err: any, user: any, info: any) {
+  handleRequest(err: any, user: any, info: any, context: ExecutionContext) {
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (isPublic) {
+      return user;
+    }
+
     if (err || !user) {
       throw err || new Error('Client authentication failed');
     }
