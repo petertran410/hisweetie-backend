@@ -16,6 +16,7 @@ import { PaymentService } from './payment.service';
 import { SepayService } from './sepay.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { ConfigService } from '@nestjs/config';
+import { Public } from '../auth/public.decorator';
 
 @Controller('payment')
 export class PaymentController {
@@ -66,16 +67,15 @@ export class PaymentController {
     }
   }
 
+  @Public()
   @Post('webhook/sepay')
   @HttpCode(HttpStatus.OK)
   async handleSepayWebhook(@Body() webhookData: any, @Req() req: any) {
     try {
       const result = await this.paymentService.handleWebhook(webhookData);
-
       return { success: true };
     } catch (error) {
       this.logger.error('Webhook error:', error.stack);
-
       return { success: true, error: 'processed_with_error' };
     }
   }
