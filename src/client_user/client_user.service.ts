@@ -236,7 +236,7 @@ export class ClientUserService {
       items: order.orders.map((item) => ({
         productId: item.product_id?.toString(),
         productName:
-          item.product?.kiotviet_name || item.product?.title || 'Sản phẩm',
+          item.product?.title || item.product?.kiotviet_name || 'Sản phẩm',
         quantity: item.quantity,
         price: item.product?.kiotviet_price
           ? Number(item.product.kiotviet_price)

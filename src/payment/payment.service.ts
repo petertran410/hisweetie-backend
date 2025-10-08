@@ -3,8 +3,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SepayService } from './sepay.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { KiotVietService } from 'src/kiotviet/kiotviet.service';
-import { Prisma } from '@prisma/client';
-import { async } from 'rxjs';
 
 @Injectable()
 export class PaymentService {
