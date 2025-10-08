@@ -396,8 +396,6 @@ export class PaymentService {
       const order = await this.prisma.product_order.findFirst({
         where: {
           id: BigInt(orderId),
-          total: mappedData.transferAmount,
-          payment_status: 'PENDING',
           payment_method: 'sepay_bank',
         },
         include: {
@@ -410,12 +408,28 @@ export class PaymentService {
       });
 
       if (!order) {
+        this.logger.error(`Order not found: ID=${orderId}`);
+        return {
+          success: false,
+          message: 'Order not found',
+        };
+      }
+
+      if (order.payment_status === 'PAID') {
+        this.logger.warn(`Order ${orderId} already paid`);
+        return {
+          success: true,
+          message: 'Order already processed',
+        };
+      }
+
+      if (Number(order.total) !== mappedData.transferAmount) {
         this.logger.error(
-          `Order not found: ID=${orderId}, Amount=${mappedData.transferAmount}`,
+          `Amount mismatch: Expected ${order.total}, got ${mappedData.transferAmount}`,
         );
         return {
           success: false,
-          message: 'Order not found or already processed',
+          message: 'Amount mismatch',
         };
       }
 
@@ -479,12 +493,16 @@ export class PaymentService {
           }
         }
 
+        // const validOrderItems = order.orders.filter(
+        //   (orderItem) =>
+        //     orderItem.product &&
+        //     orderItem.product.kiotviet_id &&
+        //     orderItem.product.kiotviet_code &&
+        //     orderItem.quantity,
+        // );
+
         const validOrderItems = order.orders.filter(
-          (orderItem) =>
-            orderItem.product &&
-            orderItem.product.kiotviet_id &&
-            orderItem.product.kiotviet_code &&
-            orderItem.quantity,
+          (item) => item.product && item.product.kiotviet_id,
         );
 
         if (validOrderItems.length === 0) {
@@ -495,12 +513,23 @@ export class PaymentService {
           productId: Number(orderItem.product!.kiotviet_id),
           productCode: orderItem.product!.kiotviet_code!,
           productName:
-            orderItem.product!.kiotviet_name ||
             orderItem.product!.title ||
+            orderItem.product!.kiotviet_name ||
             'Sản phẩm',
           quantity: orderItem.quantity!,
           price: Number(orderItem.product!.kiotviet_price || 0),
         }));
+
+        // const kiotOrderItems = validOrderItems.map((item) => ({
+        //   productId: Number(item.product!.kiotviet_id),
+        //   productCode: item.product!.kiot_code || '',
+        //   productName: item.product!.title || '',
+        //   quantity: item.quantity || 0,
+        //   price: Number(
+        //     item.product!.new_price || item.product!.old_price || 0,
+        //   ),
+        //   discount: 0,
+        // }));
 
         const fullAddress = [
           order.detailed_address,
