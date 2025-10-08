@@ -236,11 +236,11 @@ model product_order {
   note             String?        @db.LongText
   payment_method   String?
   total            BigInt?
-  phone            String?
+  phone            String?        @unique
   status           String?
   payment_status   String?
   full_name        String?
-  email            String?
+  email            String?        @unique
   orders           orders[]
   order_kiot_id    Int?
   order_kiot_code  String?
@@ -297,21 +297,21 @@ model user {
 }
 
 model client_user {
-  client_id                Int     @id @default(autoincrement())
-  full_name                String?    @db.Text
-  email                    String?    @unique @db.VarChar(500)
-  phone                    String?    @db.VarChar(255)
-  pass_word                String?    @db.VarChar(255)
-  refresh_token            String?    @db.Text
-  detailed_address         String?    @db.VarChar(500)
-  province                 String?    @db.VarChar(255)
-  district                 String?    @db.VarChar(255)
-  ward                     String?    @db.VarChar(255)
+  client_id                Int       @id @default(autoincrement())
+  full_name                String?   @db.Text
+  email                    String?   @unique @db.VarChar(500)
+  phone                    String?   @unique @db.VarChar(255)
+  pass_word                String?   @db.VarChar(255)
+  refresh_token            String?   @db.Text
+  detailed_address         String?   @db.VarChar(500)
+  province                 String?   @db.VarChar(255)
+  district                 String?   @db.VarChar(255)
+  ward                     String?   @db.VarChar(255)
   kiotviet_customer_id     Int?
   kiot_code                String?
-  verification_code        String?    @db.VarChar(6)
+  verification_code        String?   @db.VarChar(6)
   verification_code_expires DateTime? @db.DateTime(6)
-  is_verified              Boolean    @default(false) @db.Bit(1)
+  is_verified              Boolean   @default(false) @db.Bit(1)
 }
 
 model sync_log {

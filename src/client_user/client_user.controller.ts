@@ -10,6 +10,7 @@ import {
   ValidationPipe,
   UseGuards,
   Request,
+  Query,
 } from '@nestjs/common';
 import { ClientUserService } from './client_user.service';
 import { ClientJwtAuthGuard } from '../auth/client-auth/client-jwt-auth.guard';
@@ -18,14 +19,11 @@ import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiParam,
   ApiBearerAuth,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
-import {
-  ClientUserType,
-  UpdateClientUserDto,
-} from './dto/create-client-user.dto';
+import { UpdateClientUserDto } from './dto/create-client-user.dto';
 
 @ApiTags('client-user')
 @Controller('client-user')
@@ -76,5 +74,30 @@ export class ClientUserController {
         ward: updatedUser.ward,
       },
     };
+  }
+
+  @Get('my-orders')
+  @UseGuards(ClientJwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get orders of current client user' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'status', required: false })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns user orders',
+  })
+  async getMyOrders(
+    @CurrentClient() client: any,
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
+    @Query('status') status?: string,
+  ) {
+    return this.clientUserService.getMyOrders(
+      client.clientId,
+      parseInt(page),
+      parseInt(limit),
+      status,
+    );
   }
 }

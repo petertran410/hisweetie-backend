@@ -171,4 +171,103 @@ export class ClientUserService {
       return user;
     } else throw new NotFoundException();
   }
+
+  async getMyOrders(
+    clientId: number,
+    page: number = 1,
+    limit: number = 10,
+    status?: string,
+  ) {
+    const client = await this.prisma.client_user.findUnique({
+      where: { client_id: clientId },
+      select: { email: true, phone: true },
+    });
+
+    if (!client) {
+      throw new Error('Client user not found');
+    }
+
+    const skip = (page - 1) * limit;
+
+    const where: any = {
+      OR: [{ email: client.email }, { phone: client.phone }],
+    };
+
+    if (status) {
+      where.status = status;
+    }
+
+    const [orders, total] = await Promise.all([
+      this.prisma.product_order.findMany({
+        where,
+        include: {
+          orders: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  title: true,
+                  kiotviet_name: true,
+                  kiotviet_price: true,
+                  kiotviet_images: true,
+                  images_url: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { created_date: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.product_order.count({ where }),
+    ]);
+
+    const formattedOrders = orders.map((order) => ({
+      id: order.id.toString(),
+      orderCode: order.order_kiot_code || `DH${order.id}`,
+      fullName: order.full_name,
+      phone: order.phone,
+      email: order.email,
+      address: [
+        order.detailed_address,
+        order.ward,
+        order.district,
+        order.province,
+      ]
+        .filter(Boolean)
+        .join(', '),
+      total: Number(order.total),
+      status: order.status,
+      paymentStatus: order.payment_status,
+      paymentMethod: order.payment_method,
+      createdDate: order.created_date,
+      items: order.orders.map((item) => ({
+        productId: item.product_id?.toString(),
+        productName:
+          item.product?.kiotviet_name || item.product?.title || 'Sản phẩm',
+        quantity: item.quantity,
+        price: item.product?.kiotviet_price
+          ? Number(item.product.kiotviet_price)
+          : 0,
+        image: item.product?.kiotviet_images
+          ? Array.isArray(item.product.kiotviet_images)
+            ? item.product.kiotviet_images[0]
+            : null
+          : item.product?.images_url
+            ? JSON.parse(item.product.images_url)[0]
+            : null,
+      })),
+    }));
+
+    return {
+      orders: formattedOrders,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
 }
