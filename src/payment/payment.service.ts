@@ -324,13 +324,13 @@ export class PaymentService {
       if (!order) {
         return {
           success: false,
-          status: 'NOT_FOUND',
+          status: 'ERROR',
           message: 'Order not found',
         };
       }
 
       return {
-        success: order.payment_status === 'PAID',
+        success: true,
         status:
           order.payment_status === 'PAID' ? 'SUCCESS' : order.payment_status,
         orderId: orderId,
