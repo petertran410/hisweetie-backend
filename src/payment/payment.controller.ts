@@ -42,6 +42,7 @@ export class PaymentController {
   }
 
   @Get('status/:orderId')
+  @Public()
   async getPaymentStatus(@Param('orderId') orderId: string) {
     try {
       return await this.paymentService.checkPaymentStatus(orderId);
