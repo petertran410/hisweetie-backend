@@ -1764,11 +1764,8 @@ export class ProductService {
             select: {
               id: true,
               name: true,
-              slug: true,
               description: true,
               parent_id: true,
-              path: true,
-              level: true,
             },
           },
         },
@@ -1780,7 +1777,7 @@ export class ProductService {
       });
 
       if (exactMatch) {
-        return this.transformProduct(exactMatch);
+        return this.transformProductWithHierarchy(exactMatch);
       }
 
       throw new NotFoundException(`Product not found: ${slug}`);
