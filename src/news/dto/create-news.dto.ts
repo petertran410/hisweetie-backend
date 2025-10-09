@@ -18,6 +18,11 @@ export class CreateNewsDto {
   @IsString()
   title: string;
 
+  @ApiProperty({ description: 'SEO title meta tag', required: false })
+  @IsString()
+  @IsOptional()
+  titleMeta?: string;
+
   @ApiProperty({
     description: 'Description of the news/content item',
     required: false,

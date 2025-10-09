@@ -1,4 +1,3 @@
-// src/news/news.controller.ts - UPDATED với endpoint tìm ID
 import {
   Controller,
   Get,

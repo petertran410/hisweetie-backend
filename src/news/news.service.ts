@@ -89,6 +89,7 @@ export class NewsService {
             select: {
               id: true,
               title: true,
+              title_meta: true,
               description: true,
               images_url: true,
               created_date: true,
@@ -100,6 +101,7 @@ export class NewsService {
           const formattedArticles = articles.map((article) => ({
             id: Number(article.id),
             title: article.title,
+            title_meta: article.title_meta,
             description: article.description,
             imagesUrl: article.images_url ? JSON.parse(article.images_url) : [],
             createdDate: article.created_date,
@@ -135,6 +137,7 @@ export class NewsService {
     return {
       id: news.id.toString(),
       title: news.title,
+      title_meta: news.title_meta,
       description: news.description,
       htmlContent: news.html_content,
       imagesUrl: Array.isArray(imagesUrl) ? imagesUrl : [],
@@ -190,15 +193,23 @@ export class NewsService {
 
   async create(createNewsDto: CreateNewsDto) {
     try {
-      const { title, description, htmlContent, imagesUrl, type, embedUrl } =
-        createNewsDto;
+      const {
+        title,
+        description,
+        htmlContent,
+        imagesUrl,
+        type,
+        embedUrl,
+        titleMeta,
+      } = createNewsDto;
 
       const newsData = {
         title,
+        title_meta: titleMeta,
         description,
         html_content: htmlContent,
         images_url: imagesUrl ? JSON.stringify(imagesUrl) : null,
-        embed_url: embedUrl || null, // THÊM MỚI
+        embed_url: embedUrl || null,
         type,
         created_date: new Date(),
         updated_date: new Date(),
@@ -275,6 +286,7 @@ export class NewsService {
       select: {
         id: true,
         title: true,
+        title_meta: true,
         description: true,
         html_content: true,
         images_url: true,
@@ -298,14 +310,14 @@ export class NewsService {
       where: {
         id: BigInt(id),
       },
-      // THÊM select để đảm bảo lấy embed_url
       select: {
         id: true,
         title: true,
+        title_meta: true,
         description: true,
         html_content: true,
         images_url: true,
-        embed_url: true, // ĐẢM BẢO CÓ DÒNG NÀY
+        embed_url: true,
         created_date: true,
         updated_date: true,
         view: true,
@@ -317,7 +329,6 @@ export class NewsService {
       throw new NotFoundException(`News with ID ${id} not found`);
     }
 
-    // Increment view count
     await this.prisma.news.update({
       where: { id: BigInt(id) },
       data: { view: { increment: 1 } },
@@ -336,14 +347,22 @@ export class NewsService {
         throw new NotFoundException(`Không tìm thấy tin tức với ID ${id}`);
       }
 
-      const { title, description, htmlContent, imagesUrl, type, embedUrl } =
-        updateNewsDto;
+      const {
+        title,
+        description,
+        htmlContent,
+        imagesUrl,
+        type,
+        embedUrl,
+        titleMeta,
+      } = updateNewsDto;
 
       const updateData: any = {
         updated_date: new Date(),
       };
 
       if (title !== undefined) updateData.title = title;
+      if (titleMeta !== undefined) updateData.title_meta = titleMeta;
       if (description !== undefined) updateData.description = description;
       if (htmlContent !== undefined) updateData.html_content = htmlContent;
       if (imagesUrl !== undefined)
