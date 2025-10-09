@@ -21,6 +21,7 @@ async function bootstrap() {
       'http://localhost:3333',
       'http://14.224.212.102:3333',
       'https://dieptra.com',
+      'https://gaulermao.com',
       'https://cms.gaulermao.com',
       'https://www.dieptra.com',
     ],
