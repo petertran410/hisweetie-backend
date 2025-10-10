@@ -507,24 +507,22 @@ export class KiotVietService {
 
     try {
       const response = await firstValueFrom(
-        this.httpService.delete(`${this.baseUrl}/orders`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Retailer: this.retailerName,
-            'Content-Type': 'application/json',
+        this.httpService.delete(
+          `${this.baseUrl}/orders/${orderId}?IsVoidPayment=true`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Retailer: this.retailerName,
+            },
           },
-          data: {
-            id: orderId,
-            isVoidPayment: true,
-          },
-        }),
+        ),
       );
 
-      this.logger.log(`✅ Deleted invoice: ${orderId}`);
+      this.logger.log(`✅ Deleted order: ${orderId}`);
       return response.data;
     } catch (error) {
       this.logger.error(
-        `❌ Delete invoice failed: ${orderId}`,
+        `❌ Delete order failed: ${orderId}`,
         error.response?.data,
       );
       throw error;
