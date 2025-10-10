@@ -501,4 +501,33 @@ export class KiotVietService {
       name: 'Cửa Hàng Diệp Trà',
     };
   }
+
+  async deleteOrder(orderId: number): Promise<any> {
+    const token = await this.getAccessToken();
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.delete(`${this.baseUrl}/invoices`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Retailer: this.retailerName,
+            'Content-Type': 'application/json',
+          },
+          data: {
+            id: orderId,
+            isVoidPayment: true,
+          },
+        }),
+      );
+
+      this.logger.log(`✅ Deleted invoice: ${orderId}`);
+      return response.data;
+    } catch (error) {
+      this.logger.error(
+        `❌ Delete invoice failed: ${orderId}`,
+        error.response?.data,
+      );
+      throw error;
+    }
+  }
 }

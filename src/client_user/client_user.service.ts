@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   UnauthorizedException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
@@ -216,6 +217,7 @@ export class ClientUserService {
 
     const formattedOrders = orders.map((order) => ({
       id: order.id.toString(),
+      order_kiot_id: order.order_kiot_id,
       orderCode: order.order_kiot_code || `DH${order.id}`,
       fullName: order.full_name,
       phone: order.phone,
@@ -259,6 +261,47 @@ export class ClientUserService {
         total,
         totalPages: Math.ceil(total / limit),
       },
+    };
+  }
+
+  async cancelOrder(clientId: number, orderId: string) {
+    const order = await this.prisma.product_order.findFirst({
+      where: {
+        id: BigInt(orderId),
+        client_user_id: clientId,
+      },
+      select: {
+        id: true,
+        order_kiot_id: true,
+        status: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (order.status === 'CANCELLED') {
+      throw new BadRequestException('Order already cancelled');
+    }
+
+    if (!order.order_kiot_id) {
+      throw new BadRequestException('No KiotViet order to cancel');
+    }
+
+    await this.kiotVietService.deleteOrder(order.order_kiot_id);
+
+    await this.prisma.product_order.update({
+      where: { id: order.id },
+      data: {
+        status: 'CANCELLED',
+        updated_date: new Date(),
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Order cancelled successfully',
     };
   }
 }

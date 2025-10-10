@@ -8,6 +8,7 @@ import {
   ValidationPipe,
   UseGuards,
   Query,
+  Delete,
 } from '@nestjs/common';
 import { ClientUserService } from './client_user.service';
 import { ClientJwtAuthGuard } from '../auth/client-auth/client-jwt-auth.guard';
@@ -94,5 +95,15 @@ export class ClientUserController {
   @Get(':clientName')
   findName(@Param('clientName') clientName) {
     return this.clientUserService.findName(clientName);
+  }
+
+  @Delete('orders/:orderId/cancel')
+  @ApiOperation({ summary: 'Cancel order by deleting KiotViet invoice' })
+  @ApiResponse({ status: 200, description: 'Order cancelled successfully' })
+  async cancelOrder(
+    @CurrentClient() client: any,
+    @Param('orderId') orderId: string,
+  ) {
+    return this.clientUserService.cancelOrder(client.clientId, orderId);
   }
 }
