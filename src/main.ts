@@ -10,7 +10,7 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   app.use(
-    '/api/kiotviet/webhook/*',
+    '/api/kiotviet/webhook/order-status',
     bodyParser.json({
       verify: (req: any, res, buf, encoding) => {
         req.rawBody = buf.toString('utf8');
