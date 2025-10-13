@@ -17,12 +17,9 @@ export class KiotVietWebhookController {
     @Headers('x-hub-signature') signature: string,
     @Req() req: any,
   ) {
-    this.logger.log('=== KiotViet Webhook Received ===');
-    this.logger.log('Webhook ID:', webhookData.Id);
-    this.logger.log(
-      'Notifications count:',
-      webhookData.Notifications?.length || 0,
-    );
+    this.logger.log('📥 KiotViet Webhook Received');
+    this.logger.log(`Webhook ID: ${webhookData.Id}`);
+    this.logger.log(`Notifications: ${webhookData.Notifications?.length || 0}`);
 
     const rawBody = JSON.stringify(webhookData);
 
@@ -32,9 +29,6 @@ export class KiotVietWebhookController {
       rawBody,
     );
 
-    this.logger.log(
-      `✅ Webhook processed: ${result.processed} updated, ${result.skipped} skipped`,
-    );
     return result;
   }
 }

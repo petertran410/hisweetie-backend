@@ -1,12 +1,12 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../prisma/prisma.service';
 import * as crypto from 'crypto';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
 export class KiotVietWebhookService {
   private readonly logger = new Logger(KiotVietWebhookService.name);
-  private readonly webhookSecret: string | undefined;
+  private readonly WEBHOOK_SECRET: string | undefined;
   private readonly WEBSITE_BRANCH_ID = 635934;
   private readonly WEBSITE_SALE_CHANNEL_ID = 496738;
 
@@ -14,24 +14,27 @@ export class KiotVietWebhookService {
     private prisma: PrismaService,
     private configService: ConfigService,
   ) {
-    this.webhookSecret = this.configService.get<string>(
+    this.WEBHOOK_SECRET = this.configService.get<string>(
       'KIOTVIET_WEBHOOK_SECRET',
     );
   }
 
-  verifySignature(payload: string, signature: string): boolean {
-    if (!this.webhookSecret) {
-      this.logger.warn('Webhook secret not configured, skipping verification');
+  private verifySignature(body: string, signature: string): boolean {
+    if (!this.WEBHOOK_SECRET) {
+      this.logger.warn('KIOTVIET_WEBHOOK_SECRET not configured');
       return true;
     }
 
-    const secret = Buffer.from(this.webhookSecret, 'base64').toString('utf-8');
-    const expectedSignature = crypto
-      .createHmac('sha256', secret)
-      .update(payload)
-      .digest('hex');
+    const hmac = crypto.createHmac(
+      'sha256',
+      Buffer.from(this.WEBHOOK_SECRET, 'base64'),
+    );
+    const calculatedSignature = 'sha256=' + hmac.update(body).digest('hex');
 
-    return signature === expectedSignature;
+    return crypto.timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(calculatedSignature),
+    );
   }
 
   async processOrderStatusChange(
@@ -46,6 +49,7 @@ export class KiotVietWebhookService {
           this.logger.error('Invalid webhook signature');
           throw new UnauthorizedException('Invalid signature');
         }
+        this.logger.log('✅ Signature verified');
       }
 
       const { Id, Notifications } = webhookData;
@@ -65,7 +69,7 @@ export class KiotVietWebhookService {
         for (const order of Data) {
           if (order.BranchId !== this.WEBSITE_BRANCH_ID) {
             this.logger.log(
-              `Skipping order ${order.Id} - BranchId ${order.BranchId} is not website branch (${this.WEBSITE_BRANCH_ID})`,
+              `⏭️ Skipping order ${order.Code} - Wrong BranchId (${order.BranchId})`,
             );
             skippedCount++;
             continue;
@@ -73,25 +77,24 @@ export class KiotVietWebhookService {
 
           if (order.SaleChannelId !== this.WEBSITE_SALE_CHANNEL_ID) {
             this.logger.log(
-              `Skipping order ${order.Id} - SaleChannelId ${order.SaleChannelId} is not website channel (${this.WEBSITE_SALE_CHANNEL_ID})`,
+              `⏭️ Skipping order ${order.Code} - Wrong SaleChannelId (${order.SaleChannelId})`,
             );
             skippedCount++;
             continue;
           }
 
           const statusMapping = {
-            1: 'CANCELLED', // Đã hủy
-            2: 'CANCELLED', // Không giao được (coi như hủy)
-            3: 'DELIVERED', // Hoàn thành ✅
-            5: 'CONFIRMED', // Đã xác nhận
+            5: 'CONFIRMED',
+            3: 'SHIPPING',
           };
 
           const internalStatus = statusMapping[order.Status];
 
           if (!internalStatus) {
             this.logger.warn(
-              `Unknown order status: ${order.Status} for order ${order.Id}`,
+              `⚠️ Unmapped status ${order.Status} for order ${order.Code}`,
             );
+            skippedCount++;
             continue;
           }
 
@@ -105,19 +108,20 @@ export class KiotVietWebhookService {
 
           if (updated.count > 0) {
             this.logger.log(
-              `✅ Updated order ${order.Id} (KiotViet) to status ${internalStatus} - Branch: ${order.BranchId}, Channel: ${order.SaleChannelId}`,
+              `✅ Order ${order.Code} updated to ${internalStatus} (KiotViet Status: ${order.Status})`,
             );
             processedCount++;
           } else {
             this.logger.warn(
-              `Order ${order.Id} not found in database (might not be from website)`,
+              `⚠️ Order ${order.Code} (ID: ${order.Id}) not found in database`,
             );
+            skippedCount++;
           }
         }
       }
 
       this.logger.log(
-        `Webhook processing completed: ${processedCount} updated, ${skippedCount} skipped`,
+        `🎯 Webhook processed: ${processedCount} updated, ${skippedCount} skipped`,
       );
 
       return {
@@ -126,7 +130,7 @@ export class KiotVietWebhookService {
         skipped: skippedCount,
       };
     } catch (error) {
-      this.logger.error('Webhook processing error:', error);
+      this.logger.error('❌ Webhook processing error:', error);
       throw error;
     }
   }
