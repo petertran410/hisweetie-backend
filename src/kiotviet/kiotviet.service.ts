@@ -594,6 +594,13 @@ export class KiotVietService {
           }
         }
       }
+
+      this.forwardRawWebhookData(webhookData).catch((error) => {
+        this.logger.error(
+          '❌ Unhandled error in raw webhook forwarding:',
+          error,
+        );
+      });
     } catch (error) {
       this.logger.error('❌ handleOrderWebhook error:', error);
       throw error;
@@ -658,6 +665,35 @@ export class KiotVietService {
       throw error;
     } finally {
       await prisma.$disconnect();
+    }
+  }
+
+  private async forwardRawWebhookData(rawWebhookData: any): Promise<void> {
+    const externalWebhookUrl =
+      'https://2svn.dieptra.com/webhook-test/webhook-kiotviet-website';
+
+    try {
+      this.logger.log('🔄 Forwarding raw webhook data to external endpoint...');
+
+      const response = await firstValueFrom(
+        this.httpService.post(externalWebhookUrl, rawWebhookData, {
+          headers: {
+            // 'Content-Type': 'application/json',
+            // 'X-Forwarded-From': 'HiSweetie-Backend',
+            // 'X-Original-Source': 'KiotViet-Webhook',
+          },
+          timeout: 10000,
+        }),
+      );
+
+      this.logger.log(
+        `✅ Successfully forwarded raw webhook data. Status: ${response.status}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        '⚠️ Failed to forward raw webhook data to external endpoint:',
+        error.response?.data || error.message,
+      );
     }
   }
 }
