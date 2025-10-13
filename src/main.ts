@@ -4,19 +4,9 @@ import { AppModule } from './app.module';
 import * as cookieParser from 'cookie-parser';
 import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-
-  app.use(
-    '/api/kiotviet/webhook/order-status',
-    bodyParser.json({
-      verify: (req: any, res, buf, encoding) => {
-        req.rawBody = buf.toString('utf8');
-      },
-    }),
-  );
 
   app.use(cookieParser());
 

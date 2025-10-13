@@ -14,7 +14,6 @@ import { PrismaModule } from './prisma/prisma.module';
 import { PaymentModule } from './payment/payment.module';
 import { ClientUserModule } from './client_user/client_user.module';
 import { ClientAuthModule } from './auth/client-auth/client-auth.module';
-import { KiotVietModule } from './kiotviet/kiotviet.module';
 
 @Module({
   imports: [
@@ -35,7 +34,6 @@ import { KiotVietModule } from './kiotviet/kiotviet.module';
     PaymentModule,
     ClientUserModule,
     ClientAuthModule,
-    KiotVietModule,
   ],
   controllers: [],
   providers: [],
