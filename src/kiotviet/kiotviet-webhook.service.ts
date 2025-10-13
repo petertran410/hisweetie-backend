@@ -80,10 +80,10 @@ export class KiotVietWebhookService {
           }
 
           const statusMapping = {
-            1: 'CONFIRMED',
-            2: 'CANCELLED',
-            3: 'SHIPPING',
-            5: 'CANCELLED',
+            1: 'CANCELLED', // Đã hủy
+            2: 'CANCELLED', // Không giao được (coi như hủy)
+            3: 'DELIVERED', // Hoàn thành ✅
+            5: 'CONFIRMED', // Đã xác nhận
           };
 
           const internalStatus = statusMapping[order.Status];
