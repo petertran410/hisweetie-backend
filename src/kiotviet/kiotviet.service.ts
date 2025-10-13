@@ -528,4 +528,135 @@ export class KiotVietService {
       throw error;
     }
   }
+
+  async handleOrderWebhook(webhookData: any): Promise<void> {
+    try {
+      const { Id, Attempt, Notifications } = webhookData;
+
+      if (!Notifications || Notifications.length === 0) {
+        this.logger.warn('⚠️ Webhook has no notifications');
+        return;
+      }
+
+      for (const notification of Notifications) {
+        const { Action, Data } = notification;
+
+        if (!Data || Data.length === 0) {
+          continue;
+        }
+
+        for (const orderData of Data) {
+          const {
+            Id: orderId,
+            Code,
+            BranchId,
+            Status,
+            StatusValue,
+          } = orderData;
+
+          if (BranchId !== 496738) {
+            this.logger.log(
+              `⏭️ Skipping order ${Code} - BranchId ${BranchId} not 496738`,
+            );
+            continue;
+          }
+
+          this.logger.log(
+            `🔄 Processing order ${Code} with status ${Status} (${StatusValue})`,
+          );
+
+          let newStatus: string | null = null;
+
+          if (Status === 5) {
+            newStatus = 'CONFIRMED';
+            this.logger.log(`✅ Order ${Code} → CONFIRMED (Đã nhận đơn)`);
+          } else if (Status === 3) {
+            newStatus = 'SHIPPING';
+            this.logger.log(`🚚 Order ${Code} → SHIPPING (Đang giao hàng)`);
+          } else {
+            this.logger.log(
+              `ℹ️ Order ${Code} status ${Status} not mapped, skipping`,
+            );
+            continue;
+          }
+
+          if (newStatus) {
+            await this.updateOrderStatusByKiotId(orderId, newStatus, {
+              kiotOrderId: orderId,
+              kiotOrderCode: Code,
+              kiotStatus: Status,
+              kiotStatusValue: StatusValue,
+              webhookId: Id,
+              attempt: Attempt,
+              action: Action,
+            });
+          }
+        }
+      }
+    } catch (error) {
+      this.logger.error('❌ handleOrderWebhook error:', error);
+      throw error;
+    }
+  }
+
+  private async updateOrderStatusByKiotId(
+    kiotOrderId: number,
+    newStatus: string,
+    webhookInfo: any,
+  ): Promise<void> {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient();
+
+    try {
+      const order = await prisma.product_order.findFirst({
+        where: { order_kiot_id: kiotOrderId },
+      });
+
+      if (!order) {
+        this.logger.warn(`⚠️ Order not found for KiotViet ID: ${kiotOrderId}`);
+        return;
+      }
+
+      await prisma.product_order.update({
+        where: { id: order.id },
+        data: {
+          status: newStatus,
+          updated_date: new Date(),
+        },
+      });
+
+      await prisma.webhook_log.create({
+        data: {
+          webhook_type: 'kiotviet.order.update',
+          payload: webhookInfo,
+          processed: true,
+          created_at: new Date(),
+        },
+      });
+
+      await prisma.payment_logs.create({
+        data: {
+          order_id: order.id,
+          event_type: 'KIOTVIET_ORDER_STATUS_UPDATE',
+          event_data: {
+            oldStatus: order.status,
+            newStatus: newStatus,
+            webhookInfo: webhookInfo,
+          },
+          created_date: new Date(),
+          ip_address: 'KIOTVIET_WEBHOOK',
+          user_agent: 'KIOTVIET_WEBHOOK_HANDLER',
+        },
+      });
+
+      this.logger.log(
+        `✅ Updated order ${order.id} status from ${order.status} to ${newStatus}`,
+      );
+    } catch (error) {
+      this.logger.error('❌ updateOrderStatusByKiotId error:', error);
+      throw error;
+    } finally {
+      await prisma.$disconnect();
+    }
+  }
 }
