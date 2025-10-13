@@ -25,16 +25,38 @@ export class KiotVietWebhookService {
       return true;
     }
 
+    if (!signature) {
+      this.logger.error('No signature provided');
+      return false;
+    }
+
     const hmac = crypto.createHmac(
       'sha256',
       Buffer.from(this.WEBHOOK_SECRET, 'base64'),
     );
-    const calculatedSignature = 'sha256=' + hmac.update(body).digest('hex');
+    const calculatedHex = hmac.update(body, 'utf8').digest('hex');
 
-    return crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(calculatedSignature),
-    );
+    let receivedHex = signature.trim();
+    if (receivedHex.toLowerCase().startsWith('sha256=')) {
+      receivedHex = receivedHex.substring(7);
+    }
+
+    if (receivedHex.length !== calculatedHex.length) {
+      this.logger.error(
+        `Signature length mismatch - Received: ${receivedHex.length} bytes, Expected: ${calculatedHex.length} bytes`,
+      );
+      return false;
+    }
+
+    try {
+      return crypto.timingSafeEqual(
+        Buffer.from(receivedHex.toLowerCase(), 'hex'),
+        Buffer.from(calculatedHex, 'hex'),
+      );
+    } catch (error) {
+      this.logger.error(`Signature comparison error: ${error.message}`);
+      return false;
+    }
   }
 
   async processOrderStatusChange(

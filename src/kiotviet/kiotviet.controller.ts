@@ -21,7 +21,13 @@ export class KiotVietWebhookController {
     this.logger.log(`Webhook ID: ${webhookData.Id}`);
     this.logger.log(`Notifications: ${webhookData.Notifications?.length || 0}`);
 
-    const rawBody = JSON.stringify(webhookData);
+    const rawBody = req.rawBody;
+
+    if (!rawBody) {
+      this.logger.warn(
+        '⚠️ rawBody not available, signature verification may fail',
+      );
+    }
 
     const result = await this.webhookService.processOrderStatusChange(
       webhookData,
