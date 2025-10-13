@@ -41,4 +41,4 @@ async function deleteWebhook(webhookId: number) {
   }
 }
 
-deleteWebhook(500217794);
+deleteWebhook(500218993);
