@@ -106,4 +106,13 @@ export class ClientUserController {
   ) {
     return this.clientUserService.cancelOrder(client.clientId, orderId);
   }
+
+  @Get('orders/:orderId')
+  @ApiOperation({ summary: 'Get order details' })
+  async getOrderDetail(
+    @CurrentClient() client: any,
+    @Param('orderId') orderId: string,
+  ) {
+    return this.clientUserService.getOrderDetail(client.clientId, orderId);
+  }
 }

@@ -304,4 +304,54 @@ export class ClientUserService {
       message: 'Order cancelled successfully',
     };
   }
+
+  async getOrderDetail(clientId: number, orderId: string) {
+    const order = await this.prisma.product_order.findFirst({
+      where: {
+        id: BigInt(orderId),
+        client_user_id: clientId,
+      },
+      include: {
+        orders: {
+          include: {
+            product: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return {
+      id: order.id.toString(),
+      orderCode: order.order_kiot_code || `DH${order.id}`,
+      status: order.status,
+      paymentStatus: order.payment_status,
+      paymentMethod: order.payment_method,
+      total: Number(order.total),
+      fullName: order.full_name,
+      phone: order.phone,
+      email: order.email,
+      address: [
+        order.detailed_address,
+        order.ward,
+        order.district,
+        order.province,
+      ]
+        .filter(Boolean)
+        .join(', '),
+      createdDate: order.created_date,
+      items: order.orders.map((item) => ({
+        productId: item.product_id?.toString(),
+        productName: item.product?.title || item.product?.kiotviet_name,
+        quantity: item.quantity,
+        price: Number(item.product?.kiotviet_price || 0),
+        image: Array.isArray(item.product?.kiotviet_images)
+          ? item.product.kiotviet_images[0]
+          : null,
+      })),
+    };
+  }
 }
