@@ -549,14 +549,14 @@ export class KiotVietService {
           const {
             Id: orderId,
             Code,
-            BranchId,
+            SaleChannelId,
             Status,
             StatusValue,
           } = orderData;
 
-          if (BranchId !== 496738) {
+          if (SaleChannelId !== 496738) {
             this.logger.log(
-              `⏭️ Skipping order ${Code} - BranchId ${BranchId} not 496738`,
+              `⏭️ Skipping order ${Code} - SaleChannelId ${SaleChannelId} not 496738`,
             );
             continue;
           }
@@ -584,6 +584,7 @@ export class KiotVietService {
             await this.updateOrderStatusByKiotId(orderId, newStatus, {
               kiotOrderId: orderId,
               kiotOrderCode: Code,
+              saleChannelId: SaleChannelId,
               kiotStatus: Status,
               kiotStatusValue: StatusValue,
               webhookId: Id,
