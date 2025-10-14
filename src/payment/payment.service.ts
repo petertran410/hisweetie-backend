@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SepayService } from './sepay.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { KiotVietService } from 'src/kiotviet/kiotviet.service';
+import { CartService } from '../cart/cart.service';
 
 @Injectable()
 export class PaymentService {
@@ -12,6 +13,7 @@ export class PaymentService {
     private prisma: PrismaService,
     private sepayService: SepayService,
     private kiotVietService: KiotVietService,
+    private cartService: CartService,
   ) {}
 
   async createOrder(createPaymentDto: CreatePaymentDto) {
@@ -90,6 +92,13 @@ export class PaymentService {
             created_by: 'SYSTEM',
           },
         });
+      }
+
+      if (clientUserId?.client_id) {
+        await this.cartService.clearCart(clientUserId.client_id);
+        this.logger.log(
+          `Cart cleared for client_id: ${clientUserId.client_id}`,
+        );
       }
 
       await this.logPaymentEvent(Number(order.id), 'ORDER_CREATED', {
@@ -176,6 +185,13 @@ export class PaymentService {
             created_by: 'SYSTEM',
           },
         });
+      }
+
+      if (clientUserId?.client_id) {
+        await this.cartService.clearCart(clientUserId.client_id);
+        this.logger.log(
+          `Cart cleared for client_id: ${clientUserId.client_id} after COD order`,
+        );
       }
 
       await this.logPaymentEvent(Number(order.id), 'COD_ORDER_CREATED', {

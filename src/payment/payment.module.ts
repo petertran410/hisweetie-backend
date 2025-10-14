@@ -6,6 +6,7 @@ import { PaymentService } from './payment.service';
 import { SepayService } from './sepay.service';
 import { KiotVietService } from '../kiotviet/kiotviet.service';
 import { PrismaModule } from '../prisma/prisma.module';
+import { CartModule } from '../cart/cart.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { PrismaModule } from '../prisma/prisma.module';
       maxRedirects: 5,
     }),
     PrismaModule,
+    CartModule,
   ],
   controllers: [PaymentController],
   providers: [PaymentService, SepayService, KiotVietService],
