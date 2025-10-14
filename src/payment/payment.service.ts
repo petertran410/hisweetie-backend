@@ -493,6 +493,7 @@ export class PaymentService {
             province: order.province || undefined,
             ward: order.ward || undefined,
             district: order.district || undefined,
+            clientId: clientUser?.client_id,
           });
 
           kiotCustomerId = kiotCustomer.id;

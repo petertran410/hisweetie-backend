@@ -127,6 +127,7 @@ export class KiotVietService {
     province?: string;
     ward?: string;
     district?: string;
+    clientId?: number;
   }): Promise<any> {
     const token = await this.getAccessToken();
 
@@ -141,6 +142,10 @@ export class KiotVietService {
       address: customerData.address || '',
       branchId: 635934,
     };
+
+    if (customerData.clientId) {
+      payload.code = this.generateCustomerCode(customerData.clientId);
+    }
 
     if (customerData.email?.trim()) {
       payload.email = customerData.email.trim();
@@ -182,7 +187,7 @@ export class KiotVietService {
       const customerData = response.data.data || response.data;
 
       this.logger.log(
-        `✅ Created customer: ${customerData.id} (${customerData.name})`,
+        `✅ Created customer: ${customerData.id} (${customerData.name}) with code: ${customerData.code}`,
       );
       return customerData;
     } catch (error) {
@@ -259,6 +264,11 @@ export class KiotVietService {
       );
       throw error;
     }
+  }
+
+  private generateCustomerCode(clientId: number): string {
+    const paddedId = clientId.toString().padStart(8, '0');
+    return `KHWEB${paddedId}1`;
   }
 
   async createOrder(orderData: {

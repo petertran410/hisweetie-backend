@@ -170,6 +170,7 @@ export class ClientAuthService {
         province: user.province || '',
         district: user.district || '',
         ward: user.ward || '',
+        clientId: user.client_id,
       });
 
       await this.prisma.client_user.update({
