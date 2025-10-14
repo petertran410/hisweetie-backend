@@ -81,6 +81,7 @@ model product {
   @@index([kiotviet_trademark_id])
   @@index([is_from_kiotviet])
   @@index([slug])
+  cart cart[]
 }
 
 model category {
@@ -321,6 +322,8 @@ model client_user {
   verification_code_expires DateTime?       @db.DateTime(6)
   is_verified              Boolean         @default(false) @db.Bit(1)
   product_orders           product_order[]
+
+  cart cart[]
 }
 
 model sync_log {
@@ -410,4 +413,20 @@ model pages {
   @@index([parent_id])
   @@index([display_order])
   @@index([is_active])
+}
+
+model cart {
+  id         Int       @id @default(autoincrement())
+  client_id  Int
+  product_id BigInt
+  quantity   Int       @default(1)
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  
+  client_user client_user @relation(fields: [client_id], references: [client_id], onDelete: Cascade)
+  product     product     @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  
+  @@unique([client_id, product_id])
+  @@index([client_id])
+  @@index([product_id])
 }
