@@ -267,8 +267,8 @@ export class KiotVietService {
   }
 
   private generateCustomerCode(clientId: number): string {
-    const paddedId = clientId.toString().padStart(8, '0');
-    return `KHWEB${paddedId}1`;
+    const paddedId = clientId.toString().padStart(9, '0');
+    return `KHWEB${paddedId}`;
   }
 
   async createOrder(orderData: {
