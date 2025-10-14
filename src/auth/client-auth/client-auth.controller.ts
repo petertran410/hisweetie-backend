@@ -25,6 +25,11 @@ import { ClientRegisterDto } from './dto/client-register.dto';
 import { ClientLoginDto } from './dto/client-login.dto';
 import { ClientJwtAuthGuard } from './client-jwt-auth.guard';
 import { CurrentClient } from './current-client.decorator';
+import {
+  ForgotPasswordRequestDto,
+  VerifyForgotPasswordOtpDto,
+  ResetPasswordDto,
+} from './dto/client-forgot-password.dto';
 
 @ApiTags('client-auth')
 @Controller('client-auth')
@@ -242,6 +247,75 @@ export class ClientAuthController {
     } catch (error) {
       this.clearRefreshTokenCookie(response);
       return { authenticated: false, message: 'Invalid refresh token' };
+    }
+  }
+
+  @Post('forgot-password/request')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request forgot password - Send OTP to email' })
+  @ApiResponse({ status: 200, description: 'OTP sent to email' })
+  @ApiResponse({ status: 404, description: 'Email not found' })
+  async forgotPasswordRequest(@Body() body: ForgotPasswordRequestDto) {
+    try {
+      const result = await this.clientAuthService.forgotPasswordRequest(
+        body.email,
+      );
+      return result;
+    } catch (error) {
+      if (error.status && error.status !== 500) {
+        throw error;
+      }
+      throw new HttpException(
+        'Failed to send OTP',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('forgot-password/verify-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify OTP for forgot password' })
+  @ApiResponse({ status: 200, description: 'OTP verified successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid or expired OTP' })
+  async verifyForgotPasswordOtp(@Body() body: VerifyForgotPasswordOtpDto) {
+    try {
+      const result = await this.clientAuthService.verifyForgotPasswordOtp(
+        body.email,
+        body.code,
+      );
+      return result;
+    } catch (error) {
+      if (error.status && error.status !== 500) {
+        throw error;
+      }
+      throw new HttpException(
+        'OTP verification failed',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  @Post('forgot-password/reset')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset password with OTP' })
+  @ApiResponse({ status: 200, description: 'Password reset successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid request' })
+  async resetPassword(@Body() body: ResetPasswordDto) {
+    try {
+      const result = await this.clientAuthService.resetPassword(
+        body.email,
+        body.code,
+        body.new_password,
+      );
+      return result;
+    } catch (error) {
+      if (error.status && error.status !== 500) {
+        throw error;
+      }
+      throw new HttpException(
+        'Password reset failed',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 }

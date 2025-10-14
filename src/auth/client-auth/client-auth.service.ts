@@ -3,6 +3,7 @@ import {
   ConflictException,
   UnauthorizedException,
   BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -316,5 +317,107 @@ export class ClientAuthService {
       data: { refresh_token: null },
     });
     return { message: 'Logout successful' };
+  }
+
+  async forgotPasswordRequest(email: string) {
+    const user = await this.prisma.client_user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Email không tồn tại trong hệ thống');
+    }
+
+    if (this.pendingRegistrations.has(email)) {
+      this.pendingRegistrations.delete(email);
+    }
+
+    const verificationCode = this.generateVerificationCode();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    this.pendingRegistrations.set(email, {
+      full_name: user.full_name || '',
+      email: user.email || '',
+      phone: user.phone || '',
+      hashedPassword: '',
+      verificationCode,
+      expiresAt,
+    });
+
+    await this.transporter.sendMail({
+      from: this.configService.get('MAIL_FROM'),
+      to: email,
+      subject: 'Mã xác thực đặt lại mật khẩu - Diệp Trà',
+      html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #065FD4;">Đặt lại mật khẩu - Diệp Trà</h2>
+        <p>Xin chào <strong>${user.full_name}</strong>,</p>
+        <p>Bạn đã yêu cầu đặt lại mật khẩu. Mã xác thực của bạn là:</p>
+        <div style="background: #f5f5f5; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #065FD4;">
+          ${verificationCode}
+        </div>
+        <p style="color: #666;">Mã có hiệu lực trong <strong>10 phút</strong>.</p>
+        <p style="color: #999; font-size: 14px;">Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này.</p>
+        <p>Trân trọng,<br>Đội ngũ Diệp Trà</p>
+      </div>
+    `,
+    });
+
+    return {
+      message: 'Mã xác thực đã được gửi đến email của bạn',
+      email,
+    };
+  }
+
+  async verifyForgotPasswordOtp(email: string, code: string) {
+    const pendingData = this.pendingRegistrations.get(email);
+
+    if (!pendingData) {
+      throw new BadRequestException('Không tìm thấy yêu cầu đặt lại mật khẩu');
+    }
+
+    if (new Date() > pendingData.expiresAt) {
+      this.pendingRegistrations.delete(email);
+      throw new BadRequestException('Mã xác thực đã hết hạn');
+    }
+
+    if (pendingData.verificationCode !== code) {
+      throw new BadRequestException('Mã xác thực không đúng');
+    }
+
+    return {
+      message: 'Mã xác thực hợp lệ',
+      email,
+    };
+  }
+
+  async resetPassword(email: string, code: string, newPassword: string) {
+    const pendingData = this.pendingRegistrations.get(email);
+
+    if (!pendingData) {
+      throw new BadRequestException('Không tìm thấy yêu cầu đặt lại mật khẩu');
+    }
+
+    if (new Date() > pendingData.expiresAt) {
+      this.pendingRegistrations.delete(email);
+      throw new BadRequestException('Mã xác thực đã hết hạn');
+    }
+
+    if (pendingData.verificationCode !== code) {
+      throw new BadRequestException('Mã xác thực không đúng');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await this.prisma.client_user.update({
+      where: { email },
+      data: { pass_word: hashedPassword },
+    });
+
+    this.pendingRegistrations.delete(email);
+
+    return {
+      message: 'Mật khẩu đã được đặt lại thành công',
+    };
   }
 }
