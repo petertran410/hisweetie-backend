@@ -407,6 +407,19 @@ export class ClientAuthService {
       throw new BadRequestException('Mã xác thực không đúng');
     }
 
+    const user = await this.prisma.client_user.findUnique({
+      where: { email },
+    });
+
+    if (user && user.pass_word) {
+      const isSamePassword = await bcrypt.compare(newPassword, user.pass_word);
+      if (isSamePassword) {
+        throw new BadRequestException(
+          'Mật khẩu mới không được trùng với mật khẩu cũ',
+        );
+      }
+    }
+
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     await this.prisma.client_user.update({
