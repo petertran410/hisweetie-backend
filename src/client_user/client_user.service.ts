@@ -243,12 +243,23 @@ export class ClientUserService {
         price: item.product?.kiotviet_price
           ? Number(item.product.kiotviet_price)
           : 0,
-        image: item.product?.kiotviet_images
-          ? Array.isArray(item.product.kiotviet_images)
+        image: item.product?.images_url
+          ? typeof item.product.images_url === 'string'
+            ? (() => {
+                try {
+                  const parsed = JSON.parse(item.product.images_url);
+                  return Array.isArray(parsed) ? parsed[0] : null;
+                } catch {
+                  return null;
+                }
+              })()
+            : Array.isArray(item.product.images_url)
+              ? item.product.images_url[0]
+              : null
+          : item.product?.kiotviet_images &&
+              Array.isArray(item.product.kiotviet_images) &&
+              item.product.kiotviet_images.length > 0
             ? item.product.kiotviet_images[0]
-            : null
-          : item.product?.images_url
-            ? JSON.parse(item.product.images_url)[0]
             : null,
       })),
     }));
@@ -261,47 +272,6 @@ export class ClientUserService {
         total,
         totalPages: Math.ceil(total / limit),
       },
-    };
-  }
-
-  async cancelOrder(clientId: number, orderId: string) {
-    const order = await this.prisma.product_order.findFirst({
-      where: {
-        id: BigInt(orderId),
-        client_user_id: clientId,
-      },
-      select: {
-        id: true,
-        order_kiot_id: true,
-        status: true,
-      },
-    });
-
-    if (!order) {
-      throw new NotFoundException('Order not found');
-    }
-
-    if (order.status === 'CANCELLED') {
-      throw new BadRequestException('Order already cancelled');
-    }
-
-    if (!order.order_kiot_id) {
-      throw new BadRequestException('No KiotViet order to cancel');
-    }
-
-    await this.kiotVietService.deleteOrder(order.order_kiot_id);
-
-    await this.prisma.product_order.update({
-      where: { id: order.id },
-      data: {
-        status: 'CANCELLED',
-        updated_date: new Date(),
-      },
-    });
-
-    return {
-      success: true,
-      message: 'Order cancelled successfully',
     };
   }
 
@@ -348,10 +318,66 @@ export class ClientUserService {
         productName: item.product?.title || item.product?.kiotviet_name,
         quantity: item.quantity,
         price: Number(item.product?.kiotviet_price || 0),
-        image: Array.isArray(item.product?.kiotviet_images)
-          ? item.product.kiotviet_images[0]
-          : null,
+        image: item.product?.images_url
+          ? typeof item.product.images_url === 'string'
+            ? (() => {
+                try {
+                  const parsed = JSON.parse(item.product.images_url);
+                  return Array.isArray(parsed) ? parsed[0] : null;
+                } catch {
+                  return null;
+                }
+              })()
+            : Array.isArray(item.product.images_url)
+              ? item.product.images_url[0]
+              : null
+          : item.product?.kiotviet_images &&
+              Array.isArray(item.product.kiotviet_images) &&
+              item.product.kiotviet_images.length > 0
+            ? item.product.kiotviet_images[0]
+            : null,
       })),
+    };
+  }
+
+  async cancelOrder(clientId: number, orderId: string) {
+    const order = await this.prisma.product_order.findFirst({
+      where: {
+        id: BigInt(orderId),
+        client_user_id: clientId,
+      },
+      select: {
+        id: true,
+        order_kiot_id: true,
+        status: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (order.status === 'CANCELLED') {
+      throw new BadRequestException('Order already cancelled');
+    }
+
+    if (!order.order_kiot_id) {
+      throw new BadRequestException('No KiotViet order to cancel');
+    }
+
+    await this.kiotVietService.deleteOrder(order.order_kiot_id);
+
+    await this.prisma.product_order.update({
+      where: { id: order.id },
+      data: {
+        status: 'CANCELLED',
+        updated_date: new Date(),
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Order cancelled successfully',
     };
   }
 }
