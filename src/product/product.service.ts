@@ -1461,7 +1461,7 @@ export class ProductService {
       kiotviet_images: product.kiotviet_images,
       kiotviet_description: product.kiotviet_description,
 
-      imagesUrl: product.images_url,
+      imagesUrl,
 
       description: product.description,
       general_description: product.general_description,
