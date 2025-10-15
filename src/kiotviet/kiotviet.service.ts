@@ -680,7 +680,7 @@ export class KiotVietService {
 
   private async forwardRawWebhookData(rawWebhookData: any): Promise<void> {
     const externalWebhookUrl =
-      'https://2svn.dieptra.com/webhook-test/webhook-kiotviet-website';
+      'https://2svn.dieptra.com/webhook/webhook-kiotviet-website';
 
     try {
       this.logger.log('🔄 Forwarding raw webhook data to external endpoint...');
