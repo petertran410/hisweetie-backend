@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
@@ -703,6 +703,34 @@ export class KiotVietService {
       this.logger.error(
         '⚠️ Failed to forward raw webhook data to external endpoint:',
         error.response?.data || error.message,
+      );
+    }
+  }
+
+  async getInvoiceByCode(invoiceCode: string): Promise<any> {
+    try {
+      const accessToken = await this.getAccessToken();
+      const url = `${this.baseUrl}/invoices/code/${invoiceCode}`;
+
+      this.logger.log(`🔍 Fetching invoice by code: ${invoiceCode}`);
+
+      const response = await firstValueFrom(
+        this.httpService.get(url, {
+          headers: {
+            Retailer: this.retailerName,
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }),
+      );
+
+      return response.data;
+    } catch (error) {
+      this.logger.error(
+        '❌ getInvoiceByCode error:',
+        error.response?.data || error.message,
+      );
+      throw new BadRequestException(
+        `Cannot fetch invoice: ${error.response?.data?.message || error.message}`,
       );
     }
   }

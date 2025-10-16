@@ -22,6 +22,10 @@ import {
 } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { UpdateClientUserDto } from './dto/create-client-user.dto';
+import { ApiKeyAuthGuard } from '../auth/api-key-auth.guard';
+import { ConfirmOrderReceivedDto } from './dto/confirm-order-received.dto';
+import { Post } from '@nestjs/common';
+import { Public } from '../auth/public.decorator';
 
 @ApiTags('client-user')
 @Controller('client-user')
@@ -114,5 +118,26 @@ export class ClientUserController {
     @Param('orderId') orderId: string,
   ) {
     return this.clientUserService.getOrderDetail(client.clientId, orderId);
+  }
+
+  @Public()
+  @Post('public/orders/:orderId/confirm-received')
+  @UseGuards(ApiKeyAuthGuard)
+  @ApiOperation({
+    summary: 'Confirm order received by customer (External API with API Key)',
+  })
+  @ApiResponse({ status: 200, description: 'Order confirmed successfully' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid invoice or order mismatch',
+  })
+  @ApiResponse({ status: 401, description: 'Invalid API Key' })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  @UsePipes(new ValidationPipe())
+  async confirmOrderReceived(
+    @Param('orderId') orderId: string,
+    @Body() dto: ConfirmOrderReceivedDto,
+  ) {
+    return this.clientUserService.confirmOrderReceived(orderId, dto.orderCode);
   }
 }

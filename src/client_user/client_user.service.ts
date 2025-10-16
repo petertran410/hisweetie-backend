@@ -380,4 +380,79 @@ export class ClientUserService {
       message: 'Order cancelled successfully',
     };
   }
+
+  async confirmOrderReceived(orderId: string, invoiceCode: string) {
+    const order = await this.prisma.product_order.findUnique({
+      where: { id: BigInt(orderId) },
+      select: {
+        id: true,
+        order_kiot_id: true,
+        order_kiot_code: true,
+        status: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (!order.order_kiot_code) {
+      throw new BadRequestException('Order has no KiotViet code');
+    }
+
+    if (order.status === 'CUSTOMER_RECEIVED') {
+      throw new BadRequestException('Order already confirmed as received');
+    }
+
+    if (order.status === 'CANCELLED') {
+      throw new BadRequestException('Cannot confirm cancelled order');
+    }
+
+    const invoice = await this.kiotVietService.getInvoiceByCode(invoiceCode);
+
+    if (!invoice || !invoice.orderCode) {
+      throw new BadRequestException(
+        'Invalid invoice or invoice has no order code',
+      );
+    }
+
+    if (invoice.orderCode !== order.order_kiot_code) {
+      throw new BadRequestException(
+        'Invoice does not match this order. Invoice belongs to different order.',
+      );
+    }
+
+    await this.prisma.product_order.update({
+      where: { id: order.id },
+      data: {
+        status: 'CUSTOMER_RECEIVED',
+        updated_date: new Date(),
+      },
+    });
+
+    await this.prisma.payment_logs.create({
+      data: {
+        order_id: order.id,
+        event_type: 'ORDER_CUSTOMER_RECEIVED',
+        event_data: {
+          invoiceCode,
+          invoiceOrderCode: invoice.orderCode,
+          matchedOrderCode: order.order_kiot_code,
+          confirmedAt: new Date().toISOString(),
+        },
+        created_date: new Date(),
+        ip_address: 'API_KEY_AUTH',
+        user_agent: 'EXTERNAL_WEBHOOK',
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Order confirmed as received by customer',
+      orderId: order.id.toString(),
+      orderCode: order.order_kiot_code,
+      invoiceCode,
+      status: 'CUSTOMER_RECEIVED',
+    };
+  }
 }
