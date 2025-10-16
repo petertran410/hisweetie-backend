@@ -518,7 +518,7 @@ export class KiotVietService {
     try {
       const response = await firstValueFrom(
         this.httpService.delete(
-          `${this.baseUrl}/orders/${orderId}?IsVoidPayment=true`,
+          `${this.baseUrl}/orders/${orderId}?IsVoidPayment=false`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
