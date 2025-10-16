@@ -9,9 +9,7 @@ import {
   UseGuards,
   Query,
   Delete,
-  Post,
 } from '@nestjs/common';
-import { ApiKeyGuard } from '../auth/api-key.guard';
 import { ClientUserService } from './client_user.service';
 import { ClientJwtAuthGuard } from '../auth/client-auth/client-jwt-auth.guard';
 import { CurrentClient } from '../auth/client-auth/current-client.decorator';
@@ -21,11 +19,9 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiQuery,
-  ApiHeader,
 } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { UpdateClientUserDto } from './dto/create-client-user.dto';
-import { Public } from 'src/auth/public.decorator';
 
 @ApiTags('client-user')
 @Controller('client-user')
@@ -118,33 +114,5 @@ export class ClientUserController {
     @Param('orderId') orderId: string,
   ) {
     return this.clientUserService.getOrderDetail(client.clientId, orderId);
-  }
-
-  @Public()
-  @UseGuards(ApiKeyGuard)
-  @Post('public/orders/:orderId/confirm-received')
-  @ApiOperation({
-    summary: 'Public API to confirm order received (requires API Key)',
-  })
-  @ApiHeader({
-    name: 'Authorization',
-    description: 'API Key for authentication',
-    required: true,
-  })
-  @ApiResponse({ status: 200, description: 'Order confirmed successfully' })
-  @ApiResponse({ status: 401, description: 'Invalid or missing API Key' })
-  async publicConfirmOrderReceived(
-    @Param('orderId') orderId: string,
-    @Body()
-    body: {
-      orderCode: string;
-      phone: string;
-    },
-  ) {
-    return this.clientUserService.publicConfirmOrderReceived(
-      orderId,
-      body.orderCode,
-      body.phone,
-    );
   }
 }
