@@ -706,4 +706,61 @@ export class KiotVietService {
       );
     }
   }
+
+  async getOrderById(orderId: number): Promise<any> {
+    const token = await this.getAccessToken();
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(`${this.baseUrl}/orders/${orderId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Retailer: this.retailerName,
+          },
+        }),
+      );
+
+      this.logger.log(`✅ Retrieved order detail: ${orderId}`);
+      return response.data;
+    } catch (error) {
+      this.logger.error(
+        `❌ Get order failed: ${orderId}`,
+        error.response?.data,
+      );
+      throw error;
+    }
+  }
+
+  async verifyOrderDelivered(orderId: number): Promise<{
+    isDelivered: boolean;
+    hasInvoice: boolean;
+    deliveryStatus: number;
+    orderData: any;
+  }> {
+    try {
+      const orderDetail = await this.getOrderById(orderId);
+
+      const deliveryStatus = orderDetail.orderDelivery?.status || 0;
+      const isDelivered = deliveryStatus === 3;
+      const hasInvoice = orderDetail.status === 1;
+
+      this.logger.log(`🔍 Order ${orderId} verification:`, {
+        deliveryStatus,
+        isDelivered,
+        hasInvoice,
+        orderStatus: orderDetail.status,
+        orderCode: orderDetail.code,
+      });
+
+      return {
+        isDelivered,
+        hasInvoice,
+        deliveryStatus,
+        orderData: orderDetail,
+      };
+    } catch (error) {
+      this.logger.error(`❌ Verify order failed: ${orderId}`, error);
+      throw error;
+    }
+  }
 }
