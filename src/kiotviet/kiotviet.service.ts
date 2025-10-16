@@ -84,7 +84,6 @@ export class KiotVietService {
     }
   }
 
-  // ✅ FIX: Validate branch trước khi tạo customer/order
   async validateBranchId(): Promise<void> {
     const token = await this.getAccessToken();
 
@@ -605,12 +604,7 @@ export class KiotVietService {
         }
       }
 
-      this.forwardRawWebhookData(webhookData).catch((error) => {
-        this.logger.error(
-          '❌ Unhandled error in raw webhook forwarding:',
-          error,
-        );
-      });
+      this.forwardRawWebhookData(webhookData);
     } catch (error) {
       this.logger.error('❌ handleOrderWebhook error:', error);
       throw error;
@@ -687,12 +681,7 @@ export class KiotVietService {
 
       const response = await firstValueFrom(
         this.httpService.post(externalWebhookUrl, rawWebhookData, {
-          headers: {
-            // 'Content-Type': 'application/json',
-            // 'X-Forwarded-From': 'HiSweetie-Backend',
-            // 'X-Original-Source': 'KiotViet-Webhook',
-          },
-          timeout: 10000,
+          headers: {},
         }),
       );
 

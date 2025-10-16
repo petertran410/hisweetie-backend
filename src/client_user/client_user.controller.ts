@@ -121,10 +121,13 @@ export class ClientUserController {
   }
 
   @Public()
-  @Post('public/orders/:orderId/confirm-received')
+  @Post('public/orders/confirm-received')
   @UseGuards(ApiKeyAuthGuard)
   @ApiOperation({
-    summary: 'Confirm order received by customer (External API with API Key)',
+    summary:
+      'Confirm order received by customer using Invoice Code only (External API with API Key)',
+    description:
+      'External system only needs to provide Invoice Code. Backend will automatically find and update the corresponding order.',
   })
   @ApiResponse({ status: 200, description: 'Order confirmed successfully' })
   @ApiResponse({
@@ -132,12 +135,9 @@ export class ClientUserController {
     description: 'Invalid invoice or order mismatch',
   })
   @ApiResponse({ status: 401, description: 'Invalid API Key' })
-  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({ status: 404, description: 'Order not found for this invoice' })
   @UsePipes(new ValidationPipe())
-  async confirmOrderReceived(
-    @Param('orderId') orderId: string,
-    @Body() dto: ConfirmOrderReceivedDto,
-  ) {
-    return this.clientUserService.confirmOrderReceived(orderId, dto.orderCode);
+  async confirmOrderReceived(@Body() dto: ConfirmOrderReceivedDto) {
+    return this.clientUserService.confirmOrderReceived(dto.orderCode);
   }
 }

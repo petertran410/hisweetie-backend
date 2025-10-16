@@ -381,9 +381,17 @@ export class ClientUserService {
     };
   }
 
-  async confirmOrderReceived(orderId: string, invoiceCode: string) {
-    const order = await this.prisma.product_order.findUnique({
-      where: { id: BigInt(orderId) },
+  async confirmOrderReceived(invoiceCode: string) {
+    const invoice = await this.kiotVietService.getInvoiceByCode(invoiceCode);
+
+    if (!invoice || !invoice.orderCode) {
+      throw new BadRequestException(
+        'Invalid invoice or invoice has no order code',
+      );
+    }
+
+    const order = await this.prisma.product_order.findFirst({
+      where: { order_kiot_code: invoice.orderCode },
       select: {
         id: true,
         order_kiot_id: true,
@@ -393,11 +401,9 @@ export class ClientUserService {
     });
 
     if (!order) {
-      throw new NotFoundException('Order not found');
-    }
-
-    if (!order.order_kiot_code) {
-      throw new BadRequestException('Order has no KiotViet code');
+      throw new NotFoundException(
+        `Order not found for KiotViet order code: ${invoice.orderCode}`,
+      );
     }
 
     if (order.status === 'CUSTOMER_RECEIVED') {
@@ -406,20 +412,6 @@ export class ClientUserService {
 
     if (order.status === 'CANCELLED') {
       throw new BadRequestException('Cannot confirm cancelled order');
-    }
-
-    const invoice = await this.kiotVietService.getInvoiceByCode(invoiceCode);
-
-    if (!invoice || !invoice.orderCode) {
-      throw new BadRequestException(
-        'Invalid invoice or invoice has no order code',
-      );
-    }
-
-    if (invoice.orderCode !== order.order_kiot_code) {
-      throw new BadRequestException(
-        'Invoice does not match this order. Invoice belongs to different order.',
-      );
     }
 
     await this.prisma.product_order.update({
@@ -452,6 +444,7 @@ export class ClientUserService {
       orderId: order.id.toString(),
       orderCode: order.order_kiot_code,
       invoiceCode,
+      invoiceId: invoice.id,
       status: 'CUSTOMER_RECEIVED',
     };
   }
