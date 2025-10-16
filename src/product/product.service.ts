@@ -1348,10 +1348,13 @@ export class ProductService {
         where.OR = [
           { title: { equals: searchTerm } },
           { kiotviet_name: { equals: searchTerm } },
+          { kiotviet_code: { equals: searchTerm } },
           { title: { startsWith: searchTerm } },
           { kiotviet_name: { startsWith: searchTerm } },
+          { kiotviet_code: { startsWith: searchTerm } },
           { title: { contains: searchTerm } },
           { kiotviet_name: { contains: searchTerm } },
+          { kiotviet_code: { contains: searchTerm } },
         ];
       }
 
