@@ -582,6 +582,11 @@ export class KiotVietService {
           } else if (Status === 3) {
             newStatus = 'SHIPPING';
             this.logger.log(`🚚 Order ${Code} → SHIPPING (Đang giao hàng)`);
+          } else if (Status === 4) {
+            newStatus = 'CANCELLED';
+            this.logger.log(
+              `🚚 Order ${Code} → CANCELLED (Đơn hàng đã được hủy)`,
+            );
           } else {
             this.logger.log(
               `ℹ️ Order ${Code} status ${Status} not mapped, skipping`,
