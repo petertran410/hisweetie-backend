@@ -52,15 +52,17 @@ export class ClientUserService {
     return client_user;
   }
 
-  async validate(email: string, password: string) {
+  async validate(emailOrPhone: string, password: string) {
     const client_user = await this.prisma.client_user.findFirst({
-      where: { email },
+      where: {
+        OR: [{ email: emailOrPhone }, { phone: emailOrPhone }],
+      },
     });
     if (client_user && client_user.pass_word) {
       if (await bcrypt.compare(password, client_user.pass_word)) {
         return client_user;
       } else {
-        throw new UnauthorizedException('Incorrect email or password!');
+        throw new UnauthorizedException('Incorrect email/phone or password!');
       }
     } else {
       return null;

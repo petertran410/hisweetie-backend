@@ -217,12 +217,12 @@ export class ClientAuthService {
 
   async login(loginDto: ClientLoginDto) {
     const user = await this.clientUserService.validate(
-      loginDto.email,
+      loginDto.emailOrPhone,
       loginDto.pass_word,
     );
 
     if (!user) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('Invalid email/phone or password');
     }
 
     if (!user.is_verified) {
