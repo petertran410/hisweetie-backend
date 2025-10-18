@@ -439,7 +439,7 @@ export class ClientAuthService {
     providerId: string;
     email: string;
     full_name: string;
-    avatar_url?: string;
+    avatar_url: string;
   }) {
     let user = await this.prisma.client_user.findFirst({
       where: {
@@ -479,11 +479,19 @@ export class ClientAuthService {
 
       if (user.email) {
         try {
-          await this.kiotVietService.createCustomer({
+          const kiotCustomer = await this.kiotVietService.createCustomer({
             name: user.full_name || '',
             phone: user.phone || '',
             email: user.email,
             clientId: user.client_id,
+          });
+
+          await this.prisma.client_user.update({
+            where: { client_id: user.client_id },
+            data: {
+              kiotviet_customer_id: kiotCustomer.id,
+              kiot_code: kiotCustomer.code,
+            },
           });
         } catch (error) {
           console.error('Failed to create KiotViet customer:', error);
