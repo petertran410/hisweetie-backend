@@ -433,4 +433,89 @@ export class ClientAuthService {
       message: 'Mật khẩu đã được đặt lại thành công',
     };
   }
+
+  async findOrCreateOAuthUser(oauthData: {
+    provider: string;
+    providerId: string;
+    email: string;
+    full_name: string;
+    avatar_url?: string;
+  }) {
+    let user = await this.prisma.client_user.findFirst({
+      where: {
+        oauth_provider: oauthData.provider,
+        oauth_provider_id: oauthData.providerId,
+      },
+    });
+
+    if (!user && oauthData.email) {
+      user = await this.prisma.client_user.findUnique({
+        where: { email: oauthData.email },
+      });
+
+      if (user && !user.oauth_provider) {
+        user = await this.prisma.client_user.update({
+          where: { client_id: user.client_id },
+          data: {
+            oauth_provider: oauthData.provider,
+            oauth_provider_id: oauthData.providerId,
+            avatar_url: oauthData.avatar_url,
+          },
+        });
+      }
+    }
+
+    if (!user) {
+      user = await this.prisma.client_user.create({
+        data: {
+          email: oauthData.email,
+          full_name: oauthData.full_name,
+          oauth_provider: oauthData.provider,
+          oauth_provider_id: oauthData.providerId,
+          avatar_url: oauthData.avatar_url,
+          is_verified: true,
+        },
+      });
+
+      if (user.email) {
+        try {
+          await this.kiotVietService.createCustomer({
+            name: user.full_name || '',
+            phone: user.phone || '',
+            email: user.email,
+            clientId: user.client_id,
+          });
+        } catch (error) {
+          console.error('Failed to create KiotViet customer:', error);
+        }
+      }
+    }
+
+    const payload = {
+      sub: Number(user.client_id),
+      email: user.email,
+      type: 'client',
+    };
+
+    const accessToken = this.generateAccessToken(payload);
+    const refreshToken = this.generateRefreshToken(payload);
+    const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
+
+    await this.prisma.client_user.update({
+      where: { client_id: user.client_id },
+      data: { refresh_token: hashedRefreshToken },
+    });
+
+    return {
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      user: {
+        client_id: Number(user.client_id),
+        full_name: user.full_name,
+        email: user.email,
+        phone: user.phone,
+        avatar_url: user.avatar_url,
+      },
+    };
+  }
 }

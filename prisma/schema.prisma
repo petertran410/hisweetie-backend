@@ -321,9 +321,15 @@ model client_user {
   verification_code        String?         @db.VarChar(6)
   verification_code_expires DateTime?       @db.DateTime(6)
   is_verified              Boolean         @default(false) @db.Bit(1)
+  
+  oauth_provider           String?         @db.VarChar(50)
+  oauth_provider_id        String?         @db.VarChar(255)
+  avatar_url               String?         @db.Text
+  
   product_orders           product_order[]
-
   cart cart[]
+  
+  @@unique([oauth_provider, oauth_provider_id])
 }
 
 model sync_log {

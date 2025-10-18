@@ -9,6 +9,8 @@ import { ClientJwtStrategy } from './client-jwt.strategy';
 import { ClientUserModule } from '../../client_user/client_user.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { KiotVietService } from '../../kiotviet/kiotviet.service';
+import { GoogleStrategy } from './strategies/google.strategy';
+import { FacebookStrategy } from './strategies/facebook.strategy';
 
 @Module({
   imports: [
@@ -42,7 +44,13 @@ import { KiotVietService } from '../../kiotviet/kiotviet.service';
     }),
   ],
   controllers: [ClientAuthController],
-  providers: [ClientAuthService, ClientJwtStrategy, KiotVietService],
+  providers: [
+    ClientAuthService,
+    ClientJwtStrategy,
+    KiotVietService,
+    GoogleStrategy,
+    FacebookStrategy,
+  ],
   exports: [ClientAuthService, ClientJwtStrategy, PassportModule],
 })
 export class ClientAuthModule {}

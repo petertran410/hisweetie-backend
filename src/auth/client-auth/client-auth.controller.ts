@@ -30,11 +30,16 @@ import {
   VerifyForgotPasswordOtpDto,
   ResetPasswordDto,
 } from './dto/client-forgot-password.dto';
+import { AuthGuard } from '@nestjs/passport';
+import { ConfigService } from '@nestjs/config';
 
 @ApiTags('client-auth')
 @Controller('client-auth')
 export class ClientAuthController {
-  constructor(private readonly clientAuthService: ClientAuthService) {}
+  constructor(
+    private readonly clientAuthService: ClientAuthService,
+    private readonly configService: ConfigService,
+  ) {}
 
   private setRefreshTokenCookie(response: Response, refreshToken: string) {
     const isProduction = process.env.NODE_ENV === 'production';
@@ -317,5 +322,51 @@ export class ClientAuthController {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  @Get('google')
+  @UseGuards(AuthGuard('google'))
+  async googleAuth() {}
+
+  @Get('google/callback')
+  @UseGuards(AuthGuard('google'))
+  async googleAuthRedirect(
+    @Req() req: any,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.clientAuthService.findOrCreateOAuthUser(req.user);
+    this.setRefreshTokenCookie(response, result.refresh_token);
+
+    const params = new URLSearchParams({
+      token: result.access_token,
+      user: JSON.stringify(result.user),
+    });
+
+    return response.redirect(
+      `${this.configService.get('FRONTEND_URL')}/auth/callback?${params}`,
+    );
+  }
+
+  @Get('facebook')
+  @UseGuards(AuthGuard('facebook'))
+  async facebookAuth() {}
+
+  @Get('facebook/callback')
+  @UseGuards(AuthGuard('facebook'))
+  async facebookAuthRedirect(
+    @Req() req: any,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.clientAuthService.findOrCreateOAuthUser(req.user);
+    this.setRefreshTokenCookie(response, result.refresh_token);
+
+    const params = new URLSearchParams({
+      token: result.access_token,
+      user: JSON.stringify(result.user),
+    });
+
+    return response.redirect(
+      `${this.configService.get('FRONTEND_URL')}/auth/callback?${params}`,
+    );
   }
 }
