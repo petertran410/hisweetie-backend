@@ -324,10 +324,6 @@ export class ClientAuthController {
     }
   }
 
-  @Get('google')
-  @UseGuards(AuthGuard('google'))
-  async googleAuth() {}
-
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleAuthRedirect(
@@ -340,16 +336,13 @@ export class ClientAuthController {
     const params = new URLSearchParams({
       token: result.access_token,
       user: JSON.stringify(result.user),
+      needs_phone: result.needs_phone ? 'true' : 'false',
     });
 
     return response.redirect(
       `${this.configService.get('FRONTEND_URL')}/auth/callback?${params}`,
     );
   }
-
-  @Get('facebook')
-  @UseGuards(AuthGuard('facebook'))
-  async facebookAuth() {}
 
   @Get('facebook/callback')
   @UseGuards(AuthGuard('facebook'))
@@ -363,10 +356,30 @@ export class ClientAuthController {
     const params = new URLSearchParams({
       token: result.access_token,
       user: JSON.stringify(result.user),
+      needs_phone: result.needs_phone ? 'true' : 'false',
     });
 
     return response.redirect(
       `${this.configService.get('FRONTEND_URL')}/auth/callback?${params}`,
+    );
+  }
+
+  @Post('update-phone')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(ClientJwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update phone number and create KiotViet customer' })
+  @ApiResponse({
+    status: 200,
+    description: 'Phone updated and KiotViet customer created',
+  })
+  async updatePhone(
+    @CurrentClient() client: any,
+    @Body() body: { phone: string },
+  ) {
+    return this.clientAuthService.updatePhoneAndCreateKiotCustomer(
+      client.clientId,
+      body.phone,
     );
   }
 }

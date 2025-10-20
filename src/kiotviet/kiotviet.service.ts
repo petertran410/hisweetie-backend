@@ -121,7 +121,7 @@ export class KiotVietService {
   async createCustomer(customerData: {
     name: string;
     phone: string;
-    email?: string;
+    email: string | undefined;
     address?: string;
     province?: string;
     ward?: string;

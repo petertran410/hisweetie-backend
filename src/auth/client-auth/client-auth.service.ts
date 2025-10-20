@@ -465,6 +465,8 @@ export class ClientAuthService {
       }
     }
 
+    const isNewUser = !user;
+
     if (!user) {
       user = await this.prisma.client_user.create({
         data: {
@@ -476,27 +478,6 @@ export class ClientAuthService {
           is_verified: true,
         },
       });
-
-      if (user.email) {
-        try {
-          const kiotCustomer = await this.kiotVietService.createCustomer({
-            name: user.full_name || '',
-            phone: user.phone || '',
-            email: user.email,
-            clientId: user.client_id,
-          });
-
-          await this.prisma.client_user.update({
-            where: { client_id: user.client_id },
-            data: {
-              kiotviet_customer_id: kiotCustomer.id,
-              kiot_code: kiotCustomer.code,
-            },
-          });
-        } catch (error) {
-          console.error('Failed to create KiotViet customer:', error);
-        }
-      }
     }
 
     const payload = {
@@ -517,6 +498,7 @@ export class ClientAuthService {
     return {
       access_token: accessToken,
       refresh_token: refreshToken,
+      needs_phone: isNewUser && !user.phone,
       user: {
         client_id: Number(user.client_id),
         full_name: user.full_name,
@@ -525,5 +507,56 @@ export class ClientAuthService {
         avatar_url: user.avatar_url,
       },
     };
+  }
+
+  async updatePhoneAndCreateKiotCustomer(clientId: number, phone: string) {
+    const user = await this.prisma.client_user.findUnique({
+      where: { client_id: clientId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const existingPhone = await this.prisma.client_user.findFirst({
+      where: {
+        phone,
+        client_id: { not: clientId },
+      },
+    });
+
+    if (existingPhone) {
+      throw new ConflictException('Số điện thoại đã được sử dụng');
+    }
+
+    await this.prisma.client_user.update({
+      where: { client_id: clientId },
+      data: { phone },
+    });
+
+    try {
+      const kiotCustomer = await this.kiotVietService.createCustomer({
+        name: user.full_name || '',
+        phone,
+        email: user.email || undefined,
+        clientId: user.client_id,
+      });
+
+      await this.prisma.client_user.update({
+        where: { client_id: user.client_id },
+        data: {
+          kiotviet_customer_id: kiotCustomer.id,
+          kiot_code: kiotCustomer.code,
+        },
+      });
+
+      return {
+        message:
+          'Số điện thoại đã được cập nhật và tạo khách hàng KiotViet thành công',
+      };
+    } catch (error) {
+      console.error('Failed to create KiotViet customer:', error);
+      throw new BadRequestException('Không thể tạo khách hàng trên KiotViet');
+    }
   }
 }
