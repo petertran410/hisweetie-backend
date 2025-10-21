@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, Profile } from 'passport-facebook';
 import { ConfigService } from '@nestjs/config';
+import { Request } from 'express';
 
 @Injectable()
 export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
@@ -20,10 +21,23 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
       callbackURL,
       scope: ['email'],
       profileFields: ['id', 'emails', 'name', 'picture.type(large)'],
+      passReqToCallback: true,
     });
   }
 
+  async authenticate(req: Request, options?: any) {
+    if (req.query.error) {
+      const errorDescription =
+        typeof req.query.error_description === 'string'
+          ? req.query.error_description
+          : 'User denied authorization';
+      return this.fail({ message: errorDescription }, 401);
+    }
+    return super.authenticate(req, options);
+  }
+
   async validate(
+    req: Request,
     accessToken: string,
     refreshToken: string,
     profile: Profile,

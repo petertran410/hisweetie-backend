@@ -358,6 +358,12 @@ export class ClientAuthController {
     @Req() req: any,
     @Res({ passthrough: true }) response: Response,
   ) {
+    if (req.query.error) {
+      return response.redirect(
+        `${this.configService.get('FRONTEND_URL')}/login?error=cancelled`,
+      );
+    }
+
     const result = await this.clientAuthService.findOrCreateOAuthUser(req.user);
     this.setRefreshTokenCookie(response, result.refresh_token);
 
