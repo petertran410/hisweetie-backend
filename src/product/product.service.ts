@@ -853,6 +853,7 @@ export class ProductService {
       rate: product.rate,
       isFeatured: product.is_featured === true,
       isVisible: product.is_visible === true,
+      price_on: product.price_on,
       imagesUrl: imagesUrl,
       featuredThumbnail: product.featured_thumbnail,
       recipeThumbnail: product.recipe_thumbnail,
@@ -990,6 +991,7 @@ export class ProductService {
         instruction: updateProductDto.instruction,
         is_featured: updateProductDto.is_featured,
         is_visible: updateProductDto.is_visible,
+        price_on: updateProductDto.price_on,
         rate: updateProductDto.rate,
         featured_thumbnail: updateProductDto.featured_thumbnail,
         recipe_thumbnail: updateProductDto.recipe_thumbnail,
@@ -1475,6 +1477,7 @@ export class ProductService {
 
       is_visible: product.is_visible,
       is_featured: product.is_featured,
+      price_on: product.price_on,
       rate: product.rate,
 
       category_id: product.category_id ? Number(product.category_id) : null,

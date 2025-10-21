@@ -25,6 +25,10 @@ export class CreateProductDto {
   @IsString()
   title_meta: string;
 
+  @IsOptional()
+  @IsBoolean()
+  price_on?: boolean;
+
   @ApiProperty({
     description: 'Product description',
     example: 'Trà sữa thơm ngon với trân châu đường đen hấp dẫn',

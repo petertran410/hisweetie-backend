@@ -6,6 +6,7 @@ import {
   IsArray,
   IsInt,
   IsString,
+  IsBoolean,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 
@@ -18,6 +19,10 @@ export class UpdateProductDto extends PartialType(CreateProductDto) {
   @IsOptional()
   @IsNumber()
   rate?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  price_on?: boolean;
 
   @IsOptional()
   @IsString()

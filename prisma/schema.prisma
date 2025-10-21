@@ -53,6 +53,7 @@ model product {
   slug                   String?
   is_featured            Boolean?  @db.Bit(1)
   is_visible             Boolean?  @default(dbgenerated("b'0'")) @db.Bit(1)
+  price_on               Boolean?  @default(dbgenerated("b'0'")) @db.Bit(1)
   rate                   Float?
   featured_thumbnail     String?   @db.VarChar(255)
   recipe_thumbnail       String?   @db.VarChar(255)
