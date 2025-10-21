@@ -324,6 +324,10 @@ export class ClientAuthController {
     }
   }
 
+  @Get('google')
+  @UseGuards(AuthGuard('google'))
+  async googleAuth() {}
+
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleAuthRedirect(
@@ -343,6 +347,10 @@ export class ClientAuthController {
       `${this.configService.get('FRONTEND_URL')}/auth/callback?${params}`,
     );
   }
+
+  @Get('facebook')
+  @UseGuards(AuthGuard('facebook'))
+  async facebookAuth() {}
 
   @Get('facebook/callback')
   @UseGuards(AuthGuard('facebook'))
