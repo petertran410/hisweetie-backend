@@ -1891,7 +1891,7 @@ export class ProductService {
             category_id: { in: categoryIds.map((id) => BigInt(id)) },
           },
           include: { category: true },
-          take: 20,
+          take: 100,
           orderBy: { id: 'desc' },
         });
 
