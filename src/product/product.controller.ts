@@ -756,4 +756,13 @@ export class ProductController {
       .filter((result) => result.status === 'fulfilled')
       .map((result) => result.value);
   }
+
+  @Get('client/featured-by-root-categories')
+  @ApiOperation({
+    summary: 'Get featured products grouped by root categories',
+    description: 'Get featured products for each root category (level 0)',
+  })
+  async getFeaturedByRootCategories() {
+    return this.productService.getFeaturedProductsByRootCategories();
+  }
 }
