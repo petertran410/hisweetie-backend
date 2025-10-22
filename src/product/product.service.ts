@@ -1863,63 +1863,57 @@ export class ProductService {
     }
   }
 
-  async getFeaturedProductsByRootCategories() {
-    const rootCategories = await this.prisma.category.findMany({
-      where: {
-        level: 0,
-        name: {
-          in: [
-            'Nguyên Liệu Pha Chế Diệp Trà',
-            'Nguyên Liệu Pha Chế Lermao',
-            'Trà Phượng Hoàng',
-          ],
+  async getFeaturedProductsByCategories() {
+    try {
+      const featuredProducts = await this.prisma.product.findMany({
+        where: {
+          is_featured: true,
+          is_visible: true,
+          category_id: { not: null },
         },
-      },
-      select: { id: true, name: true, slug: true },
-    });
-
-    const result = await Promise.all(
-      rootCategories.map(async (category) => {
-        const categoryIds = await this.getAllChildCategoryIds(
-          Number(category.id),
-        );
-
-        const products = await this.prisma.product.findMany({
-          where: {
-            is_featured: true,
-            is_visible: true,
-            category_id: { in: categoryIds.map((id) => BigInt(id)) },
+        include: {
+          category: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              description: true,
+            },
           },
-          include: { category: true },
-          take: 100,
-          orderBy: { id: 'desc' },
-        });
+        },
+        orderBy: { id: 'desc' },
+      });
 
-        return {
-          categoryId: Number(category.id),
-          categoryName: category.name,
-          categorySlug: category.slug,
-          products: products.map((p) => this.transformProduct(p)),
-        };
-      }),
-    );
+      const groupedByCategory = new Map<string, any>();
 
-    return result.filter((r) => r.products.length > 0);
-  }
+      featuredProducts.forEach((product) => {
+        const categoryId = product.category_id?.toString();
+        if (!categoryId || !product.category) return;
 
-  private async getAllChildCategoryIds(categoryId: number): Promise<number[]> {
-    const result = [categoryId];
+        if (!groupedByCategory.has(categoryId)) {
+          groupedByCategory.set(categoryId, {
+            categoryId: Number(product.category_id),
+            categoryName: product.category.name,
+            categorySlug: product.category.slug,
+            products: [],
+          });
+        }
 
-    const children = await this.prisma.category.findMany({
-      where: { parent_id: BigInt(categoryId) },
-      select: { id: true },
-    });
+        const transformedProduct = this.transformProduct(product);
+        groupedByCategory.get(categoryId).products.push(transformedProduct);
+      });
 
-    for (const child of children) {
-      const childIds = await this.getAllChildCategoryIds(Number(child.id));
-      result.push(...childIds);
+      return Array.from(groupedByCategory.values()).filter(
+        (group) => group.products.length > 0,
+      );
+    } catch (error) {
+      this.logger.error(
+        'Failed to get featured products by categories:',
+        error.message,
+      );
+      throw new BadRequestException(
+        `Failed to get featured products: ${error.message}`,
+      );
     }
-
-    return result;
   }
 }

@@ -757,12 +757,12 @@ export class ProductController {
       .map((result) => result.value);
   }
 
-  @Get('client/featured-by-root-categories')
+  @Get('client/featured-by-categories')
   @ApiOperation({
-    summary: 'Get featured products grouped by root categories',
-    description: 'Get featured products for each root category (level 0)',
+    summary: 'Get featured products grouped by their categories',
+    description: 'Get all featured products grouped by category_id',
   })
-  async getFeaturedByRootCategories() {
-    return this.productService.getFeaturedProductsByRootCategories();
+  async getFeaturedProductsByCategories() {
+    return this.productService.getFeaturedProductsByCategories();
   }
 }
