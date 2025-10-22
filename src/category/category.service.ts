@@ -175,6 +175,7 @@ export class CategoryService {
         priority: category.priority,
         level: category.level,
         path: category.path,
+        image_url: category.image_url,
         product_count: category.product_count,
         direct_product_count: category.direct_product_count,
         child_count: category.child_count,
