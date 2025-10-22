@@ -236,6 +236,7 @@ export class CategoryService {
             : null,
           priority: updateCategoryDto.priority,
           slug: updateData.slug,
+          image_url: updateCategoryDto.image_url,
         },
       });
 
@@ -648,6 +649,7 @@ export class CategoryService {
         parent_id: cat.parent_id ? Number(cat.parent_id) : null,
         priority: cat.priority || 0,
         slug: cat.slug,
+        image_url: cat.image_url,
         productCount: cat.product.length,
         title_meta: cat.title_meta,
         level: 0,

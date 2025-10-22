@@ -98,6 +98,7 @@ model category {
   direct_product_count Int        @default(0)
   title_meta           String?
   slug                 String?    @db.VarChar(255)
+  image_url            String?    @db.VarChar(500)
   parent               category?  @relation("CategoryHierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
   children             category[] @relation("CategoryHierarchy")
   product              product[]

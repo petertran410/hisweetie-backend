@@ -823,6 +823,7 @@ export class ProductService {
             : null,
           path: product.category.path,
           level: product.category.level,
+          image_url: product.category.image_url,
         }
       : null;
 
@@ -1878,6 +1879,7 @@ export class ProductService {
               name: true,
               slug: true,
               description: true,
+              image_url: true,
             },
           },
         },
@@ -1895,6 +1897,7 @@ export class ProductService {
             categoryId: Number(product.category_id),
             categoryName: product.category.name,
             categorySlug: product.category.slug,
+            categoryImage: product.category.image_url,
             products: [],
           });
         }

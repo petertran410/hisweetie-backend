@@ -28,6 +28,14 @@ export class CreateCategoryDto {
   title_meta?: string;
 
   @ApiProperty({
+    description: 'Category image',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  image_url?: string;
+
+  @ApiProperty({
     description: 'Priority/Order for sorting',
     required: false,
     example: 1,
