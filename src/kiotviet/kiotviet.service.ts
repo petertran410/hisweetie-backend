@@ -286,8 +286,15 @@ export class KiotVietService {
     const payload: any = {};
 
     if (customerData.name) payload.name = customerData.name;
-    if (customerData.phone) payload.contactNumber = customerData.phone;
+
+    if (customerData.phone) {
+      payload.contactNumber = this.convertPhoneToInternational(
+        customerData.phone,
+      );
+    }
+
     if (customerData.email) payload.email = customerData.email.trim();
+
     if (customerData.address) payload.address = customerData.address;
 
     if (customerData.ward) {
