@@ -1880,23 +1880,46 @@ export class ProductService {
               slug: true,
               description: true,
               image_url: true,
+              parent_id: true,
             },
           },
         },
         orderBy: { id: 'desc' },
       });
 
+      const allCategoriesRaw = await this.prisma.category.findMany({
+        where: {
+          slug: { not: null },
+        },
+        select: {
+          id: true,
+          slug: true,
+          parent_id: true,
+        },
+      });
+
+      const allCategories = allCategoriesRaw.filter(
+        (cat): cat is { id: bigint; slug: string; parent_id: bigint | null } =>
+          cat.slug !== null,
+      );
+
       const groupedByCategory = new Map<string, any>();
 
       featuredProducts.forEach((product) => {
         const categoryId = product.category_id?.toString();
-        if (!categoryId || !product.category) return;
+        if (!categoryId || !product.category || !product.category.slug) return;
 
         if (!groupedByCategory.has(categoryId)) {
+          const slugPath = this.buildCategorySlugPath(
+            Number(product.category_id),
+            allCategories,
+          );
+
           groupedByCategory.set(categoryId, {
             categoryId: Number(product.category_id),
             categoryName: product.category.name,
             categorySlug: product.category.slug,
+            categorySlugPath: slugPath,
             categoryImage: product.category.image_url,
             products: [],
           });
@@ -1918,5 +1941,30 @@ export class ProductService {
         `Failed to get featured products: ${error.message}`,
       );
     }
+  }
+
+  private buildCategorySlugPath(
+    categoryId: number,
+    allCategories: Array<{
+      id: bigint;
+      slug: string;
+      parent_id: bigint | null;
+    }>,
+  ): string {
+    const slugs: string[] = [];
+    let currentId: number | null = categoryId;
+
+    while (currentId) {
+      const category = allCategories.find(
+        (cat) => Number(cat.id) === currentId,
+      );
+
+      if (!category) break;
+
+      slugs.unshift(category.slug);
+      currentId = category.parent_id ? Number(category.parent_id) : null;
+    }
+
+    return slugs.join('/');
   }
 }
