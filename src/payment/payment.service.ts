@@ -567,8 +567,8 @@ export class PaymentService {
           items: kiotOrderItems,
           total: Number(order.total),
           description: order.note
-            ? `Đơn hàng web #${orderId} - ${order.note}`
-            : `Đơn hàng web #${orderId}`,
+            ? `${order.note}`
+            : `Đơn hàng được tạo tự động từ website`,
         });
 
         this.logger.log(
