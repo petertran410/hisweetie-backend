@@ -261,8 +261,8 @@ export class PaymentService {
           items: kiotOrderItems,
           total: Number(orderData.total),
           description: orderData.note
-            ? `Ghi chú: ${orderData.note}`
-            : 'Đơn hàng COD',
+            ? `${orderData.note}`
+            : 'Đơn hàng được tạo tự động từ website',
           deliveryInfo: {
             receiver: orderData.full_name!,
             contactNumber: orderData.phone!,
