@@ -84,6 +84,68 @@ export class KiotVietService {
     }
   }
 
+  private convertPhoneToInternational(phone: string): string {
+    if (!phone) return '';
+
+    const cleanPhone = phone.replace(/[\s\-\(\)]/g, '');
+
+    if (cleanPhone.startsWith('+84')) {
+      return cleanPhone;
+    }
+
+    if (cleanPhone.startsWith('84')) {
+      return `+${cleanPhone}`;
+    }
+
+    if (cleanPhone.startsWith('0')) {
+      return `+84${cleanPhone.substring(1)}`;
+    }
+
+    return `+84${cleanPhone}`;
+  }
+
+  async checkCustomerExistsByPhone(
+    phone: string,
+  ): Promise<{ exists: boolean; customer?: any }> {
+    const token = await this.getAccessToken();
+    const internationalPhone = this.convertPhoneToInternational(phone);
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(`${this.baseUrl}/customers`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Retailer: this.retailerName,
+          },
+          params: {
+            pageSize: 100,
+            currentItem: 0,
+          },
+        }),
+      );
+
+      const customers = response.data.data || [];
+
+      const existingCustomer = customers.find((c: any) => {
+        const customerPhone = c.contactNumber?.replace(/[\s\-\(\)]/g, '');
+        const searchPhone1 = phone.replace(/[\s\-\(\)]/g, '');
+        const searchPhone2 = internationalPhone.replace(/[\s\-\(\)]/g, '');
+
+        return customerPhone === searchPhone1 || customerPhone === searchPhone2;
+      });
+
+      if (existingCustomer) {
+        this.logger.log(`Customer exists on KiotViet with phone: ${phone}`);
+        return { exists: true, customer: existingCustomer };
+      }
+
+      return { exists: false };
+    } catch (error) {
+      this.logger.error('Error checking customer existence:', error.message);
+      return { exists: false };
+    }
+  }
+
   async validateBranchId(): Promise<void> {
     const token = await this.getAccessToken();
 
@@ -130,6 +192,10 @@ export class KiotVietService {
   }): Promise<any> {
     const token = await this.getAccessToken();
 
+    const internationalPhone = this.convertPhoneToInternational(
+      customerData.phone,
+    );
+
     const cleanProvinceName = (province: string): string => {
       if (!province) return '';
       return province.replace(/^(Thành phố|Tỉnh)\s+/i, '').trim();
@@ -137,7 +203,7 @@ export class KiotVietService {
 
     const payload: any = {
       name: customerData.name,
-      contactNumber: customerData.phone,
+      contactNumber: internationalPhone,
       address: customerData.address || '',
       branchId: 635934,
     };

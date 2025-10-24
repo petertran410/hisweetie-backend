@@ -32,6 +32,7 @@ import {
 } from './dto/client-forgot-password.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 
 @ApiTags('client-auth')
 @Controller('client-auth')
@@ -39,6 +40,7 @@ export class ClientAuthController {
   constructor(
     private readonly clientAuthService: ClientAuthService,
     private readonly configService: ConfigService,
+    private readonly jwtService: JwtService,
   ) {}
 
   private setRefreshTokenCookie(response: Response, refreshToken: string) {
@@ -335,13 +337,24 @@ export class ClientAuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.clientAuthService.findOrCreateOAuthUser(req.user);
-    this.setRefreshTokenCookie(response, result.refresh_token);
+
+    if (result.refresh_token) {
+      this.setRefreshTokenCookie(response, result.refresh_token);
+    }
 
     const params = new URLSearchParams({
       token: result.access_token,
       user: JSON.stringify(result.user),
       needs_phone: result.needs_phone ? 'true' : 'false',
     });
+
+    if (result.is_temp) {
+      params.append('is_temp', 'true');
+      const decoded = this.jwtService.decode(result.access_token) as any;
+      if (decoded?.tempKey) {
+        params.append('temp_key', decoded.tempKey);
+      }
+    }
 
     return response.redirect(
       `${this.configService.get('FRONTEND_URL')}/auth/callback?${params}`,
@@ -365,7 +378,10 @@ export class ClientAuthController {
     }
 
     const result = await this.clientAuthService.findOrCreateOAuthUser(req.user);
-    this.setRefreshTokenCookie(response, result.refresh_token);
+
+    if (result.refresh_token) {
+      this.setRefreshTokenCookie(response, result.refresh_token);
+    }
 
     const params = new URLSearchParams({
       token: result.access_token,
@@ -373,26 +389,31 @@ export class ClientAuthController {
       needs_phone: result.needs_phone ? 'true' : 'false',
     });
 
+    if (result.is_temp) {
+      params.append('is_temp', 'true');
+      const decoded = this.jwtService.decode(result.access_token) as any;
+      if (decoded?.tempKey) {
+        params.append('temp_key', decoded.tempKey);
+      }
+    }
+
     return response.redirect(
       `${this.configService.get('FRONTEND_URL')}/auth/callback?${params}`,
     );
   }
 
-  @Post('update-phone')
+  @Post('complete-oauth-registration')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(ClientJwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Update phone number and create KiotViet customer' })
+  @ApiOperation({ summary: 'Complete OAuth registration with phone number' })
   @ApiResponse({
     status: 200,
-    description: 'Phone updated and KiotViet customer created',
+    description: 'OAuth registration completed successfully',
   })
-  async updatePhone(
-    @CurrentClient() client: any,
-    @Body() body: { phone: string },
+  async completeOAuthRegistration(
+    @Body() body: { tempKey: string; phone: string },
   ) {
-    return this.clientAuthService.updatePhoneAndCreateKiotCustomer(
-      client.clientId,
+    return this.clientAuthService.completeOAuthRegistration(
+      body.tempKey,
       body.phone,
     );
   }
