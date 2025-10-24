@@ -68,19 +68,10 @@ export class ClientAuthService {
     }
   }
 
-  private cleanupExpiredOAuthUsers() {
-    const now = new Date();
-    for (const [key, data] of this.pendingOAuthUsers.entries()) {
-      if (now > data.expiresAt) {
-        this.pendingOAuthUsers.delete(key);
-      }
-    }
-  }
-
   public generateAccessToken(payload: any): string {
     const secretKey = this.configService.get<string>('APP_SECRET_KEY');
     return this.jwtService.sign(
-      { ...payload, type: 'access' },
+      { ...payload, type: 'client' },
       { secret: secretKey, expiresIn: '7d' },
     );
   }
