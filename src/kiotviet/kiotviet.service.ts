@@ -751,43 +751,27 @@ export class KiotVietService {
   }
 
   private async forwardRawWebhookData(rawWebhookData: any): Promise<void> {
-    const endpoints = [
-      'https://2svn.dieptra.com/webhook/webhook-kiotviet-website',
-      'http://kiot.hisweetievietnam.com/webhook/order',
-    ];
+    const externalWebhookUrl =
+      'https://2svn.dieptra.com/webhook/webhook-kiotviet-website';
 
-    // try {
-    //   this.logger.log('🔄 Forwarding raw webhook data to external endpoint...');
+    try {
+      this.logger.log('🔄 Forwarding raw webhook data to external endpoint...');
 
-    //   const response = await firstValueFrom(
-    //     this.httpService.post(externalWebhookUrl, rawWebhookData, {
-    //       headers: {},
-    //     }),
-    //   );
+      const response = await firstValueFrom(
+        this.httpService.post(externalWebhookUrl, rawWebhookData, {
+          headers: {},
+        }),
+      );
 
-    //   this.logger.log(
-    //     `✅ Successfully forwarded raw webhook data. Status: ${response.status}`,
-    //   );
-    // } catch (error) {
-    //   this.logger.error(
-    //     '⚠️ Failed to forward raw webhook data to external endpoint:',
-    //     error.response?.data || error.message,
-    //   );
-    // }
-
-    await Promise.allSettled(
-      endpoints.map(async (url) => {
-        try {
-          this.logger.log(`🔄 Forwarding to ${url}...`);
-          const response = await firstValueFrom(
-            this.httpService.post(url, rawWebhookData, { timeout: 5000 }),
-          );
-          this.logger.log(`✅ Forwarded to ${url}. Status: ${response.status}`);
-        } catch (error) {
-          this.logger.error(`⚠️ Failed forward to ${url}: ${error.message}`);
-        }
-      }),
-    );
+      this.logger.log(
+        `✅ Successfully forwarded raw webhook data. Status: ${response.status}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        '⚠️ Failed to forward raw webhook data to external endpoint:',
+        error.response?.data || error.message,
+      );
+    }
   }
 
   async getInvoiceByCode(invoiceCode: string): Promise<any> {
