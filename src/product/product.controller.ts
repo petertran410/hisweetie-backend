@@ -351,6 +351,11 @@ export class ProductController {
     description: 'Filter by custom category ID (from category schema)',
   })
   @ApiQuery({
+    name: 'categoryIds',
+    required: false,
+    description: 'Filter by multiple category IDs (comma-separated)',
+  })
+  @ApiQuery({
     name: 'is_visible',
     required: false,
     description: 'Filter by visibility status',
@@ -365,6 +370,7 @@ export class ProductController {
     @Query('pageNumber') pageNumber: string = '0',
     @Query('title') title?: string,
     @Query('categoryId') categoryId?: string,
+    @Query('categoryIds') categoryIds?: string,
     @Query('is_visible') is_visible?: string,
   ) {
     const filters: any = {
@@ -372,7 +378,18 @@ export class ProductController {
     };
 
     if (title) filters.title = title;
-    if (categoryId) filters.categoryId = +categoryId;
+
+    if (categoryIds) {
+      const categoryIdArray = categoryIds
+        .split(',')
+        .map((id) => parseInt(id.trim()))
+        .filter((id) => !isNaN(id));
+      if (categoryIdArray.length > 0) {
+        filters.categoryIds = categoryIdArray;
+      }
+    } else if (categoryId) {
+      filters.categoryId = +categoryId;
+    }
 
     if (is_visible !== undefined) {
       filters.visibilityFilter = is_visible === 'true';
