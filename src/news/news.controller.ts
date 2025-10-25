@@ -133,7 +133,6 @@ export class NewsController {
     return this.newsService.incrementViewCount(+id);
   }
 
-  // Other admin endpoints
   @Post()
   create(@Body() createNewsDto: CreateNewsDto) {
     return this.newsService.create(createNewsDto);

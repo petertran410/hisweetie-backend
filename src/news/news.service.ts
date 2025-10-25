@@ -380,12 +380,43 @@ export class NewsService {
       throw new NotFoundException(`News with ID ${id} not found`);
     }
 
-    await this.prisma.news.update({
-      where: { id: BigInt(id) },
-      data: { view: { increment: 1 } },
-    });
+    // await this.prisma.news.update({
+    //   where: { id: BigInt(id) },
+    //   data: { view: { increment: 1 } },
+    // });
 
     return this.formatNewsForResponse(news);
+  }
+
+  async incrementViewCount(id: number) {
+    const existingNews = await this.prisma.news.findUnique({
+      where: { id: BigInt(id) },
+      select: { id: true, view: true, title: true },
+    });
+
+    if (!existingNews) {
+      throw new NotFoundException(`News with ID ${id} not found`);
+    }
+
+    const currentView = existingNews.view ?? 0;
+    const newView = currentView + 1;
+
+    const updatedNews = await this.prisma.news.update({
+      where: { id: BigInt(id) },
+      data: { view: newView },
+      select: { id: true, view: true, title: true },
+    });
+
+    console.log(
+      `✅ Article "${updatedNews.title}" - View: ${currentView} → ${updatedNews.view}`,
+    );
+
+    return {
+      message: 'View count incremented successfully',
+      oldView: currentView,
+      newView: Number(updatedNews.view),
+      articleId: Number(updatedNews.id),
+    };
   }
 
   async update(id: number, updateNewsDto: UpdateNewsDto) {
@@ -443,15 +474,6 @@ export class NewsService {
     });
 
     return { message: 'News deleted successfully' };
-  }
-
-  async incrementViewCount(id: number) {
-    await this.prisma.news.update({
-      where: { id: BigInt(id) },
-      data: { view: { increment: 1 } },
-    });
-
-    return { message: 'View count incremented successfully' };
   }
 
   async getFeaturedNews(limit: number, type?: string) {
