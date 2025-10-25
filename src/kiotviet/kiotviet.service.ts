@@ -751,27 +751,24 @@ export class KiotVietService {
   }
 
   private async forwardRawWebhookData(rawWebhookData: any): Promise<void> {
-    const externalWebhookUrl =
-      'https://2svn.dieptra.com/webhook/webhook-kiotviet-website';
+    const endpoints = [
+      'https://2svn.dieptra.com/webhook/webhook-kiotviet-website',
+      'https://kiot.hisweetievietnam.com/webhook/order',
+    ];
 
-    try {
-      this.logger.log('🔄 Forwarding raw webhook data to external endpoint...');
-
-      const response = await firstValueFrom(
-        this.httpService.post(externalWebhookUrl, rawWebhookData, {
-          headers: {},
-        }),
-      );
-
-      this.logger.log(
-        `✅ Successfully forwarded raw webhook data. Status: ${response.status}`,
-      );
-    } catch (error) {
-      this.logger.error(
-        '⚠️ Failed to forward raw webhook data to external endpoint:',
-        error.response?.data || error.message,
-      );
-    }
+    await Promise.allSettled(
+      endpoints.map(async (url) => {
+        try {
+          this.logger.log(`🔄 Forwarding to ${url}...`);
+          const response = await firstValueFrom(
+            this.httpService.post(url, rawWebhookData, { timeout: 5000 }),
+          );
+          this.logger.log(`✅ Forwarded to ${url}. Status: ${response.status}`);
+        } catch (error) {
+          this.logger.error(`⚠️ Failed forward to ${url}: ${error.message}`);
+        }
+      }),
+    );
   }
 
   async getInvoiceByCode(invoiceCode: string): Promise<any> {
