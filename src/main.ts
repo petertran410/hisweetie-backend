@@ -25,6 +25,7 @@ async function bootstrap() {
       'https://gaulermao.com',
       'https://cms.gaulermao.com',
       'https://www.dieptra.com',
+      'https://api.hisweetievietnam.com',
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
