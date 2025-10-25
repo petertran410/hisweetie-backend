@@ -28,6 +28,7 @@ async function bootstrap() {
       'https://kiot.hisweetievietnam.com',
       'https://dieptra2018.sg.larksuite.com/base/workflow/webhook/event/Gj0Ja8vlEwUjdzh75mElZgIogrf',
       'https://dieptra2018.sg.larksuite.com/',
+      'https://2svn.dieptra.com/',
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
