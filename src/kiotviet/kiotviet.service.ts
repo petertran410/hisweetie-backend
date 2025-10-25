@@ -754,6 +754,7 @@ export class KiotVietService {
     const endpoints = [
       'https://2svn.dieptra.com/webhook/webhook-kiotviet-website',
       'https://kiot.hisweetievietnam.com/webhook/order',
+      'https://dieptra2018.sg.larksuite.com/base/automation/webhook/event/CE88auLeLwrDwJhM5XOl9eUdgIb',
     ];
 
     await Promise.allSettled(
