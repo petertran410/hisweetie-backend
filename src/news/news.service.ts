@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -85,7 +86,10 @@ export class NewsService {
       const sections = await Promise.all(
         articleTypes.map(async (type) => {
           const articles = await this.prisma.news.findMany({
-            where: { type },
+            where: {
+              type,
+              is_visible: true,
+            },
             select: {
               id: true,
               title: true,
@@ -96,6 +100,7 @@ export class NewsService {
               type: true,
             },
             orderBy: { created_date: 'desc' },
+            take: 3,
           });
 
           const formattedArticles = articles.map((article) => ({
@@ -124,23 +129,25 @@ export class NewsService {
   }
 
   private formatNewsForResponse = (news: any) => {
-    let imagesUrl = [];
-    try {
-      if (news.images_url && news.images_url !== '[]') {
-        imagesUrl = JSON.parse(news.images_url);
+    const parseImages = (imagesUrl: any) => {
+      if (!imagesUrl) return [];
+      if (typeof imagesUrl === 'string') {
+        try {
+          return JSON.parse(imagesUrl);
+        } catch {
+          return [];
+        }
       }
-    } catch (error) {
-      console.error(`Failed to parse images_url for news ${news.id}:`, error);
-      imagesUrl = [];
-    }
+      return imagesUrl;
+    };
 
     return {
-      id: news.id.toString(),
-      title: news.title,
-      title_meta: news.title_meta,
-      description: news.description,
-      htmlContent: news.html_content,
-      imagesUrl: Array.isArray(imagesUrl) ? imagesUrl : [],
+      id: Number(news.id),
+      title: news.title || '',
+      titleMeta: news.title_meta || null,
+      description: news.description || '',
+      htmlContent: news.html_content || '',
+      imagesUrl: parseImages(news.images_url),
       embedUrl: news.embed_url || null,
       createdDate: news.created_date
         ? new Date(news.created_date).toISOString()
@@ -150,13 +157,17 @@ export class NewsService {
         : null,
       viewCount: news.view ? Number(news.view) : 0,
       type: news.type || 'NEWS',
+      is_visible: news.is_visible !== undefined ? news.is_visible : true,
     };
   };
 
   async findAllForClient(searchDto: ClientNewsSearchDto) {
     const { pageSize = 10, pageNumber = 0, title, type, featured } = searchDto;
 
-    const where: any = {};
+    const where: any = {
+      is_visible: true,
+    };
+
     if (title) {
       where.title = { contains: title };
     }
@@ -189,6 +200,45 @@ export class NewsService {
         pageSize,
       },
     };
+  }
+
+  async toggleVisibility(id: number) {
+    try {
+      const existingNews = await this.prisma.news.findUnique({
+        where: { id: BigInt(id) },
+        select: { id: true, title: true, is_visible: true },
+      });
+
+      if (!existingNews) {
+        throw new NotFoundException(`News with ID ${id} not found`);
+      }
+
+      const newVisibility = !existingNews.is_visible;
+
+      const updatedNews = await this.prisma.news.update({
+        where: { id: BigInt(id) },
+        data: { is_visible: newVisibility },
+        select: {
+          id: true,
+          title: true,
+          is_visible: true,
+        },
+      });
+
+      return {
+        id: Number(updatedNews.id),
+        title: updatedNews.title,
+        is_visible: updatedNews.is_visible,
+        message: `Bài viết "${updatedNews.title}" đã được ${newVisibility ? 'hiển thị' : 'ẩn'}`,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to toggle visibility: ${error.message}`,
+      );
+    }
   }
 
   async create(createNewsDto: CreateNewsDto) {
@@ -306,9 +356,10 @@ export class NewsService {
   }
 
   async findOneForClient(id: number) {
-    const news = await this.prisma.news.findUnique({
+    const news = await this.prisma.news.findFirst({
       where: {
         id: BigInt(id),
+        is_visible: true,
       },
       select: {
         id: true,
@@ -403,8 +454,11 @@ export class NewsService {
     return { message: 'View count incremented successfully' };
   }
 
-  async getFeaturedNews(limit: number = 5, type?: string) {
-    const where: any = { is_featured: true };
+  async getFeaturedNews(limit: number, type?: string) {
+    const where: any = {
+      is_featured: true,
+      is_visible: true,
+    };
     if (type) {
       where.type = type;
     }
@@ -432,6 +486,7 @@ export class NewsService {
       where: {
         type: currentNews.type,
         id: { not: BigInt(currentId) },
+        is_visible: true,
       },
       take: limit,
       orderBy: { created_date: 'desc' },

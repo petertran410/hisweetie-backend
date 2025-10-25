@@ -13,4 +13,5 @@ export class News {
   view?: number;
   user_id?: string;
   type?: string;
+  is_visible?: boolean;
 }

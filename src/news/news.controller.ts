@@ -153,4 +153,28 @@ export class NewsController {
   remove(@Param('id') id: string) {
     return this.newsService.remove(+id);
   }
+
+  @Patch('toggle-visibility/:id')
+  @ApiOperation({
+    summary: 'Toggle news visibility',
+    description:
+      'Toggle the visibility status of a news article for frontend display',
+  })
+  @ApiParam({ name: 'id', description: 'News ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'News visibility toggled successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'number' },
+        is_visible: { type: 'boolean' },
+        title: { type: 'string' },
+        message: { type: 'string' },
+      },
+    },
+  })
+  toggleVisibility(@Param('id') id: string) {
+    return this.newsService.toggleVisibility(+id);
+  }
 }

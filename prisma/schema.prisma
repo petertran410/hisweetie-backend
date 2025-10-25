@@ -206,9 +206,11 @@ model news {
   user_id      String?   @db.VarChar(255)
   type         String?   @db.VarChar(255)
   embed_url    String?   @db.LongText
+  is_visible   Boolean?  @default(dbgenerated("b'1'")) @db.Bit(1)
   user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([user_id])
+  @@index([is_visible])
 }
 
 model orders {
