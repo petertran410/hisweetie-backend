@@ -26,7 +26,7 @@ async function bootstrap() {
       'https://cms.gaulermao.com',
       'https://www.dieptra.com',
       'https://kiot.hisweetievietnam.com',
-      'https://dieptra2018.sg.larksuite.com/base/automation/webhook/event/CE88auLeLwrDwJhM5XOl9eUdgIb',
+      'https://dieptra2018.sg.larksuite.com/base/workflow/webhook/event/Gj0Ja8vlEwUjdzh75mElZgIogrf',
       'https://dieptra2018.sg.larksuite.com/',
     ],
     credentials: true,
