@@ -754,7 +754,7 @@ export class KiotVietService {
     const endpoints = [
       'https://n8n.hisweetievietnam.com/webhook-test/webhook-kiotviet-website',
       'https://kiot.hisweetievietnam.com/webhook/order',
-      'https://n8n.hisweetievietnam.com/webhook-test/take-order-webhook-from-kiotviet',
+      'https://n8n.hisweetievietnam.com/webhook/take-order-webhook-from-kiotviet',
     ];
 
     await Promise.allSettled(
