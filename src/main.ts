@@ -26,6 +26,7 @@ async function bootstrap() {
       'https://cms.gaulermao.com',
       'https://www.dieptra.com',
       'https://kiot.hisweetievietnam.com',
+      'https://2svn.dieptra.com',
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
