@@ -752,9 +752,9 @@ export class KiotVietService {
 
   private async forwardRawWebhookData(rawWebhookData: any): Promise<void> {
     const endpoints = [
-      'https://2svn.dieptra.com/webhook/webhook-kiotviet-website',
+      'https://n8n.hisweetievietnam.com/webhook/webhook-kiotviet-website',
       'https://kiot.hisweetievietnam.com/webhook/order',
-      'https://2svn.dieptra.com/webhook/take-order-webhook-from-kiotviet',
+      'https://n8n.hisweetievietnam.com/webhook/take-order-webhook-from-kiotviet',
     ];
 
     await Promise.allSettled(
