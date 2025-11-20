@@ -12,6 +12,7 @@ import { ClientUserService } from '../../client_user/client_user.service';
 import { KiotVietService } from '../../kiotviet/kiotviet.service';
 import * as bcrypt from 'bcrypt';
 import * as nodemailer from 'nodemailer';
+import * as crypto from 'crypto';
 import { ClientRegisterDto } from './dto/client-register.dto';
 import { ClientLoginDto } from './dto/client-login.dto';
 
@@ -72,14 +73,15 @@ export class ClientAuthService {
     const secretKey = this.configService.get<string>('APP_SECRET_KEY');
     return this.jwtService.sign(
       { ...payload, type: 'client' },
-      { secret: secretKey, expiresIn: '7d' },
+      { secret: secretKey, expiresIn: '15m' },
     );
   }
 
   public generateRefreshToken(payload: any): string {
     const secretKey = this.configService.get<string>('APP_SECRET_KEY');
+    const tokenId = crypto.randomBytes(32).toString('hex');
     return this.jwtService.sign(
-      { ...payload, type: 'refresh' },
+      { ...payload, type: 'refresh', jti: tokenId },
       { secret: secretKey, expiresIn: '30d' },
     );
   }

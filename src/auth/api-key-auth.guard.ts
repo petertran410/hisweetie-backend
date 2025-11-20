@@ -4,17 +4,18 @@ import {
   ExecutionContext,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Observable } from 'rxjs';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class ApiKeyAuthGuard implements CanActivate {
-  canActivate(
-    context: ExecutionContext,
-  ): boolean | Promise<boolean> | Observable<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const apiKey = request.headers['authorization'];
+  constructor(private configService: ConfigService) {}
 
-    if (!apiKey || apiKey !== 'Dieptra@123') {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest();
+    const apiKey = request.headers['x-api-key'];
+    const validApiKey = this.configService.get<string>('INTERNAL_API_KEY');
+
+    if (!apiKey || !validApiKey || apiKey !== validApiKey) {
       throw new UnauthorizedException('Invalid API Key');
     }
 
