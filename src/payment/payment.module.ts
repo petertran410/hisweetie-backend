@@ -19,7 +19,7 @@ import { CartModule } from '../cart/cart.module';
     CartModule,
   ],
   controllers: [PaymentController],
-  providers: [PaymentService, SepayService, KiotVietService],
-  exports: [PaymentService, SepayService, KiotVietService],
+  providers: [PaymentService, SepayService],
+  exports: [PaymentService, SepayService],
 })
 export class PaymentModule {}

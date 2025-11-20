@@ -18,7 +18,7 @@ import { KiotVietService } from '../kiotviet/kiotviet.service';
     ConfigModule,
   ],
   controllers: [ClientUserController],
-  providers: [ClientUserService, KiotVietService],
+  providers: [ClientUserService],
   exports: [ClientUserService],
 })
 export class ClientUserModule {}

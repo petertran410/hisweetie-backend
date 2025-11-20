@@ -1,10 +1,11 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { KiotVietController } from './kiotviet.controller';
 import { KiotVietService } from './kiotviet.service';
 import { PrismaModule } from '../prisma/prisma.module';
 
+@Global()
 @Module({
   imports: [
     HttpModule.register({
