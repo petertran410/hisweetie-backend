@@ -1,4 +1,3 @@
-// src/common/guards/sync-rate-limit.guard.ts - RATE LIMITING FOR SYNC OPERATIONS
 import {
   Injectable,
   CanActivate,
@@ -12,7 +11,7 @@ import { SYNC_OPERATION_KEY } from '../decorators/kiotviet-sync.decorator';
 @Injectable()
 export class SyncRateLimitGuard implements CanActivate {
   private syncOperations = new Map<string, number>();
-  private readonly cooldownPeriod = 60000; // 1 minute cooldown between syncs
+  private readonly cooldownPeriod = 60000;
 
   constructor(private reflector: Reflector) {}
 
@@ -23,7 +22,7 @@ export class SyncRateLimitGuard implements CanActivate {
     );
 
     if (!syncOperation) {
-      return true; // Not a sync operation
+      return true;
     }
 
     const now = Date.now();

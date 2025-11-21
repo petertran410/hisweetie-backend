@@ -39,6 +39,7 @@ export class ClientAuthService {
   private transporter: nodemailer.Transporter;
   private pendingRegistrations = new Map<string, PendingRegistration>();
   private pendingOAuthUsers = new Map<string, PendingOAuthUser>();
+  private blacklistedTokens = new Set<string>();
 
   constructor(
     private prisma: PrismaService,
@@ -73,7 +74,7 @@ export class ClientAuthService {
     const secretKey = this.configService.get<string>('APP_SECRET_KEY');
     return this.jwtService.sign(
       { ...payload, type: 'client' },
-      { secret: secretKey, expiresIn: '15m' },
+      { secret: secretKey, expiresIn: '30m' },
     );
   }
 
@@ -82,7 +83,7 @@ export class ClientAuthService {
     const tokenId = crypto.randomBytes(32).toString('hex');
     return this.jwtService.sign(
       { ...payload, type: 'refresh', jti: tokenId },
-      { secret: secretKey, expiresIn: '30d' },
+      { secret: secretKey, expiresIn: '7d' },
     );
   }
 
@@ -341,12 +342,16 @@ export class ClientAuthService {
     }
   }
 
-  async logout(clientId: number) {
+  async logout(clientId: number, accessToken: string) {
+    const decoded = this.jwtService.decode(accessToken) as any;
+    if (decoded?.jti) {
+      this.blacklistedTokens.add(decoded.jti);
+    }
+
     await this.prisma.client_user.update({
       where: { client_id: clientId },
       data: { refresh_token: null },
     });
-    return { message: 'Logout successful' };
   }
 
   async forgotPasswordRequest(email: string) {

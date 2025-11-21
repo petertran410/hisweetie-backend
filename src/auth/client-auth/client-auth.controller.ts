@@ -51,7 +51,7 @@ export class ClientAuthController {
       httpOnly: true,
       secure: isProduction,
       sameSite: isProduction ? 'none' : 'lax',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/',
     });
 
@@ -60,7 +60,7 @@ export class ClientAuthController {
       httpOnly: false,
       secure: isProduction,
       sameSite: isProduction ? 'none' : 'lax',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/',
     });
   }
@@ -206,12 +206,18 @@ export class ClientAuthController {
   @ApiResponse({ status: 200, description: 'Logout successful' })
   async logout(
     @CurrentClient() client: any,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
     try {
-      const result = await this.clientAuthService.logout(client.clientId);
+      const authHeader = request.headers.authorization;
+      const accessToken = authHeader?.replace('Bearer ', '') || '';
 
-      // Clear refresh token cookie
+      const result = await this.clientAuthService.logout(
+        client.clientId,
+        accessToken,
+      );
+
       this.clearRefreshTokenCookie(response);
 
       return result;
