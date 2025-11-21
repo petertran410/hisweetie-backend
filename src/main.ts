@@ -15,22 +15,17 @@ async function bootstrap() {
   });
 
   app.enableCors({
-    origin: [
-      'http://localhost:3000',
-      'http://localhost:3210',
-      'http://localhost:3333',
-      'http://localhost:8083',
-      'http://14.224.212.102:3333',
-      'https://dieptra.com',
-      'https://gaulermao.com',
-      'https://cms.gaulermao.com',
-      'https://www.dieptra.com',
-      'https://kiot.hisweetievietnam.com',
-      'https://2svn.dieptra.com',
-    ],
+    origin: (origin, callback) => {
+      const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Force-Signature'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   app.setGlobalPrefix('api');
