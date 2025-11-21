@@ -6,6 +6,7 @@ import {
   Matches,
   IsNumberString,
 } from 'class-validator';
+import { IsStrongPassword } from './password-validator.decorator';
 
 export class ClientRegisterDto {
   @ApiProperty({ example: 'Ngọc Nhân' })
@@ -23,7 +24,8 @@ export class ClientRegisterDto {
   @IsNumberString(undefined, { message: 'Invalid phone number!' })
   phone: string;
 
-  @ApiProperty({ example: 'Nhantran@4102002' })
+  @ApiProperty({ example: 'Nhantran@123' })
   @IsNotEmpty({ message: 'Password is required' })
+  @IsStrongPassword()
   pass_word: string;
 }
