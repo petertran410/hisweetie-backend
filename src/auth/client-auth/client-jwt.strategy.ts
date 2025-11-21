@@ -28,6 +28,7 @@ export class ClientJwtStrategy extends PassportStrategy(
 
   async validate(payload: any) {
     if (payload.type !== 'client') {
+      await new Promise((resolve) => setTimeout(resolve, 100));
       throw new UnauthorizedException('Invalid token type');
     }
 
@@ -36,6 +37,7 @@ export class ClientJwtStrategy extends PassportStrategy(
     });
 
     if (!user) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
       throw new UnauthorizedException('User not found');
     }
 

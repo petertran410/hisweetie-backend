@@ -33,6 +33,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import * as crypto from 'crypto';
 
 @ApiTags('client-auth')
 @Controller('client-auth')
@@ -48,6 +49,15 @@ export class ClientAuthController {
 
     response.cookie('refresh_token', refreshToken, {
       httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      path: '/',
+    });
+
+    const csrfToken = crypto.randomBytes(32).toString('hex');
+    response.cookie('csrf_token', csrfToken, {
+      httpOnly: false,
       secure: isProduction,
       sameSite: isProduction ? 'none' : 'lax',
       maxAge: 30 * 24 * 60 * 60 * 1000,
