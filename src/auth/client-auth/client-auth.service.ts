@@ -478,20 +478,8 @@ export class ClientAuthService {
   }) {
     let user = await this.prisma.client_user.findFirst({
       where: {
-        OR: [
-          {
-            AND: [
-              { oauth_provider: oauthData.provider },
-              { oauth_provider_id: oauthData.providerId },
-            ],
-          },
-          {
-            AND: [
-              { email: oauthData.email },
-              { oauth_provider: oauthData.provider },
-            ],
-          },
-        ],
+        oauth_provider: oauthData.provider,
+        oauth_provider_id: oauthData.providerId,
       },
     });
 
@@ -500,13 +488,13 @@ export class ClientAuthService {
         where: { email: oauthData.email },
       });
 
-      if (user) {
+      if (user && !user.oauth_provider) {
         user = await this.prisma.client_user.update({
           where: { client_id: user.client_id },
           data: {
             oauth_provider: oauthData.provider,
             oauth_provider_id: oauthData.providerId,
-            avatar_url: oauthData.avatar_url || user.avatar_url,
+            avatar_url: oauthData.avatar_url,
           },
         });
       }
@@ -542,7 +530,7 @@ export class ClientAuthService {
       };
     }
 
-    const tempKey = `${oauthData.provider}_${oauthData.providerId}_${Date.now()}`;
+    const tempKey = `${oauthData.provider}_${oauthData.providerId}`;
 
     this.pendingOAuthUsers.set(tempKey, {
       provider: oauthData.provider,
