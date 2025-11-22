@@ -12,21 +12,61 @@ async function bootstrap() {
 
   app.useStaticAssets(join(__dirname, '..', 'public'), {
     prefix: '/public/',
+    setHeaders: (res, path) => {
+      res.set('X-Content-Type-Options', 'nosniff');
+      res.set('X-Frame-Options', 'DENY');
+    },
   });
 
   app.enableCors({
     origin: (origin, callback) => {
       const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'), false);
+
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      try {
+        const url = new URL(origin);
+        const isAllowed = allowedOrigins.some((allowedOrigin) => {
+          if (allowedOrigin === origin) return true;
+
+          if (process.env.NODE_ENV === 'development') {
+            if (
+              url.hostname === 'localhost' &&
+              allowedOrigin.includes('localhost')
+            ) {
+              return true;
+            }
+          }
+
+          return false;
+        });
+
+        if (isAllowed) {
+          callback(null, true);
+        } else {
+          console.warn(`CORS: Rejected origin ${origin}`);
+          callback(null, false);
+        }
+      } catch (error) {
+        console.warn(`CORS: Invalid origin format ${origin}`);
+        callback(null, false);
       }
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'X-CSRF-Token',
+      'Accept',
+      'Origin',
+    ],
+    exposedHeaders: ['Set-Cookie'],
     maxAge: 86400,
+    optionsSuccessStatus: 200,
   });
 
   app.setGlobalPrefix('api');
