@@ -12,6 +12,8 @@ import {
   Res,
   Req,
   UnauthorizedException,
+  BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { Response, Request } from 'express';
 import {
@@ -90,12 +92,15 @@ export class ClientAuthController {
       const result = await this.clientAuthService.register(registerDto);
       return result;
     } catch (error) {
-      if (error.status && error.status !== 500) {
-        throw error;
+      if (error instanceof ConflictException) {
+        throw new HttpException('User already exists', HttpStatus.CONFLICT);
+      }
+      if (error instanceof BadRequestException) {
+        throw new HttpException('Invalid input data', HttpStatus.BAD_REQUEST);
       }
       throw new HttpException(
-        'Registration failed',
-        HttpStatus.INTERNAL_SERVER_ERROR,
+        'Service temporarily unavailable',
+        HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
   }
@@ -114,18 +119,19 @@ export class ClientAuthController {
         body.email,
         body.code,
       );
-
       this.setRefreshTokenCookie(response, result.refresh_token);
-
       const { refresh_token, ...responseData } = result;
       return responseData;
     } catch (error) {
-      if (error.status && error.status !== 500) {
-        throw error;
+      if (
+        error instanceof BadRequestException ||
+        error instanceof UnauthorizedException
+      ) {
+        throw new HttpException('Verification failed', HttpStatus.BAD_REQUEST);
       }
       throw new HttpException(
-        'Email verification failed',
-        HttpStatus.INTERNAL_SERVER_ERROR,
+        'Service temporarily unavailable',
+        HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
   }
@@ -142,16 +148,17 @@ export class ClientAuthController {
   ) {
     try {
       const result = await this.clientAuthService.login(loginDto);
-
       this.setRefreshTokenCookie(response, result.refresh_token);
-
       const { refresh_token, ...responseData } = result;
       return responseData;
     } catch (error) {
-      if (error.status && error.status !== 500) {
-        throw error;
+      if (error instanceof UnauthorizedException) {
+        throw new HttpException('Invalid credentials', HttpStatus.UNAUTHORIZED);
       }
-      throw new HttpException('Login failed', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        'Service temporarily unavailable',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
     }
   }
 
