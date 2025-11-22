@@ -20,7 +20,13 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
       clientSecret,
       callbackURL,
       scope: ['email'],
-      profileFields: ['id', 'emails', 'name', 'picture.type(large)'],
+      profileFields: [
+        'id',
+        'emails',
+        'name',
+        'picture.type(large)',
+        'displayName',
+      ],
       passReqToCallback: true,
     });
   }
@@ -43,12 +49,29 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
     profile: Profile,
     done: (err: any, user: any, info?: any) => void,
   ): Promise<any> {
-    const { id, name, emails, photos } = profile;
+    const { id, name, emails, photos, displayName } = profile;
+
+    const givenName = name?.givenName?.trim() || '';
+    const familyName = name?.familyName?.trim() || '';
+
+    let fullName = '';
+    if (givenName && familyName) {
+      fullName = `${givenName} ${familyName}`;
+    } else if (givenName) {
+      fullName = givenName;
+    } else if (familyName) {
+      fullName = familyName;
+    } else if (displayName?.trim()) {
+      fullName = displayName.trim();
+    } else {
+      fullName = emails?.[0]?.value?.split('@')[0] || 'User';
+    }
+
     const user = {
       provider: 'facebook',
       providerId: id,
       email: emails?.[0]?.value,
-      full_name: `${name?.givenName} ${name?.familyName}`,
+      full_name: fullName,
       avatar_url: photos?.[0]?.value,
     };
     done(null, user);
