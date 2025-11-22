@@ -394,35 +394,67 @@ export class ClientAuthController {
     @Req() req: any,
     @Res({ passthrough: true }) response: Response,
   ) {
-    if (req.query.error) {
+    try {
+      if (req.query.error) {
+        const errorMsg =
+          req.query.error_description || 'Facebook OAuth cancelled';
+        console.error('Facebook OAuth error:', req.query);
+        return response.redirect(
+          `${this.configService.get('FRONTEND_URL')}/dang-nhap?error=cancelled&message=${encodeURIComponent(errorMsg)}`,
+        );
+      }
+
+      if (!req.user) {
+        console.error('Facebook Strategy returned null user');
+        return response.redirect(
+          `${this.configService.get('FRONTEND_URL')}/dang-nhap?error=facebook_error&message=${encodeURIComponent('Không thể lấy thông tin từ Facebook')}`,
+        );
+      }
+
+      console.log('Facebook user data received:', {
+        provider: req.user.provider,
+        providerId: req.user.providerId,
+        email: req.user.email,
+        fullName: req.user.full_name,
+      });
+
+      const result = await this.clientAuthService.findOrCreateOAuthUser(
+        req.user,
+      );
+
+      if (result.refresh_token) {
+        this.setRefreshTokenCookie(response, result.refresh_token);
+      }
+
+      const params = new URLSearchParams({
+        token: result.access_token,
+        user: JSON.stringify(result.user),
+        needs_phone: result.needs_phone ? 'true' : 'false',
+      });
+
+      if (result.is_temp) {
+        params.append('is_temp', 'true');
+        const decoded = this.jwtService.decode(result.access_token) as any;
+        if (decoded?.tempKey) {
+          params.append('temp_key', decoded.tempKey);
+        }
+      }
+
+      console.log(
+        'Facebook OAuth success, redirecting to frontend with params:',
+        params.toString(),
+      );
+
       return response.redirect(
-        `${this.configService.get('FRONTEND_URL')}/login?error=cancelled`,
+        `${this.configService.get('FRONTEND_URL')}/auth/callback?${params}`,
+      );
+    } catch (error) {
+      console.error('Facebook OAuth callback error:', error);
+
+      return response.redirect(
+        `${this.configService.get('FRONTEND_URL')}/dang-nhap?error=server_error&message=${encodeURIComponent('Lỗi máy chủ khi xử lý đăng nhập Facebook')}`,
       );
     }
-
-    const result = await this.clientAuthService.findOrCreateOAuthUser(req.user);
-
-    if (result.refresh_token) {
-      this.setRefreshTokenCookie(response, result.refresh_token);
-    }
-
-    const params = new URLSearchParams({
-      token: result.access_token,
-      user: JSON.stringify(result.user),
-      needs_phone: result.needs_phone ? 'true' : 'false',
-    });
-
-    if (result.is_temp) {
-      params.append('is_temp', 'true');
-      const decoded = this.jwtService.decode(result.access_token) as any;
-      if (decoded?.tempKey) {
-        params.append('temp_key', decoded.tempKey);
-      }
-    }
-
-    return response.redirect(
-      `${this.configService.get('FRONTEND_URL')}/auth/callback?${params}`,
-    );
   }
 
   @Post('complete-oauth-registration')
