@@ -24,12 +24,10 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
       scope: ['email', 'public_profile'],
       profileFields: [
         'id',
-        'emails',
+        'email',
         'name',
         'picture.type(large)',
         'displayName',
-        'first_name',
-        'last_name',
       ],
       passReqToCallback: true,
       enableProof: true,
