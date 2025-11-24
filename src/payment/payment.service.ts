@@ -369,12 +369,6 @@ export class PaymentService {
 
   async handleWebhook(webhookData: any) {
     try {
-      this.logger.log('=== SEPAY WEBHOOK START ===');
-      this.logger.log(
-        'Raw webhook data:',
-        JSON.stringify(webhookData, null, 2),
-      );
-
       const requiredFields = ['transferType', 'transferAmount', 'content'];
       const missingFields = requiredFields.filter(
         (field) => !webhookData[field],
@@ -407,7 +401,6 @@ export class PaymentService {
       }
 
       const orderId = orderMatch[1];
-      this.logger.log(`Extracted order ID: ${orderId}`);
 
       const order = await this.prisma.product_order.findFirst({
         where: {
@@ -424,7 +417,6 @@ export class PaymentService {
       });
 
       if (!order) {
-        this.logger.error(`Order not found: ID=${orderId}`);
         return {
           success: false,
           message: 'Order not found',
@@ -432,7 +424,6 @@ export class PaymentService {
       }
 
       if (order.payment_status === 'PAID') {
-        this.logger.warn(`Order ${orderId} already paid`);
         return {
           success: true,
           message: 'Order already processed',
@@ -440,9 +431,6 @@ export class PaymentService {
       }
 
       if (Number(order.total) !== mappedData.transferAmount) {
-        this.logger.error(
-          `Amount mismatch: Expected ${order.total}, got ${mappedData.transferAmount}`,
-        );
         return {
           success: false,
           message: 'Amount mismatch',
@@ -476,15 +464,9 @@ export class PaymentService {
         let kiotCustomerCode: string;
 
         if (clientUser && clientUser.kiotviet_customer_id) {
-          this.logger.log(
-            `Using existing KiotViet customer ID: ${clientUser.kiotviet_customer_id}`,
-          );
           kiotCustomerId = clientUser.kiotviet_customer_id;
           kiotCustomerCode = clientUser.kiot_code || '';
         } else {
-          this.logger.log(
-            'No KiotViet customer found, creating new customer...',
-          );
           const kiotCustomer = await this.kiotVietService.createCustomer({
             name: order.full_name,
             phone: order.phone,

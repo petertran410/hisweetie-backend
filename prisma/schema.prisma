@@ -42,33 +42,34 @@ model kiotviet_category {
 
 model product {
   id                     BigInt    @id @default(autoincrement())
-  title                  String?   @db.VarChar(255)
-  title_meta             String?
   description            String?   @db.LongText
   general_description    String?   @db.LongText
-  instruction            String?   @db.LongText
   images_url             String?   @db.LongText
-  category_id            BigInt?
-  category_slug          String?
-  slug                   String?
+  instruction            String?   @db.LongText
   is_featured            Boolean?  @db.Bit(1)
   is_visible             Boolean?  @default(dbgenerated("b'0'")) @db.Bit(1)
-  price_on               Boolean?  @default(dbgenerated("b'0'")) @db.Bit(1)
   rate                   Float?
+  title                  String?   @db.VarChar(255)
   featured_thumbnail     String?   @db.VarChar(255)
   recipe_thumbnail       String?   @db.VarChar(255)
-  kiotviet_id            BigInt?   @unique
-  kiotviet_code          String?   @unique @db.VarChar(255)
-  kiotviet_name          String?   @db.VarChar(500)
-  kiotviet_images        Json?
-  kiotviet_price         Decimal?  @db.Decimal(15, 2)
-  kiotviet_type          Int?
-  kiotviet_category_id   Int?
-  kiotviet_category_name String?
-  kiotviet_trademark_id  Int?
+  category_id            BigInt?
   is_from_kiotviet       Boolean   @default(dbgenerated("b'0'")) @db.Bit(1)
+  kiotviet_category_id   Int?
+  kiotviet_code          String?   @unique @db.VarChar(255)
+  kiotviet_id            BigInt?   @unique
+  kiotviet_images        Json?
+  kiotviet_name          String?   @db.VarChar(500)
+  kiotviet_price         Decimal?  @db.Decimal(15, 2)
   kiotviet_synced_at     DateTime? @db.DateTime(6)
+  kiotviet_trademark_id  Int?
+  kiotviet_type          Int?
   kiotviet_description   String?
+  kiotviet_category_name String?
+  category_slug          String?
+  slug                   String?
+  title_meta             String?
+  price_on               Boolean?  @default(dbgenerated("b'0'")) @db.Bit(1)
+  cart                   cart[]
   orders                 orders[]
   category               category? @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   review                 review[]
@@ -82,22 +83,22 @@ model product {
   @@index([kiotviet_trademark_id])
   @@index([is_from_kiotviet])
   @@index([slug])
-  cart cart[]
+  @@index([category_id])
 }
 
 model category {
   id                   BigInt     @id @default(autoincrement())
-  name                 String?    @db.VarChar(255)
   description          String?    @db.LongText
+  name                 String?    @db.VarChar(255)
   parent_id            BigInt?
+  priority             Int?
+  child_count          Int        @default(0)
+  direct_product_count Int        @default(0)
   level                Int        @default(0)
   path                 String?    @db.VarChar(100)
   product_count        Int        @default(0)
-  child_count          Int        @default(0)
-  priority             Int?
-  direct_product_count Int        @default(0)
-  title_meta           String?
   slug                 String?    @db.VarChar(255)
+  title_meta           String?
   image_url            String?    @db.VarChar(500)
   parent               category?  @relation("CategoryHierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
   children             category[] @relation("CategoryHierarchy")
@@ -201,12 +202,12 @@ model news {
   html_content String?   @db.LongText
   images_url   String?   @db.LongText
   title        String?   @db.VarChar(255)
-  title_meta   String?
   view         Int?
   user_id      String?   @db.VarChar(255)
   type         String?   @db.VarChar(255)
   embed_url    String?   @db.LongText
   is_visible   Boolean?  @default(dbgenerated("b'1'")) @db.Bit(1)
+  title_meta   String?
   user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([user_id])
@@ -234,31 +235,30 @@ model product_order {
   created_date     DateTime?
   updated_by       String?
   updated_date     DateTime?
-  address          String?        @db.LongText
-  detailed_address String?        @db.VarChar(500)
-  province         String?        @db.VarChar(255)
-  district         String?        @db.VarChar(255)
-  ward             String?        @db.VarChar(255)
   note             String?        @db.LongText
-  payment_method   String?
-  total            BigInt?
-  phone            String?
   status           String?
-  payment_status   String?
+  payment_method   String?
+  address          String?        @db.LongText
+  phone            String?
+  total            BigInt?
   full_name        String?
   email            String?
+  payment_status   String?
+  detailed_address String?        @db.VarChar(500)
+  ward             String?        @db.VarChar(255)
+  district         String?        @db.VarChar(255)
+  province         String?        @db.VarChar(255)
+  order_kiot_code  String?
+  order_kiot_id    Int?
   client_user_id   Int?
   orders           orders[]
-  order_kiot_id    Int?
-  order_kiot_code  String?
   payment_logs     payment_logs[]
-  client_user      client_user?   @relation(fields: [client_user_id], references: [client_id], onDelete: SetNull, onUpdate: NoAction)
+  client_user      client_user?   @relation(fields: [client_user_id], references: [client_id], onUpdate: NoAction)
 
   @@index([phone])
   @@index([email])
   @@index([client_user_id])
 }
-
 
 model pending_orders {
   id           String    @id @db.VarChar(255)
@@ -315,7 +315,6 @@ model client_user {
   email                    String?         @unique @db.VarChar(500)
   phone                    String?         @unique @db.VarChar(255)
   pass_word                String?         @db.VarChar(255)
-  refresh_token            String?         @db.Text
   detailed_address         String?         @db.VarChar(500)
   province                 String?         @db.VarChar(255)
   district                 String?         @db.VarChar(255)
@@ -323,15 +322,17 @@ model client_user {
   kiotviet_customer_id     Int?
   kiot_code                String?
   verification_code        String?         @db.VarChar(6)
-  verification_code_expires DateTime?       @db.DateTime(6)
+  verification_code_expires DateTime?      @db.DateTime(6)
   is_verified              Boolean         @default(false) @db.Bit(1)
-  
   oauth_provider           String?         @db.VarChar(50)
   oauth_provider_id        String?         @db.VarChar(255)
   avatar_url               String?         @db.Text
+  created_at               DateTime?       @default(now()) @db.DateTime(6)
+  updated_at               DateTime?       @default(now()) @db.DateTime(6)
   
   product_orders           product_order[]
-  cart cart[]
+  cart                     cart[]
+  sessions                 user_sessions[]
   
   @@unique([oauth_provider, oauth_provider_id])
 }
@@ -426,17 +427,34 @@ model pages {
 }
 
 model cart {
-  id         Int       @id @default(autoincrement())
-  client_id  Int
-  product_id BigInt
-  quantity   Int       @default(1)
-  created_at DateTime  @default(now())
-  updated_at DateTime  @updatedAt
-  
+  id          Int         @id @default(autoincrement())
+  client_id   Int
+  product_id  BigInt
+  quantity    Int         @default(1)
+  created_at  DateTime    @default(now())
+  updated_at  DateTime    @updatedAt
   client_user client_user @relation(fields: [client_id], references: [client_id], onDelete: Cascade)
   product     product     @relation(fields: [product_id], references: [id], onDelete: Cascade)
-  
+
   @@unique([client_id, product_id])
   @@index([client_id])
   @@index([product_id])
+}
+
+model user_sessions {
+  id                  String      @id @db.VarChar(36)
+  client_id           Int
+  refresh_token_hash  String      @db.VarChar(255)
+  device_info         String?     @db.Text
+  ip_address          String?     @db.VarChar(45)
+  created_at          DateTime?   @default(now()) @db.Timestamp(0)
+  expires_at          DateTime    @db.Timestamp(0)
+  is_active           Boolean     @default(true)
+  last_used_at        DateTime?   @default(now()) @db.Timestamp(0)
+  
+  client_user         client_user @relation(fields: [client_id], references: [client_id], onDelete: Cascade)
+  
+  @@index([client_id, is_active])
+  @@index([expires_at])
+  @@index([id, is_active])
 }
