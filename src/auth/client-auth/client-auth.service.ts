@@ -321,14 +321,13 @@ export class ClientAuthService {
       throw new UnauthorizedException('Please verify your email first');
     }
 
-    // Optional: Deactivate old sessions for single-device login
-    // await this.prisma.user_sessions.updateMany({
-    //   where: {
-    //     client_id: user.client_id,
-    //     is_active: true
-    //   },
-    //   data: { is_active: false }
-    // });
+    await this.prisma.user_sessions.updateMany({
+      where: {
+        client_id: user.client_id,
+        is_active: true,
+      },
+      data: { is_active: false },
+    });
 
     const tokens = await this.createSession(
       user.client_id,

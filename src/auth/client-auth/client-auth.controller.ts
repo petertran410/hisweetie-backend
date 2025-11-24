@@ -50,15 +50,27 @@ export class ClientAuthController {
 
   private getDeviceInfo(request: Request) {
     const userAgent = request.headers['user-agent'] || '';
-    const ip =
+
+    let ip =
       request.ip ||
       (request.headers['x-forwarded-for'] as string) ||
-      request.connection.remoteAddress ||
-      request.socket.remoteAddress;
+      (request.headers['x-real-ip'] as string) ||
+      request.connection?.remoteAddress ||
+      request.socket?.remoteAddress;
+
+    if (Array.isArray(ip)) {
+      ip = ip[0];
+    } else if (typeof ip === 'string' && ip.includes(',')) {
+      ip = ip.split(',')[0].trim();
+    }
+
+    if (ip === '::1' || ip === '::ffff:127.0.0.1') {
+      ip = '127.0.0.1';
+    }
 
     return {
       userAgent,
-      ipAddress: Array.isArray(ip) ? ip[0] : ip,
+      ipAddress: ip || '127.0.0.1',
       deviceInfo: userAgent.substring(0, 500),
     };
   }
@@ -168,10 +180,6 @@ export class ClientAuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Login client user' })
-  @ApiResponse({ status: 200, description: 'Login successful' })
-  @ApiResponse({ status: 401, description: 'Invalid credentials' })
-  @UsePipes(new ValidationPipe())
   async login(
     @Body() loginDto: ClientLoginDto,
     @Req() request: Request,
@@ -187,7 +195,9 @@ export class ClientAuthController {
         deviceInfo.userAgent,
       );
 
+      this.clearAllAuthCookies(response);
       this.setRefreshTokenCookie(response, result.refresh_token);
+
       const { refresh_token, ...responseData } = result;
       return responseData;
     } catch (error) {
@@ -199,6 +209,25 @@ export class ClientAuthController {
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
+  }
+
+  private clearAllAuthCookies(response: Response) {
+    const cookiesToClear = [
+      'refresh_token',
+      'csrf_token',
+      'dieptra_client_token',
+      'dieptra_client_user',
+    ];
+
+    cookiesToClear.forEach((cookieName) => {
+      response.clearCookie(cookieName, {
+        httpOnly:
+          cookieName !== 'csrf_token' && cookieName !== 'dieptra_client_user',
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        path: '/',
+      });
+    });
   }
 
   @Post('refresh')
