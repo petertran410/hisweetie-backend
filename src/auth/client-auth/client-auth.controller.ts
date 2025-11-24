@@ -78,6 +78,11 @@ export class ClientAuthController {
   private setRefreshTokenCookie(response: Response, refreshToken: string) {
     const isProduction = process.env.NODE_ENV === 'production';
 
+    if (!refreshToken || typeof refreshToken !== 'string') {
+      console.error('Invalid refresh token provided to setRefreshTokenCookie');
+      return;
+    }
+
     response.cookie('refresh_token', refreshToken, {
       httpOnly: true,
       secure: isProduction,
@@ -120,7 +125,10 @@ export class ClientAuthController {
     status: 201,
     description: 'Verification code sent to email',
   })
-  @ApiResponse({ status: 409, description: 'User already exists' })
+  @ApiResponse({
+    status: 409,
+    description: 'Tài khoản đã tồn tại!',
+  })
   @UsePipes(new ValidationPipe())
   async register(@Body() registerDto: ClientRegisterDto) {
     try {
@@ -128,7 +136,7 @@ export class ClientAuthController {
       return result;
     } catch (error) {
       if (error instanceof ConflictException) {
-        throw new HttpException('User already exists', HttpStatus.CONFLICT);
+        throw new HttpException('Tài khoản đã tồn tại!', HttpStatus.CONFLICT);
       }
       if (error instanceof BadRequestException) {
         throw new HttpException('Invalid input data', HttpStatus.BAD_REQUEST);
@@ -220,13 +228,15 @@ export class ClientAuthController {
     ];
 
     cookiesToClear.forEach((cookieName) => {
-      response.clearCookie(cookieName, {
-        httpOnly:
-          cookieName !== 'csrf_token' && cookieName !== 'dieptra_client_user',
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        path: '/',
-      });
+      if (cookieName && typeof cookieName === 'string') {
+        response.clearCookie(cookieName, {
+          httpOnly:
+            cookieName === 'refresh_token' || cookieName === 'csrf_token',
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+          path: '/',
+        });
+      }
     });
   }
 
