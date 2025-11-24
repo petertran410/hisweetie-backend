@@ -447,6 +447,7 @@ model user_sessions {
   refresh_token_hash  String      @db.VarChar(255)
   device_info         String?     @db.Text
   ip_address          String?     @db.VarChar(45)
+  user_agent          String?     @db.Text
   created_at          DateTime?   @default(now()) @db.Timestamp(0)
   expires_at          DateTime    @db.Timestamp(0)
   is_active           Boolean     @default(true)

@@ -13,6 +13,7 @@ import { KiotVietService } from '../../kiotviet/kiotviet.service';
 import * as bcrypt from 'bcrypt';
 import * as nodemailer from 'nodemailer';
 import * as crypto from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
 import { ClientRegisterDto } from './dto/client-register.dto';
 import { ClientLoginDto } from './dto/client-login.dto';
 
@@ -39,7 +40,6 @@ export class ClientAuthService {
   private transporter: nodemailer.Transporter;
   private pendingRegistrations = new Map<string, PendingRegistration>();
   private pendingOAuthUsers = new Map<string, PendingOAuthUser>();
-  private blacklistedTokens = new Set<string>();
 
   constructor(
     private prisma: PrismaService,
@@ -59,6 +59,7 @@ export class ClientAuthService {
     });
 
     setInterval(() => this.cleanupExpiredRegistrations(), 5 * 60 * 1000);
+    setInterval(() => this.cleanupExpiredSessions(), 60 * 60 * 1000); // Clean every hour
   }
 
   private cleanupExpiredRegistrations() {
@@ -70,7 +71,40 @@ export class ClientAuthService {
     }
   }
 
-  public generateAccessToken(payload: any): string {
+  private async cleanupExpiredSessions() {
+    await this.prisma.user_sessions.deleteMany({
+      where: {
+        expires_at: { lt: new Date() },
+      },
+    });
+  }
+
+  // Generate session-based tokens (secure approach)
+  public generateAccessToken(sessionId: string, clientId: number): string {
+    const secretKey = this.configService.get<string>('APP_SECRET_KEY');
+    return this.jwtService.sign(
+      {
+        sid: sessionId, // session ID instead of sensitive data
+        sub: clientId, // minimal identifier
+        type: 'access', // token type
+      },
+      { secret: secretKey, expiresIn: '15m' },
+    );
+  }
+
+  public generateRefreshToken(sessionId: string): string {
+    const secretKey = this.configService.get<string>('APP_SECRET_KEY');
+    return this.jwtService.sign(
+      {
+        sid: sessionId,
+        type: 'refresh',
+      },
+      { secret: secretKey, expiresIn: '7d' },
+    );
+  }
+
+  public generateLegacyAccessToken(payload: any): string {
+    // For OAuth temp tokens only
     const secretKey = this.configService.get<string>('APP_SECRET_KEY');
     return this.jwtService.sign(
       { ...payload, type: 'client' },
@@ -78,17 +112,45 @@ export class ClientAuthService {
     );
   }
 
-  public generateRefreshToken(payload: any): string {
-    const secretKey = this.configService.get<string>('APP_SECRET_KEY');
-    const tokenId = crypto.randomBytes(32).toString('hex');
-    return this.jwtService.sign(
-      { ...payload, type: 'refresh', jti: tokenId },
-      { secret: secretKey, expiresIn: '7d' },
-    );
-  }
-
   private generateVerificationCode(): string {
     return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  private getDeviceInfo(userAgent?: string) {
+    if (!userAgent) return 'Unknown Device';
+    return userAgent.substring(0, 500);
+  }
+
+  // Create secure session
+  private async createSession(
+    clientId: number,
+    deviceInfo?: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ) {
+    const sessionId = uuidv4();
+    const refreshToken = this.generateRefreshToken(sessionId);
+    const hashedRefreshToken = await bcrypt.hash(refreshToken, 12);
+
+    const session = await this.prisma.user_sessions.create({
+      data: {
+        id: sessionId,
+        client_id: clientId,
+        refresh_token_hash: hashedRefreshToken,
+        device_info: this.getDeviceInfo(userAgent),
+        ip_address: ipAddress,
+        user_agent: userAgent,
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        is_active: true,
+        last_used_at: new Date(),
+      },
+    });
+
+    return {
+      sessionId: session.id,
+      refreshToken,
+      accessToken: this.generateAccessToken(sessionId, clientId),
+    };
   }
 
   async register(registerDto: ClientRegisterDto) {
@@ -108,8 +170,8 @@ export class ClientAuthService {
     }
 
     const verificationCode = this.generateVerificationCode();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-    const hashedPassword = await bcrypt.hash(registerDto.pass_word, 10);
+    const hashedPassword = await bcrypt.hash(registerDto.pass_word, 12);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
     this.pendingRegistrations.set(registerDto.email, {
       full_name: registerDto.full_name,
@@ -123,19 +185,19 @@ export class ClientAuthService {
     await this.transporter.sendMail({
       from: this.configService.get('MAIL_FROM'),
       to: registerDto.email,
-      subject: 'Mã xác thực đăng ký tài khoản - Diệp Trà',
+      subject: 'Xác thực tài khoản - Diệp Trà',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #065FD4;">Xác thực tài khoản Diệp Trà</h2>
-          <p>Xin chào <strong>${registerDto.full_name}</strong>,</p>
-          <p>Mã xác thực của bạn là:</p>
-          <div style="background: #f5f5f5; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #065FD4;">
-            ${verificationCode}
-          </div>
-          <p style="color: #666;">Mã có hiệu lực trong <strong>10 phút</strong>.</p>
-          <p>Trân trọng,<br>Đội ngũ Diệp Trà</p>
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #065FD4;">Chào mừng đến với Diệp Trà!</h2>
+        <p>Xin chào <strong>${registerDto.full_name}</strong>,</p>
+        <p>Cảm ơn bạn đã đăng ký tài khoản. Mã xác thực của bạn là:</p>
+        <div style="background: #f5f5f5; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #065FD4;">
+          ${verificationCode}
         </div>
-      `,
+        <p style="color: #666;">Mã có hiệu lực trong <strong>10 phút</strong>.</p>
+        <p>Trân trọng,<br>Đội ngũ Diệp Trà</p>
+      </div>
+    `,
     });
 
     return {
@@ -144,13 +206,17 @@ export class ClientAuthService {
     };
   }
 
-  async verifyEmail(email: string, code: string) {
+  async verifyEmail(
+    email: string,
+    code: string,
+    deviceInfo?: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ) {
     const pendingData = this.pendingRegistrations.get(email);
 
     if (!pendingData) {
-      throw new BadRequestException(
-        'No pending registration found for this email',
-      );
+      throw new BadRequestException('Verification request not found');
     }
 
     if (new Date() > pendingData.expiresAt) {
@@ -169,7 +235,7 @@ export class ClientAuthService {
     if (kiotCheck.exists) {
       this.pendingRegistrations.delete(email);
       throw new ConflictException(
-        'Số điện thoại đã được đăng ký trên hệ thống',
+        'Phone number is already registered in the system',
       );
     }
 
@@ -212,41 +278,36 @@ export class ClientAuthService {
       });
 
       throw new BadRequestException(
-        'Không thể tạo khách hàng. Vui lòng thử lại hoặc liên hệ hỗ trợ.',
+        'Unable to create customer. Please try again or contact support.',
       );
     }
 
-    const payload = {
-      sub: Number(user.client_id),
-      email: user.email,
-      type: 'client',
-    };
-
-    const accessToken = this.generateAccessToken(payload);
-    const refreshToken = this.generateRefreshToken(payload);
-    const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
-
-    await this.prisma.client_user.update({
-      where: { client_id: user.client_id },
-      data: { refresh_token: hashedRefreshToken },
-    });
-
-    const userResponse = {
-      client_id: Number(user.client_id),
-      full_name: user.full_name,
-      email: user.email,
-      phone: user.phone,
-    };
+    const tokens = await this.createSession(
+      user.client_id,
+      deviceInfo,
+      ipAddress,
+      userAgent,
+    );
 
     return {
       message: 'Email verified successfully',
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      user: userResponse,
+      access_token: tokens.accessToken,
+      refresh_token: tokens.refreshToken,
+      user: {
+        client_id: user.client_id,
+        full_name: user.full_name,
+        email: user.email,
+        phone: user.phone,
+      },
     };
   }
 
-  async login(loginDto: ClientLoginDto) {
+  async login(
+    loginDto: ClientLoginDto,
+    deviceInfo?: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ) {
     const user = await this.clientUserService.validate(
       loginDto.emailOrPhone,
       loginDto.pass_word,
@@ -257,42 +318,39 @@ export class ClientAuthService {
     }
 
     if (!user.is_verified) {
-      throw new UnauthorizedException(
-        'Email not verified. Please verify your email first',
-      );
+      throw new UnauthorizedException('Please verify your email first');
     }
 
-    const payload = {
-      sub: Number(user.client_id),
-      email: user.email,
-      type: 'client',
-    };
+    // Optional: Deactivate old sessions for single-device login
+    // await this.prisma.user_sessions.updateMany({
+    //   where: {
+    //     client_id: user.client_id,
+    //     is_active: true
+    //   },
+    //   data: { is_active: false }
+    // });
 
-    const accessToken = this.generateAccessToken(payload);
-    const refreshToken = this.generateRefreshToken(payload);
-    const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
-
-    await this.prisma.client_user.update({
-      where: { client_id: user.client_id },
-      data: { refresh_token: hashedRefreshToken },
-    });
-
-    const userResponse = {
-      client_id: Number(user.client_id),
-      full_name: user.full_name,
-      email: user.email,
-      phone: user.phone,
-    };
+    const tokens = await this.createSession(
+      user.client_id,
+      deviceInfo,
+      ipAddress,
+      userAgent,
+    );
 
     return {
       message: 'Login successful',
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      user: userResponse,
+      access_token: tokens.accessToken,
+      refresh_token: tokens.refreshToken,
+      user: {
+        client_id: user.client_id,
+        full_name: user.full_name,
+        email: user.email,
+        phone: user.phone,
+      },
     };
   }
 
-  async refreshTokenFromCookie(refreshToken: string) {
+  async refreshTokenFromCookie(refreshToken: string, ipAddress?: string) {
     try {
       const secretKey = this.configService.get<string>('APP_SECRET_KEY');
       const decoded = this.jwtService.verify(refreshToken, {
@@ -303,38 +361,51 @@ export class ClientAuthService {
         throw new UnauthorizedException('Invalid token type');
       }
 
-      const user = await this.prisma.client_user.findUnique({
-        where: { client_id: decoded.sub },
+      // Find session by ID
+      const session = await this.prisma.user_sessions.findFirst({
+        where: {
+          id: decoded.sid,
+          is_active: true,
+          expires_at: { gt: new Date() },
+        },
+        include: { client_user: true },
       });
 
-      if (!user) {
-        throw new UnauthorizedException('User not found');
+      if (!session) {
+        throw new UnauthorizedException('Session not found or expired');
       }
 
-      if (!user.refresh_token) {
-        throw new UnauthorizedException('Invalid refresh token');
-      }
-
-      const isValid = await bcrypt.compare(refreshToken, user.refresh_token);
+      // Verify refresh token hash
+      const isValid = await bcrypt.compare(
+        refreshToken,
+        session.refresh_token_hash,
+      );
       if (!isValid) {
         throw new UnauthorizedException('Invalid refresh token');
       }
 
-      const payload = {
-        sub: Number(user.client_id),
-        email: user.email,
-        type: 'client',
-      };
+      // Update session last used time and IP if provided
+      await this.prisma.user_sessions.update({
+        where: { id: session.id },
+        data: {
+          last_used_at: new Date(),
+          ip_address: ipAddress || session.ip_address,
+        },
+      });
 
-      const newAccessToken = this.generateAccessToken(payload);
+      // Generate new access token
+      const newAccessToken = this.generateAccessToken(
+        session.id,
+        session.client_id,
+      );
 
       return {
         access_token: newAccessToken,
         user: {
-          client_id: Number(user.client_id),
-          full_name: user.full_name,
-          email: user.email,
-          phone: user.phone,
+          client_id: session.client_user.client_id,
+          full_name: session.client_user.full_name,
+          email: session.client_user.email,
+          phone: session.client_user.phone,
         },
       };
     } catch (error) {
@@ -342,16 +413,29 @@ export class ClientAuthService {
     }
   }
 
-  async logout(clientId: number, accessToken: string) {
-    const decoded = this.jwtService.decode(accessToken) as any;
-    if (decoded?.jti) {
-      this.blacklistedTokens.add(decoded.jti);
-    }
+  async logout(sessionId: string) {
+    try {
+      await this.prisma.user_sessions.update({
+        where: { id: sessionId },
+        data: { is_active: false },
+      });
 
-    await this.prisma.client_user.update({
-      where: { client_id: clientId },
-      data: { refresh_token: null },
+      return { message: 'Logout successful' };
+    } catch (error) {
+      return { message: 'Logout completed' }; // Even if session not found, return success
+    }
+  }
+
+  async logoutAllSessions(clientId: number) {
+    await this.prisma.user_sessions.updateMany({
+      where: {
+        client_id: clientId,
+        is_active: true,
+      },
+      data: { is_active: false },
     });
+
+    return { message: 'All sessions logged out successfully' };
   }
 
   async forgotPasswordRequest(email: string) {
@@ -360,7 +444,7 @@ export class ClientAuthService {
     });
 
     if (!user) {
-      throw new NotFoundException('Email không tồn tại trong hệ thống');
+      throw new NotFoundException('Email does not exist in the system');
     }
 
     if (this.pendingRegistrations.has(email)) {
@@ -382,24 +466,24 @@ export class ClientAuthService {
     await this.transporter.sendMail({
       from: this.configService.get('MAIL_FROM'),
       to: email,
-      subject: 'Mã xác thực đặt lại mật khẩu - Diệp Trà',
+      subject: 'Password Reset Verification Code - Diệp Trà',
       html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #065FD4;">Đặt lại mật khẩu - Diệp Trà</h2>
-        <p>Xin chào <strong>${user.full_name}</strong>,</p>
-        <p>Bạn đã yêu cầu đặt lại mật khẩu. Mã xác thực của bạn là:</p>
+        <h2 style="color: #065FD4;">Password Reset - Diệp Trà</h2>
+        <p>Hello <strong>${user.full_name}</strong>,</p>
+        <p>You have requested to reset your password. Your verification code is:</p>
         <div style="background: #f5f5f5; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #065FD4;">
           ${verificationCode}
         </div>
-        <p style="color: #666;">Mã có hiệu lực trong <strong>10 phút</strong>.</p>
-        <p style="color: #999; font-size: 14px;">Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này.</p>
-        <p>Trân trọng,<br>Đội ngũ Diệp Trà</p>
+        <p style="color: #666;">The code is valid for <strong>10 minutes</strong>.</p>
+        <p style="color: #999; font-size: 14px;">If you did not request a password reset, please ignore this email.</p>
+        <p>Best regards,<br>Diệp Trà Team</p>
       </div>
     `,
     });
 
     return {
-      message: 'Mã xác thực đã được gửi đến email của bạn',
+      message: 'Verification code has been sent to your email',
       email,
     };
   }
@@ -408,20 +492,20 @@ export class ClientAuthService {
     const pendingData = this.pendingRegistrations.get(email);
 
     if (!pendingData) {
-      throw new BadRequestException('Không tìm thấy yêu cầu đặt lại mật khẩu');
+      throw new BadRequestException('Password reset request not found');
     }
 
     if (new Date() > pendingData.expiresAt) {
       this.pendingRegistrations.delete(email);
-      throw new BadRequestException('Mã xác thực đã hết hạn');
+      throw new BadRequestException('Verification code has expired');
     }
 
     if (pendingData.verificationCode !== code) {
-      throw new BadRequestException('Mã xác thực không đúng');
+      throw new BadRequestException('Verification code is incorrect');
     }
 
     return {
-      message: 'Mã xác thực hợp lệ',
+      message: 'Verification code is valid',
       email,
     };
   }
@@ -430,16 +514,16 @@ export class ClientAuthService {
     const pendingData = this.pendingRegistrations.get(email);
 
     if (!pendingData) {
-      throw new BadRequestException('Không tìm thấy yêu cầu đặt lại mật khẩu');
+      throw new BadRequestException('Password reset request not found');
     }
 
     if (new Date() > pendingData.expiresAt) {
       this.pendingRegistrations.delete(email);
-      throw new BadRequestException('Mã xác thực đã hết hạn');
+      throw new BadRequestException('Verification code has expired');
     }
 
     if (pendingData.verificationCode !== code) {
-      throw new BadRequestException('Mã xác thực không đúng');
+      throw new BadRequestException('Verification code is incorrect');
     }
 
     const user = await this.prisma.client_user.findUnique({
@@ -450,22 +534,27 @@ export class ClientAuthService {
       const isSamePassword = await bcrypt.compare(newPassword, user.pass_word);
       if (isSamePassword) {
         throw new BadRequestException(
-          'Mật khẩu mới không được trùng với mật khẩu cũ',
+          'New password cannot be the same as the old password',
         );
       }
     }
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
 
     await this.prisma.client_user.update({
       where: { email },
       data: { pass_word: hashedPassword },
     });
 
+    // Invalidate all sessions for this user
+    if (user) {
+      await this.logoutAllSessions(user.client_id);
+    }
+
     this.pendingRegistrations.delete(email);
 
     return {
-      message: 'Mật khẩu đã được đặt lại thành công',
+      message: 'Password has been reset successfully',
     };
   }
 
@@ -501,27 +590,14 @@ export class ClientAuthService {
     }
 
     if (user && user.phone) {
-      const payload = {
-        sub: Number(user.client_id),
-        email: user.email,
-        type: 'client',
-      };
-
-      const accessToken = this.generateAccessToken(payload);
-      const refreshToken = this.generateRefreshToken(payload);
-      const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
-
-      await this.prisma.client_user.update({
-        where: { client_id: user.client_id },
-        data: { refresh_token: hashedRefreshToken },
-      });
+      const tokens = await this.createSession(user.client_id);
 
       return {
-        access_token: accessToken,
-        refresh_token: refreshToken,
+        access_token: tokens.accessToken,
+        refresh_token: tokens.refreshToken,
         needs_phone: false,
         user: {
-          client_id: Number(user.client_id),
+          client_id: user.client_id,
           full_name: user.full_name,
           email: user.email,
           phone: user.phone,
@@ -547,7 +623,7 @@ export class ClientAuthService {
       type: 'oauth_temp',
     };
 
-    const tempToken = this.generateAccessToken(tempPayload);
+    const tempToken = this.generateLegacyAccessToken(tempPayload);
 
     return {
       access_token: tempToken,
@@ -569,41 +645,30 @@ export class ClientAuthService {
 
     if (!pendingOAuth) {
       throw new BadRequestException(
-        'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+        'Login session has expired. Please login again.',
       );
     }
 
     if (new Date() > pendingOAuth.expiresAt) {
       this.pendingOAuthUsers.delete(tempKey);
       throw new BadRequestException(
-        'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+        'Login session has expired. Please login again.',
       );
     }
 
-    // Kiểm tra phone đã được sử dụng trong database
-    const existingPhone = await this.prisma.client_user.findFirst({
+    const existingPhone = await this.prisma.client_user.findUnique({
       where: { phone },
     });
 
     if (existingPhone) {
-      throw new ConflictException('Số điện thoại đã được sử dụng');
+      this.pendingOAuthUsers.delete(tempKey);
+      throw new ConflictException('Phone number is already registered');
     }
 
-    // Kiểm tra phone đã tồn tại trên KiotViet
-    const kiotCheck =
-      await this.kiotVietService.checkCustomerExistsByPhone(phone);
-
-    if (kiotCheck.exists) {
-      throw new ConflictException(
-        'Số điện thoại đã được đăng ký trên hệ thống KiotViet',
-      );
-    }
-
-    // ✅ Tạo user trong database
     const user = await this.prisma.client_user.create({
       data: {
-        email: pendingOAuth.email,
         full_name: pendingOAuth.full_name,
+        email: pendingOAuth.email,
         phone: phone,
         oauth_provider: pendingOAuth.provider,
         oauth_provider_id: pendingOAuth.providerId,
@@ -614,8 +679,8 @@ export class ClientAuthService {
 
     try {
       const kiotCustomer = await this.kiotVietService.createCustomer({
-        name: user.full_name || '',
-        phone: phone,
+        name: user.full_name || 'Unknown User',
+        phone: user.phone || '',
         email: user.email || undefined,
         clientId: user.client_id,
       });
@@ -628,45 +693,67 @@ export class ClientAuthService {
         },
       });
     } catch (error) {
-      console.error('Failed to create customer:', error);
-
-      await this.prisma.client_user.delete({
-        where: { client_id: user.client_id },
-      });
-
-      throw new BadRequestException(
-        'Không thể tạo khách hàng. Vui lòng thử lại.',
-      );
+      console.error('Failed to create Kiot customer:', error.message);
     }
 
     this.pendingOAuthUsers.delete(tempKey);
 
-    const payload = {
-      sub: Number(user.client_id),
-      email: user.email,
-      type: 'client',
-    };
-
-    const accessToken = this.generateAccessToken(payload);
-    const refreshToken = this.generateRefreshToken(payload);
-    const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
-
-    await this.prisma.client_user.update({
-      where: { client_id: user.client_id },
-      data: { refresh_token: hashedRefreshToken },
-    });
+    const tokens = await this.createSession(user.client_id);
 
     return {
-      message: 'Đăng ký hoàn tất thành công',
-      access_token: accessToken,
-      refresh_token: refreshToken,
+      access_token: tokens.accessToken,
+      refresh_token: tokens.refreshToken,
       user: {
-        client_id: Number(user.client_id),
+        client_id: user.client_id,
         full_name: user.full_name,
         email: user.email,
         phone: user.phone,
         avatar_url: user.avatar_url,
       },
     };
+  }
+
+  // Get user sessions for management
+  async getUserSessions(clientId: number) {
+    const sessions = await this.prisma.user_sessions.findMany({
+      where: {
+        client_id: clientId,
+        is_active: true,
+        expires_at: { gt: new Date() },
+      },
+      select: {
+        id: true,
+        device_info: true,
+        ip_address: true,
+        created_at: true,
+        last_used_at: true,
+        expires_at: true,
+      },
+      orderBy: { last_used_at: 'desc' },
+    });
+
+    return sessions;
+  }
+
+  // Revoke specific session
+  async revokeSession(sessionId: string, clientId: number) {
+    const session = await this.prisma.user_sessions.findFirst({
+      where: {
+        id: sessionId,
+        client_id: clientId,
+        is_active: true,
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+
+    await this.prisma.user_sessions.update({
+      where: { id: sessionId },
+      data: { is_active: false },
+    });
+
+    return { message: 'Session revoked successfully' };
   }
 }
