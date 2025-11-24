@@ -12,8 +12,7 @@ import { ClientUserService } from '../../client_user/client_user.service';
 import { KiotVietService } from '../../kiotviet/kiotviet.service';
 import * as bcrypt from 'bcrypt';
 import * as nodemailer from 'nodemailer';
-import * as crypto from 'crypto';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { ClientRegisterDto } from './dto/client-register.dto';
 import { ClientLoginDto } from './dto/client-login.dto';
 
@@ -128,7 +127,7 @@ export class ClientAuthService {
     ipAddress?: string,
     userAgent?: string,
   ) {
-    const sessionId = uuidv4();
+    const sessionId = randomUUID();
     const refreshToken = this.generateRefreshToken(sessionId);
     const hashedRefreshToken = await bcrypt.hash(refreshToken, 12);
 
