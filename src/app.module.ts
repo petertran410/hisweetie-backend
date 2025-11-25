@@ -1,6 +1,7 @@
-// src/app.module.ts - UPDATED
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
 import { AdminModule } from './admin/admin.module';
@@ -23,6 +24,25 @@ import { CartModule } from './cart/cart.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+
+    ThrottlerModule.forRoot([
+      {
+        name: 'short',
+        ttl: 60000,
+        limit: 10,
+      },
+      {
+        name: 'medium',
+        ttl: 600000,
+        limit: 20,
+      },
+      {
+        name: 'long',
+        ttl: 3600000,
+        limit: 100,
+      },
+    ]),
+
     PrismaModule,
     AuthModule,
     UserModule,
@@ -40,6 +60,11 @@ import { CartModule } from './cart/cart.module';
     CartModule,
   ],
   controllers: [],
-  providers: [],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}

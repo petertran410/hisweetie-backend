@@ -38,10 +38,13 @@ import { AuthGuard } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
+import { Logger } from '@nestjs/common';
 
 @ApiTags('client-auth')
 @Controller('client-auth')
 export class ClientAuthController {
+  private readonly logger = new Logger(ClientAuthController.name);
   constructor(
     private readonly clientAuthService: ClientAuthService,
     private readonly configService: ConfigService,
@@ -186,7 +189,19 @@ export class ClientAuthController {
     }
   }
 
+  @Get('test-throttle')
+  @Throttle({ default: { limit: 2, ttl: 10000 } })
+  testThrottle() {
+    this.logger.log(`🔥 Test throttle called at ${new Date().toISOString()}`);
+    return {
+      message: 'Throttle test successful',
+      timestamp: new Date(),
+      attempt: Math.random(),
+    };
+  }
+
   @Post('login')
+  @Throttle({ default: { limit: 3, ttl: 900000 } })
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() loginDto: ClientLoginDto,
