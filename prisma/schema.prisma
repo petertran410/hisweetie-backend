@@ -50,6 +50,9 @@ model product {
   is_visible             Boolean?  @default(dbgenerated("b'0'")) @db.Bit(1)
   rate                   Float?
   title                  String?   @db.VarChar(255)
+  title_en               String?   @db.VarChar(255)
+  description_en         String?   @db.LongText
+  instruction_en         String?   @db.LongText
   featured_thumbnail     String?   @db.VarChar(255)
   recipe_thumbnail       String?   @db.VarChar(255)
   category_id            BigInt?
@@ -90,6 +93,7 @@ model category {
   id                   BigInt     @id @default(autoincrement())
   description          String?    @db.LongText
   name                 String?    @db.VarChar(255)
+  name_en              String?    @db.VarChar(255)
   parent_id            BigInt?
   priority             Int?
   child_count          Int        @default(0)
@@ -208,6 +212,8 @@ model news {
   embed_url    String?   @db.LongText
   is_visible   Boolean?  @default(dbgenerated("b'1'")) @db.Bit(1)
   title_meta   String?
+  title_en        String?   @db.VarChar(255)
+  html_content_en String?   @db.LongText
   user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([user_id])

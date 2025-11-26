@@ -11,6 +11,13 @@ export class CreateCategoryDto {
   name: string;
 
   @ApiProperty({
+    description: 'Category name',
+    example: 'Ingredients for Making Special Tea',
+  })
+  @IsString()
+  name_en: string;
+
+  @ApiProperty({
     description: 'Category description',
     required: false,
     example: 'Các sản phẩm nguyên liệu dành cho pha chế đặc trà',

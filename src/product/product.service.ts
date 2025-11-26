@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient, Prisma, category } from '@prisma/client';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { KiotVietAuthService } from 'src/auth/kiotviet-auth/auth.service';
@@ -18,6 +18,7 @@ import { ProductListItemDto } from './dto/product-list-response.dto';
 interface CategoryHierarchyItem {
   id: number;
   name: string;
+  name_en: string | null;
   slug: string;
   level: number;
   href: string;
@@ -516,6 +517,7 @@ export class ProductService {
     pageSize: number;
     pageNumber: number;
     title?: string;
+    title_en?: string;
     type?: number;
     categoryId?: number;
     isFromKiotViet?: boolean;
@@ -526,6 +528,7 @@ export class ProductService {
         pageSize,
         pageNumber,
         title,
+        title_en,
         type,
         categoryId,
         isFromKiotViet,
@@ -544,6 +547,13 @@ export class ProductService {
       if (title) {
         where.OR = [
           { title: { contains: title } },
+          { kiotviet_name: { contains: title } },
+        ];
+      }
+
+      if (title_en) {
+        where.OR = [
+          { title_en: { contains: title_en } },
           { kiotviet_name: { contains: title } },
         ];
       }
@@ -571,7 +581,7 @@ export class ProductService {
           take,
           orderBy: orderByClause,
           include: {
-            category: { select: { id: true, name: true } },
+            category: { select: { id: true, name: true, name_en: true } },
           },
         }),
         this.prisma.product.count({ where }),
@@ -624,7 +634,7 @@ export class ProductService {
         where: { id: BigInt(id) },
         include: {
           category: {
-            select: { id: true, name: true, description: true },
+            select: { id: true, name: true, description: true, name_en: true },
           },
           review: {
             select: {
@@ -659,6 +669,7 @@ export class ProductService {
     isDesc?: boolean;
     title?: string;
     title_meta?: string;
+    title_en?: string;
     includeHidden?: boolean;
   }) {
     try {
@@ -670,6 +681,7 @@ export class ProductService {
         isDesc = true,
         title,
         title_meta,
+        title_en,
         includeHidden = false,
       } = params;
 
@@ -685,6 +697,13 @@ export class ProductService {
       if (title) {
         where.OR = [
           { title: { contains: title } },
+          { kiotviet_name: { contains: title } },
+        ];
+      }
+
+      if (title_en) {
+        where.OR = [
+          { title_en: { contains: title_en } },
           { kiotviet_name: { contains: title } },
         ];
       }
@@ -713,6 +732,7 @@ export class ProductService {
               select: {
                 id: true,
                 name: true,
+                name_en: true,
                 description: true,
                 parent_id: true,
               },
@@ -737,11 +757,15 @@ export class ProductService {
         return {
           id: Number(product.id),
           title: product.title || product.kiotviet_name || 'Untitled Product',
+          title_en:
+            product.title_en || product.kiotviet_name || 'Untitled Product',
           title_meta: product.title_meta ?? '',
           price: product.kiotviet_price ? Number(product.kiotviet_price) : null,
           general_description: product.general_description,
           description: product.description,
           instruction: product.instruction,
+          description_en: product.description_en,
+          instruction_en: product.instruction_en,
           rate: product.rate,
           isFeatured: product.is_featured === true,
           isVisible: product.is_visible === true,
@@ -756,6 +780,7 @@ export class ProductService {
             ? {
                 id: Number(product.category.id),
                 name: product.category.name,
+                name_en: product.name_en,
                 description: product.category.description,
                 parent_id: product.category.parent_id
                   ? Number(product.category.parent_id)
@@ -797,6 +822,7 @@ export class ProductService {
       product.title ||
       product.kiotviet_name ||
       product.title_meta ||
+      product.title_en ||
       'Untitled Product';
 
     const productPrice = product.kiotviet_price
@@ -816,6 +842,7 @@ export class ProductService {
       ? {
           id: Number(product.category.id),
           name: product.category.name,
+          name_en: product.name_en,
           slug: product.category.slug,
           description: product.category.description,
           parent_id: product.category.parent_id
@@ -841,6 +868,7 @@ export class ProductService {
     return {
       id: Number(product.id),
       title: productTitle,
+      title_en: product.title_en,
       title_meta: product.title_meta,
       slug: this.convertToSlug(productTitle),
       price: productPrice,
@@ -851,6 +879,8 @@ export class ProductService {
       ofCategories: ofCategories,
       description: product.description,
       instruction: product.instruction,
+      description_en: product.description_en,
+      instruction_en: product.instruction_en,
       rate: product.rate,
       isFeatured: product.is_featured === true,
       isVisible: product.is_visible === true,
@@ -933,8 +963,13 @@ export class ProductService {
           category_id: true,
           is_from_kiotviet: true,
           title: true,
+          title_en: true,
           title_meta: true,
           kiotviet_name: true,
+          description_en: true,
+          description: true,
+          instruction: true,
+          instruction_en: true,
         },
       });
 
@@ -946,12 +981,14 @@ export class ProductService {
       if (
         updateProductDto.title ||
         existingProduct.title ||
-        existingProduct.kiotviet_name
+        existingProduct.kiotviet_name ||
+        existingProduct.title_en
       ) {
         const slugSource =
           updateProductDto.title ||
           existingProduct.title ||
-          existingProduct.kiotviet_name;
+          existingProduct.kiotviet_name ||
+          existingProduct.title_en;
         if (slugSource) {
           slug = this.convertToSlug(slugSource);
         }
@@ -985,11 +1022,14 @@ export class ProductService {
 
       const updateData: Prisma.productUpdateInput = {
         title: updateProductDto.title,
+        title_en: updateProductDto.title_en,
         title_meta: updateProductDto.title_meta,
         slug: slug,
         description: updateProductDto.description,
+        description_en: updateProductDto.description_en,
         general_description: updateProductDto.general_description,
         instruction: updateProductDto.instruction,
+        instruction_en: updateProductDto.instruction_en,
         is_featured: updateProductDto.is_featured,
         is_visible: updateProductDto.is_visible,
         price_on: updateProductDto.price_on,
@@ -1030,7 +1070,7 @@ export class ProductService {
       });
 
       this.logger.log(
-        `Updated product: ${result.title || result.kiotviet_name} (ID: ${result.id}) - Category: ${oldCategoryId} → ${newCategoryId}`,
+        `Updated product: ${result.title || result.kiotviet_name} (ID: ${result.id}) - Category: ${oldCategoryId} - Title_en: ${result.title_en} → ${newCategoryId}`,
       );
 
       return this.transformProduct(result);
@@ -1458,6 +1498,7 @@ export class ProductService {
     return {
       id: Number(product.id),
       title: product.title,
+      title_en: product.title_en,
       title_meta: product.title_meta,
       kiotviet_name: product.kiotviet_name,
       kiotviet_code: product.kiotviet_code,
@@ -1470,8 +1511,10 @@ export class ProductService {
       imagesUrl,
 
       description: product.description,
+      description_en: product.description_en,
       general_description: product.general_description,
       instruction: product.instruction,
+      instruction_en: product.instruction_en,
 
       category_slug: product.category_slug,
       slug: product.slug,
@@ -1486,6 +1529,7 @@ export class ProductService {
         ? {
             id: Number(product.category.id),
             name: product.category.name,
+            name_en: product.category.name_en,
             description: product.category.description,
             parent_id: product.category.parent_id
               ? Number(product.category.parent_id)
@@ -1558,9 +1602,12 @@ export class ProductService {
           category_id: true,
           category_slug: true,
           description: true,
+          description_en: true,
           general_description: true,
           instruction: true,
+          instruction_en: true,
           title: true,
+          title_en: true,
           kiotviet_name: true,
           kiotviet_images: true,
           kiotviet_price: true,
@@ -1659,6 +1706,7 @@ export class ProductService {
         select: {
           id: true,
           title: true,
+          title_en: true,
           kiotviet_name: true,
           category: {
             select: { slug: true, name: true },
@@ -1682,6 +1730,7 @@ export class ProductService {
       return {
         id: Number(foundProduct.id),
         title: foundProduct.title || foundProduct.kiotviet_name,
+        title_en: foundProduct.title_en || foundProduct.kiotviet_name,
         slug: this.convertToSlug(
           foundProduct.title || foundProduct.kiotviet_name || '',
         ),
@@ -1771,6 +1820,7 @@ export class ProductService {
             select: {
               id: true,
               name: true,
+              name_en: true,
               description: true,
               parent_id: true,
             },
@@ -1819,6 +1869,7 @@ export class ProductService {
         select: {
           id: true,
           name: true,
+          name_en: true,
           slug: true,
           parent_id: true,
           level: true,
@@ -1839,6 +1890,7 @@ export class ProductService {
           hierarchy.unshift({
             id: Number(category.id),
             name: category.name,
+            name_en: category.name_en,
             slug: category.slug,
             level: category.level,
           });
@@ -1877,6 +1929,7 @@ export class ProductService {
             select: {
               id: true,
               name: true,
+              name_en: true,
               slug: true,
               description: true,
               image_url: true,

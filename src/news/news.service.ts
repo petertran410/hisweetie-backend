@@ -47,11 +47,6 @@ export class NewsService {
       });
 
       if (!foundArticle) {
-        const availableSlugs = articles.map((a) => ({
-          title: a.title,
-          slug: convertToSlug(a.title || ''),
-        }));
-
         throw new NotFoundException(
           `Không tìm thấy bài viết với slug "${slug}" và type "${type}"`,
         );
@@ -144,9 +139,11 @@ export class NewsService {
     return {
       id: Number(news.id),
       title: news.title || '',
+      title_en: news.title_en || '',
       titleMeta: news.title_meta || null,
       description: news.description || '',
       htmlContent: news.html_content || '',
+      html_content_en: news.html_content_en || '',
       imagesUrl: parseImages(news.images_url),
       embedUrl: news.embed_url || null,
       createdDate: news.created_date
@@ -245,8 +242,10 @@ export class NewsService {
     try {
       const {
         title,
+        title_en,
         description,
         htmlContent,
+        html_content_en,
         imagesUrl,
         type,
         embedUrl,
@@ -255,9 +254,11 @@ export class NewsService {
 
       const newsData = {
         title,
+        title_en,
         title_meta: titleMeta,
         description,
         html_content: htmlContent,
+        html_content_en: html_content_en,
         images_url: imagesUrl ? JSON.stringify(imagesUrl) : null,
         embed_url: embedUrl || null,
         type,
@@ -336,9 +337,11 @@ export class NewsService {
       select: {
         id: true,
         title: true,
+        title_en: true,
         title_meta: true,
         description: true,
         html_content: true,
+        html_content_en: true,
         images_url: true,
         embed_url: true,
         created_date: true,
@@ -364,9 +367,11 @@ export class NewsService {
       select: {
         id: true,
         title: true,
+        title_en: true,
         title_meta: true,
         description: true,
         html_content: true,
+        html_content_en: true,
         images_url: true,
         embed_url: true,
         created_date: true,
@@ -379,11 +384,6 @@ export class NewsService {
     if (!news) {
       throw new NotFoundException(`News with ID ${id} not found`);
     }
-
-    // await this.prisma.news.update({
-    //   where: { id: BigInt(id) },
-    //   data: { view: { increment: 1 } },
-    // });
 
     return this.formatNewsForResponse(news);
   }
@@ -431,8 +431,10 @@ export class NewsService {
 
       const {
         title,
+        title_en,
         description,
         htmlContent,
+        html_content_en,
         imagesUrl,
         type,
         embedUrl,
@@ -444,12 +446,15 @@ export class NewsService {
       };
 
       if (title !== undefined) updateData.title = title;
+      if (title_en !== undefined) updateData.title_en = title_en;
       if (titleMeta !== undefined) updateData.title_meta = titleMeta;
       if (description !== undefined) updateData.description = description;
       if (htmlContent !== undefined) updateData.html_content = htmlContent;
+      if (html_content_en !== undefined)
+        updateData.html_content_en = html_content_en;
       if (imagesUrl !== undefined)
         updateData.images_url = JSON.stringify(imagesUrl);
-      if (embedUrl !== undefined) updateData.embed_url = embedUrl; // THÊM MỚI
+      if (embedUrl !== undefined) updateData.embed_url = embedUrl;
       if (type !== undefined) updateData.type = type;
 
       const updatedNews = await this.prisma.news.update({

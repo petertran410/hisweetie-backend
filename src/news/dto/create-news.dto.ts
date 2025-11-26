@@ -1,4 +1,3 @@
-// src/news/dto/create-news.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsOptional, IsArray, IsEnum } from 'class-validator';
 
@@ -17,6 +16,10 @@ export class CreateNewsDto {
   @ApiProperty({ description: 'Title of the news/content item' })
   @IsString()
   title: string;
+
+  @ApiProperty({ description: 'Title English of the news/content item' })
+  @IsString()
+  title_en: string;
 
   @ApiProperty({ description: 'SEO title meta tag', required: false })
   @IsString()
@@ -38,6 +41,14 @@ export class CreateNewsDto {
   @IsString()
   @IsOptional()
   htmlContent?: string;
+
+  @ApiProperty({
+    description: 'HTML content english of the news/content item',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  html_content_en?: string;
 
   @ApiProperty({
     description: 'Image URLs',

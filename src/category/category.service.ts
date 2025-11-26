@@ -21,9 +21,6 @@ export class CategoryService {
 
   async create(createCategoryDto: CreateCategoryDto) {
     try {
-      // const { name } = createCategoryDto;
-      // const slug = name ? this.convertToSlug(name) : null;
-
       if (createCategoryDto.parent_id) {
         const parentCategory = await this.prisma.category.findUnique({
           where: { id: BigInt(createCategoryDto.parent_id) },
@@ -37,6 +34,7 @@ export class CategoryService {
       const category = await this.prisma.category.create({
         data: {
           name: createCategoryDto.name,
+          name_en: createCategoryDto.name_en,
           description: createCategoryDto.description,
           title_meta: createCategoryDto.title_meta,
           parent_id: createCategoryDto.parent_id
@@ -78,6 +76,7 @@ export class CategoryService {
       const categoriesWithCount = categories.map((cat) => ({
         id: Number(cat.id),
         name: cat.name,
+        name_en: cat.name_en,
         description: cat.description,
         parent_id: cat.parent_id ? Number(cat.parent_id) : null,
         priority: cat.priority || 0,
@@ -113,7 +112,7 @@ export class CategoryService {
         where: whereClause,
         include: {
           product: { select: { id: true } },
-          parent: { select: { id: true, name: true } },
+          parent: { select: { id: true, name: true, name_en: true } },
         },
         orderBy: [{ priority: 'asc' }, { name: 'asc' }],
         skip,
@@ -125,6 +124,7 @@ export class CategoryService {
     const transformedCategories = categories.map((cat) => ({
       id: Number(cat.id),
       name: cat.name,
+      name_en: cat.name_en,
       description: cat.description,
       parent_id: cat.parent_id ? Number(cat.parent_id) : null,
       parent_name: cat.parent?.name || null,
@@ -155,7 +155,7 @@ export class CategoryService {
           select: { id: true, title: true, kiotviet_name: true },
         },
         parent: {
-          select: { id: true, name: true },
+          select: { id: true, name: true, name_en: true },
         },
       },
     });
@@ -169,6 +169,7 @@ export class CategoryService {
       data: {
         id: Number(category.id),
         name: category.name,
+        name_en: category.name_en,
         description: category.description,
         title_meta: category.title_meta,
         slug: category.slug,
@@ -221,15 +222,11 @@ export class CategoryService {
         await this.validateNoCircularReference(id, updateCategoryDto.parent_id);
       }
 
-      const oldParentId = existingCategory.parent_id
-        ? Number(existingCategory.parent_id)
-        : null;
-      const newParentId = updateCategoryDto.parent_id || null;
-
       const updatedCategory = await this.prisma.category.update({
         where: { id: BigInt(id) },
         data: {
           name: updateCategoryDto.name,
+          name_en: updateCategoryDto.name_en,
           description: updateCategoryDto.description,
           title_meta: updateCategoryDto.title_meta,
           parent_id: updateCategoryDto.parent_id
@@ -432,7 +429,7 @@ export class CategoryService {
         where: { id: BigInt(id) },
         include: {
           product: { select: { id: true, title: true, kiotviet_name: true } },
-          children: { select: { id: true, name: true } },
+          children: { select: { id: true, name: true, name_en: true } },
         },
       });
 
@@ -479,7 +476,7 @@ export class CategoryService {
     try {
       const fromCategory = await this.prisma.category.findUnique({
         where: { id: BigInt(fromCategoryId) },
-        select: { name: true },
+        select: { name: true, name_en: true },
       });
 
       if (!fromCategory) {
@@ -489,7 +486,7 @@ export class CategoryService {
       if (toCategoryId) {
         const toCategory = await this.prisma.category.findUnique({
           where: { id: BigInt(toCategoryId) },
-          select: { name: true },
+          select: { name: true, name_en: true },
         });
 
         if (!toCategory) {
@@ -539,7 +536,7 @@ export class CategoryService {
         where: { id: BigInt(productId) },
         data: { category_id: BigInt(categoryId) },
         include: {
-          category: { select: { id: true, name: true } },
+          category: { select: { id: true, name: true, name_en: true } },
         },
       });
 
@@ -594,6 +591,7 @@ export class CategoryService {
       const flatCategories = categories.map((cat) => ({
         id: Number(cat.id),
         name: cat.name,
+        name_en: cat.name_en,
         description: cat.description,
         parent_id: cat.parent_id ? Number(cat.parent_id) : null,
         priority: cat.priority || 0,
@@ -646,6 +644,7 @@ export class CategoryService {
       const transformedCategories = categories.map((cat) => ({
         id: Number(cat.id),
         name: cat.name,
+        name_en: cat.name_en,
         description: cat.description,
         parent_id: cat.parent_id ? Number(cat.parent_id) : null,
         priority: cat.priority || 0,
@@ -726,7 +725,7 @@ export class CategoryService {
         where: {
           OR: [{ slug: null }, { slug: '' }],
         },
-        select: { id: true, name: true },
+        select: { id: true, name: true, name_en: true },
       });
 
       let updated = 0;
@@ -783,7 +782,7 @@ export class CategoryService {
         },
         include: {
           children: {
-            select: { id: true, name: true, slug: true },
+            select: { id: true, name: true, slug: true, name_en: true },
           },
         },
       });
@@ -799,6 +798,7 @@ export class CategoryService {
       finalCategory: categories[categories.length - 1],
       breadcrumbPath: categories.map((cat) => ({
         name: cat.name,
+        name_en: cat.name_en,
         slug: cat.slug,
         href: `/san-pham/${categories
           .slice(0, categories.indexOf(cat) + 1)
@@ -832,6 +832,7 @@ export class CategoryService {
       select: {
         id: true,
         name: true,
+        name_en: true,
         slug: true,
         description: true,
         level: true,
@@ -846,6 +847,7 @@ export class CategoryService {
     return {
       id: Number(category.id),
       name: category.name,
+      name_en: category.name_en,
       slug: category.slug,
       description: category.description,
       level: category.level,

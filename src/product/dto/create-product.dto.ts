@@ -19,6 +19,13 @@ export class CreateProductDto {
   title: string;
 
   @ApiProperty({
+    description: 'Product title',
+    example: 'Brown Sugar Pearl Milk Tea',
+  })
+  @IsString()
+  title_en: string;
+
+  @ApiProperty({
     description: 'Product title_meta',
     example: 'Trà Sữa Trân Châu Đường Đen',
   })
@@ -39,6 +46,15 @@ export class CreateProductDto {
   description?: string;
 
   @ApiProperty({
+    description: 'Product description',
+    example: 'Delicious milk tea with attractive brown sugar pearls',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  description_en?: string;
+
+  @ApiProperty({
     description: 'General description',
     required: false,
   })
@@ -53,6 +69,14 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   instruction?: string;
+
+  @ApiProperty({
+    description: 'Preparation instructions',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  instruction_en?: string;
 
   @ApiProperty({
     description: 'Custom category ID',

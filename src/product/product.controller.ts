@@ -685,6 +685,7 @@ export class ProductController {
             select: {
               id: true,
               name: true,
+              name_en: true,
               slug: true,
               description: true,
             },
@@ -695,7 +696,10 @@ export class ProductController {
 
       const transformedProducts = products.map((product: any) => {
         const productTitle =
-          product.title || product.kiotviet_name || 'Untitled Product';
+          product.title ||
+          product.kiotviet_name ||
+          product.title_en ||
+          'Untitled Product';
         const productPrice = product.kiotviet_price
           ? Number(product.kiotviet_price)
           : null;
@@ -714,11 +718,14 @@ export class ProductController {
         return {
           id: Number(product.id),
           title: productTitle,
+          title_en: product.title_en,
           slug: product.slug,
           price: productPrice,
           general_description: product.general_description,
           description: product.description,
           instruction: product.instruction,
+          description_en: product.description_en,
+          instruction_en: product.instruction_en,
           rate: product.rate,
           isFeatured: product.is_featured === true,
           isVisible: product.is_visible === true,
@@ -729,6 +736,7 @@ export class ProductController {
             ? {
                 id: Number(product.category.id),
                 name: product.category.name,
+                name_en: product.name_en,
                 slug: product.category.slug,
                 description: product.category.description,
               }
@@ -743,6 +751,7 @@ export class ProductController {
           category: {
             id: categoryData.id,
             name: categoryData.name,
+            name_en: categoryData.name_en,
             slug: categoryData.slug,
             description: categoryData.description,
             slugPath: slugArray,
