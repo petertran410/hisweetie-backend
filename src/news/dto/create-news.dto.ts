@@ -35,6 +35,14 @@ export class CreateNewsDto {
   description?: string;
 
   @ApiProperty({
+    description: 'Description English of the news/content item',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  description_en?: string;
+
+  @ApiProperty({
     description: 'HTML content of the news/content item',
     required: false,
   })

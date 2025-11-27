@@ -213,6 +213,7 @@ model news {
   is_visible   Boolean?  @default(dbgenerated("b'1'")) @db.Bit(1)
   title_meta   String?
   title_en        String?   @db.VarChar(255)
+  description_en  String?   @db.LongText
   html_content_en String?   @db.LongText
   user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 

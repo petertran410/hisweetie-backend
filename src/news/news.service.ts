@@ -88,8 +88,11 @@ export class NewsService {
             select: {
               id: true,
               title: true,
+              title_en: true,
               title_meta: true,
               description: true,
+              description_en: true,
+              html_content_en: true,
               images_url: true,
               created_date: true,
               type: true,
@@ -101,8 +104,10 @@ export class NewsService {
           const formattedArticles = articles.map((article) => ({
             id: Number(article.id),
             title: article.title,
+            title_en: article.title_en,
             title_meta: article.title_meta,
             description: article.description,
+            description_en: article.description_en,
             imagesUrl: article.images_url ? JSON.parse(article.images_url) : [],
             createdDate: article.created_date,
             type: article.type,
@@ -142,6 +147,7 @@ export class NewsService {
       title_en: news.title_en || '',
       titleMeta: news.title_meta || null,
       description: news.description || '',
+      description_en: news.description_en || '',
       htmlContent: news.html_content || '',
       html_content_en: news.html_content_en || '',
       imagesUrl: parseImages(news.images_url),
@@ -244,6 +250,7 @@ export class NewsService {
         title,
         title_en,
         description,
+        description_en,
         htmlContent,
         html_content_en,
         imagesUrl,
@@ -257,6 +264,7 @@ export class NewsService {
         title_en,
         title_meta: titleMeta,
         description,
+        description_en,
         html_content: htmlContent,
         html_content_en: html_content_en,
         images_url: imagesUrl ? JSON.stringify(imagesUrl) : null,
@@ -340,6 +348,7 @@ export class NewsService {
         title_en: true,
         title_meta: true,
         description: true,
+        description_en: true,
         html_content: true,
         html_content_en: true,
         images_url: true,
@@ -370,6 +379,7 @@ export class NewsService {
         title_en: true,
         title_meta: true,
         description: true,
+        description_en: true,
         html_content: true,
         html_content_en: true,
         images_url: true,
@@ -433,6 +443,7 @@ export class NewsService {
         title,
         title_en,
         description,
+        description_en,
         htmlContent,
         html_content_en,
         imagesUrl,
@@ -449,6 +460,8 @@ export class NewsService {
       if (title_en !== undefined) updateData.title_en = title_en;
       if (titleMeta !== undefined) updateData.title_meta = titleMeta;
       if (description !== undefined) updateData.description = description;
+      if (description_en !== undefined)
+        updateData.description_en = description_en;
       if (htmlContent !== undefined) updateData.html_content = htmlContent;
       if (html_content_en !== undefined)
         updateData.html_content_en = html_content_en;
