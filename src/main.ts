@@ -63,6 +63,7 @@ async function bootstrap() {
       'X-CSRF-Token',
       'Accept',
       'Origin',
+      'X-Force-Signature',
     ],
     exposedHeaders: ['Set-Cookie'],
     maxAge: 86400,
