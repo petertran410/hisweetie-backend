@@ -32,10 +32,7 @@ async function bootstrap() {
           if (allowedOrigin === origin) return true;
 
           if (process.env.NODE_ENV === 'development') {
-            if (
-              url.hostname === 'localhost' &&
-              allowedOrigin.includes('localhost')
-            ) {
+            if (url.hostname === 'localhost') {
               return true;
             }
           }
