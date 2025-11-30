@@ -78,16 +78,15 @@ export class ClientAuthService {
     });
   }
 
-  // Generate session-based tokens (secure approach)
   public generateAccessToken(sessionId: string, clientId: number): string {
     const secretKey = this.configService.get<string>('APP_SECRET_KEY');
     return this.jwtService.sign(
       {
-        sid: sessionId, // session ID instead of sensitive data
-        sub: clientId, // minimal identifier
-        type: 'access', // token type
+        sid: sessionId,
+        sub: clientId,
+        type: 'access',
       },
-      { secret: secretKey, expiresIn: '15m' },
+      { secret: secretKey, expiresIn: '1d' },
     );
   }
 
@@ -103,7 +102,6 @@ export class ClientAuthService {
   }
 
   public generateLegacyAccessToken(payload: any): string {
-    // For OAuth temp tokens only
     const secretKey = this.configService.get<string>('APP_SECRET_KEY');
     return this.jwtService.sign(
       { ...payload, type: 'client' },
@@ -120,7 +118,6 @@ export class ClientAuthService {
     return userAgent.substring(0, 500);
   }
 
-  // Create secure session
   private async createSession(
     clientId: number,
     deviceInfo?: string,
@@ -139,7 +136,7 @@ export class ClientAuthService {
         device_info: this.getDeviceInfo(userAgent),
         ip_address: ipAddress,
         user_agent: userAgent,
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         is_active: true,
         last_used_at: new Date(),
       },
