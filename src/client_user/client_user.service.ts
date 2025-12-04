@@ -244,6 +244,10 @@ export class ClientUserService {
             productId: item.product_id?.toString(),
             productName:
               item.product?.title || item.product?.kiotviet_name || 'Sản phẩm',
+            productNameEn:
+              item.product?.title_en ||
+              item.product?.kiotviet_name ||
+              'Product',
             quantity: item.quantity,
             price: item.product?.kiotviet_price
               ? Number(item.product.kiotviet_price)
@@ -322,7 +326,10 @@ export class ClientUserService {
       createdDate: order.created_date,
       items: order.orders.map((item) => ({
         productId: item.product_id?.toString(),
-        productName: item.product?.title || item.product?.kiotviet_name,
+        productName:
+          item.product?.title || item.product?.kiotviet_name || 'Sản phẩm',
+        productNameEn:
+          item.product?.title_en || item.product?.kiotviet_name || 'Product',
         quantity: item.quantity,
         price: Number(item.product?.kiotviet_price || 0),
         image: item.product?.images_url
