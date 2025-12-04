@@ -201,6 +201,7 @@ export class ClientUserService {
                 select: {
                   id: true,
                   title: true,
+                  title_en: true,
                   kiotviet_name: true,
                   kiotviet_price: true,
                   kiotviet_images: true,
@@ -217,54 +218,58 @@ export class ClientUserService {
       this.prisma.product_order.count({ where }),
     ]);
 
-    const formattedOrders = orders.map((order) => ({
-      id: order.id.toString(),
-      order_kiot_id: order.order_kiot_id,
-      orderCode: order.order_kiot_code || `DH${order.id}`,
-      fullName: order.full_name,
-      phone: order.phone,
-      email: order.email,
-      address: [
-        order.detailed_address,
-        order.ward,
-        order.district,
-        order.province,
-      ]
-        .filter(Boolean)
-        .join(', '),
-      total: Number(order.total),
-      status: order.status,
-      paymentStatus: order.payment_status,
-      paymentMethod: order.payment_method,
-      createdDate: order.created_date,
-      items: order.orders.map((item) => ({
-        productId: item.product_id?.toString(),
-        productName:
-          item.product?.title || item.product?.kiotviet_name || 'Sản phẩm',
-        quantity: item.quantity,
-        price: item.product?.kiotviet_price
-          ? Number(item.product.kiotviet_price)
-          : 0,
-        image: item.product?.images_url
-          ? typeof item.product.images_url === 'string'
-            ? (() => {
-                try {
-                  const parsed = JSON.parse(item.product.images_url);
-                  return Array.isArray(parsed) ? parsed[0] : null;
-                } catch {
-                  return null;
-                }
-              })()
-            : Array.isArray(item.product.images_url)
-              ? item.product.images_url[0]
-              : null
-          : item.product?.kiotviet_images &&
-              Array.isArray(item.product.kiotviet_images) &&
-              item.product.kiotviet_images.length > 0
-            ? item.product.kiotviet_images[0]
-            : null,
-      })),
-    }));
+    const formattedOrders = orders.map((order) => {
+      return {
+        id: order.id.toString(),
+        order_kiot_id: order.order_kiot_id,
+        orderCode: order.order_kiot_code || `DH${order.id}`,
+        fullName: order.full_name,
+        phone: order.phone,
+        email: order.email,
+        address: [
+          order.detailed_address,
+          order.ward,
+          order.district,
+          order.province,
+        ]
+          .filter(Boolean)
+          .join(', '),
+        total: Number(order.total),
+        status: order.status,
+        paymentStatus: order.payment_status,
+        paymentMethod: order.payment_method,
+        createdDate: order.created_date,
+        items: order.orders.map((item) => {
+          return {
+            productId: item.product_id?.toString(),
+            productName:
+              item.product?.title || item.product?.kiotviet_name || 'Sản phẩm',
+            quantity: item.quantity,
+            price: item.product?.kiotviet_price
+              ? Number(item.product.kiotviet_price)
+              : 0,
+            image: item.product?.images_url
+              ? typeof item.product.images_url === 'string'
+                ? (() => {
+                    try {
+                      const parsed = JSON.parse(item.product.images_url);
+                      return Array.isArray(parsed) ? parsed[0] : null;
+                    } catch {
+                      return null;
+                    }
+                  })()
+                : Array.isArray(item.product.images_url)
+                  ? item.product.images_url[0]
+                  : null
+              : item.product?.kiotviet_images &&
+                  Array.isArray(item.product.kiotviet_images) &&
+                  item.product.kiotviet_images.length > 0
+                ? item.product.kiotviet_images[0]
+                : null,
+          };
+        }),
+      };
+    });
 
     return {
       orders: formattedOrders,
