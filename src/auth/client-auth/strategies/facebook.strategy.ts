@@ -31,16 +31,11 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
       ],
       passReqToCallback: true,
       enableProof: true,
+      state: true,
     });
 
     this.logger.log('Facebook Strategy initialized');
     this.logger.log(`Callback URL: ${callbackURL}`);
-  }
-
-  authorizationParams(options: any): object {
-    return {
-      state: options.state || '/',
-    };
   }
 
   async authenticate(req: Request, options?: any) {
@@ -57,8 +52,7 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
       );
       return this.fail({ message: errorDescription }, 401);
     }
-
-    return super.authenticate(req, { ...options, state: req.query.state });
+    return super.authenticate(req, options);
   }
 
   async validate(

@@ -38,6 +38,8 @@ import { AuthGuard } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
+import { FacebookOAuthGuard } from './guards/facebook-oauth.guard';
+import { GoogleOAuthGuard } from './guards/google-oauth.guard';
 
 @ApiTags('client-auth')
 @Controller('client-auth')
@@ -449,10 +451,8 @@ export class ClientAuthController {
   }
 
   @Get('google')
-  @UseGuards(AuthGuard('google'))
-  async googleAuth(@Req() req: Request) {
-    return;
-  }
+  @UseGuards(GoogleOAuthGuard)
+  async googleAuth() {}
 
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
@@ -498,10 +498,8 @@ export class ClientAuthController {
   }
 
   @Get('facebook')
-  @UseGuards(AuthGuard('facebook'))
-  async facebookAuth(@Req() req: Request) {
-    return;
-  }
+  @UseGuards(FacebookOAuthGuard)
+  async facebookAuth() {}
 
   @Get('facebook/callback')
   @UseGuards(AuthGuard('facebook'))
