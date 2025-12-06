@@ -37,6 +37,12 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
     this.logger.log(`Callback URL: ${callbackURL}`);
   }
 
+  authorizationParams(options: any): object {
+    return {
+      state: options.state || '/',
+    };
+  }
+
   async authenticate(req: Request, options?: any) {
     this.logger.log('Facebook authenticate called', req.query);
 
@@ -51,7 +57,8 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
       );
       return this.fail({ message: errorDescription }, 401);
     }
-    return super.authenticate(req, options);
+
+    return super.authenticate(req, { ...options, state: req.query.state });
   }
 
   async validate(

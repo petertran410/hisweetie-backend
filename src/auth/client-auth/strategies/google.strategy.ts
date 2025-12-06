@@ -23,6 +23,12 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     });
   }
 
+  authorizationParams(options: any): object {
+    return {
+      state: options.state || '/',
+    };
+  }
+
   async validate(
     req: any,
     accessToken: string,

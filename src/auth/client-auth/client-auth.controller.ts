@@ -450,7 +450,9 @@ export class ClientAuthController {
 
   @Get('google')
   @UseGuards(AuthGuard('google'))
-  async googleAuth() {}
+  async googleAuth(@Req() req: Request) {
+    return;
+  }
 
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
@@ -497,7 +499,9 @@ export class ClientAuthController {
 
   @Get('facebook')
   @UseGuards(AuthGuard('facebook'))
-  async facebookAuth() {}
+  async facebookAuth(@Req() req: Request) {
+    return;
+  }
 
   @Get('facebook/callback')
   @UseGuards(AuthGuard('facebook'))
