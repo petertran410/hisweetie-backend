@@ -38,8 +38,6 @@ import { AuthGuard } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
-import { FacebookOAuthGuard } from './guards/facebook-oauth.guard';
-import { GoogleOAuthGuard } from './guards/google-oauth.guard';
 
 @ApiTags('client-auth')
 @Controller('client-auth')
@@ -451,8 +449,22 @@ export class ClientAuthController {
   }
 
   @Get('google')
-  @UseGuards(GoogleOAuthGuard)
-  async googleAuth() {}
+  async googleAuth(@Req() req: Request, @Res() res: Response) {
+    const state = (req.query.state as string) || '/';
+    const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID') || '';
+    const callbackUrl =
+      this.configService.get<string>('GOOGLE_CALLBACK_URL') || '';
+
+    const authUrl =
+      `https://accounts.google.com/o/oauth2/v2/auth?` +
+      `client_id=${clientId}` +
+      `&redirect_uri=${encodeURIComponent(callbackUrl)}` +
+      `&response_type=code` +
+      `&scope=email profile` +
+      `&state=${encodeURIComponent(state)}`;
+
+    return res.redirect(authUrl);
+  }
 
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
@@ -498,8 +510,21 @@ export class ClientAuthController {
   }
 
   @Get('facebook')
-  @UseGuards(FacebookOAuthGuard)
-  async facebookAuth() {}
+  async facebookAuth(@Req() req: Request, @Res() res: Response) {
+    const state = (req.query.state as string) || '/';
+    const clientId = this.configService.get<string>('FACEBOOK_APP_ID') || '';
+    const callbackUrl =
+      this.configService.get<string>('FACEBOOK_CALLBACK_URL') || '';
+
+    const authUrl =
+      `https://www.facebook.com/v12.0/dialog/oauth?` +
+      `client_id=${clientId}` +
+      `&redirect_uri=${encodeURIComponent(callbackUrl)}` +
+      `&scope=email,public_profile` +
+      `&state=${encodeURIComponent(state)}`;
+
+    return res.redirect(authUrl);
+  }
 
   @Get('facebook/callback')
   @UseGuards(AuthGuard('facebook'))

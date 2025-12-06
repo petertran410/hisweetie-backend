@@ -20,7 +20,6 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       callbackURL,
       scope: ['email', 'profile'],
       passReqToCallback: true,
-      state: true,
     });
   }
 
@@ -31,33 +30,42 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     profile: any,
     done: VerifyCallback,
   ): Promise<any> {
-    const { id, name, emails, photos } = profile;
+    try {
+      const { id, name, emails, photos } = profile;
 
-    const givenName = name?.givenName?.trim() || '';
-    const familyName = name?.familyName?.trim() || '';
+      if (!emails || !emails[0] || !emails[0].value) {
+        return done(new Error('Email not provided by Google'), null);
+      }
 
-    let fullName = '';
-    if (givenName && familyName) {
-      fullName = `${givenName} ${familyName}`;
-    } else if (givenName) {
-      fullName = givenName;
-    } else if (familyName) {
-      fullName = familyName;
-    } else {
-      fullName =
-        profile.displayName?.trim() ||
-        emails[0]?.value?.split('@')[0] ||
-        'User';
+      const givenName = name?.givenName?.trim() || '';
+      const familyName = name?.familyName?.trim() || '';
+
+      let fullName = '';
+      if (givenName && familyName) {
+        fullName = `${givenName} ${familyName}`;
+      } else if (givenName) {
+        fullName = givenName;
+      } else if (familyName) {
+        fullName = familyName;
+      } else {
+        fullName =
+          profile.displayName?.trim() ||
+          emails[0].value.split('@')[0] ||
+          'User';
+      }
+
+      const user = {
+        provider: 'google',
+        providerId: id,
+        email: emails[0].value,
+        full_name: fullName,
+        avatar_url: photos && photos[0] ? photos[0].value : null,
+        redirectUrl: req.query.state || '/',
+      };
+
+      done(null, user);
+    } catch (error) {
+      done(error, null);
     }
-
-    const user = {
-      provider: 'google',
-      providerId: id,
-      email: emails[0].value,
-      full_name: fullName,
-      avatar_url: photos[0].value,
-      redirectUrl: req.query.state || '/',
-    };
-    done(null, user);
   }
 }

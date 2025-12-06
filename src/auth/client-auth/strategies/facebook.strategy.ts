@@ -31,7 +31,6 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
       ],
       passReqToCallback: true,
       enableProof: true,
-      state: true,
     });
 
     this.logger.log('Facebook Strategy initialized');
@@ -64,7 +63,7 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
   ): Promise<any> {
     this.logger.log('Facebook validate called', {
       profileId: profile?.id,
-      profileData: JSON.stringify(profile, null, 2),
+      state: req.query.state,
     });
 
     try {
@@ -106,6 +105,7 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
       this.logger.log('Facebook user validated successfully', {
         email: user.email,
         fullName: user.full_name,
+        redirectUrl: user.redirectUrl,
       });
 
       done(null, user);
