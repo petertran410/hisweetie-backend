@@ -467,10 +467,13 @@ export class ClientAuthController {
         this.setRefreshTokenCookie(response, result.refresh_token);
       }
 
+      const redirectUrl = req.user?.redirectUrl || '/';
+
       const params = new URLSearchParams({
         token: result.access_token,
         user: JSON.stringify(result.user),
         needs_phone: result.needs_phone ? 'true' : 'false',
+        redirect: redirectUrl,
       });
 
       if (result.is_temp) {
@@ -511,10 +514,13 @@ export class ClientAuthController {
         this.setRefreshTokenCookie(response, result.refresh_token);
       }
 
+      const redirectUrl = req.user?.redirectUrl || '/';
+
       const params = new URLSearchParams({
         token: result.access_token,
         user: JSON.stringify(result.user),
         needs_phone: result.needs_phone ? 'true' : 'false',
+        redirect: redirectUrl,
       });
 
       if (result.is_temp) {

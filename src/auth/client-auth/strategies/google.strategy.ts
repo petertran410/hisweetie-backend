@@ -19,10 +19,12 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       clientSecret,
       callbackURL,
       scope: ['email', 'profile'],
+      passReqToCallback: true,
     });
   }
 
   async validate(
+    req: any,
     accessToken: string,
     refreshToken: string,
     profile: any,
@@ -30,7 +32,6 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
   ): Promise<any> {
     const { id, name, emails, photos } = profile;
 
-    // Xử lý tên để tránh undefined
     const givenName = name?.givenName?.trim() || '';
     const familyName = name?.familyName?.trim() || '';
 
@@ -54,6 +55,7 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       email: emails[0].value,
       full_name: fullName,
       avatar_url: photos[0].value,
+      redirectUrl: req.query.state || '/',
     };
     done(null, user);
   }

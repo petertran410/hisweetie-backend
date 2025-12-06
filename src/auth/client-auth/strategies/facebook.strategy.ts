@@ -89,10 +89,8 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
         fullName = givenName;
       } else if (familyName) {
         fullName = familyName;
-      } else if (displayName?.trim()) {
-        fullName = displayName.trim();
       } else {
-        fullName = `Facebook User`;
+        fullName = displayName?.trim() || userEmail?.split('@')[0] || 'User';
       }
 
       const user = {
@@ -100,18 +98,18 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
         providerId: id,
         email: userEmail,
         full_name: fullName,
-        avatar_url: photos?.[0]?.value,
+        avatar_url: photos?.[0]?.value || null,
+        redirectUrl: req.query.state || '/',
       };
 
       this.logger.log('Facebook user validated successfully', {
-        providerId: user.providerId,
         email: user.email,
         fullName: user.full_name,
       });
 
       done(null, user);
     } catch (error) {
-      this.logger.error('Error in Facebook validate:', error);
+      this.logger.error('Facebook validation error', error);
       done(error, null);
     }
   }
