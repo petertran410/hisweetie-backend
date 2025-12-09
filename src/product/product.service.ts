@@ -462,12 +462,28 @@ export class ProductService {
   private async saveProductsToDatabase(
     products: KiotProduct[],
   ): Promise<any[]> {
-    this.logger.log(`💾 Saving ${products.length} products to database...`);
-
     const savedProducts: any[] = [];
 
     for (const productData of products) {
       try {
+        let priceToUse: number | null = null;
+
+        if (productData.priceBooks && productData.priceBooks.length > 0) {
+          const targetPriceBook = productData.priceBooks.find(
+            (priceBook) =>
+              priceBook.priceBookId === 486878 ||
+              priceBook.priceBookName === 'BẢNG GIÁ LẺ HCM',
+          );
+
+          if (targetPriceBook && targetPriceBook.isActive !== false) {
+            priceToUse = targetPriceBook.price;
+          }
+        }
+
+        if (priceToUse === null && productData.basePrice) {
+          priceToUse = productData.basePrice;
+        }
+
         const product = await this.prismaService.product.upsert({
           where: { kiotviet_id: BigInt(productData.id) },
           update: {
@@ -477,9 +493,7 @@ export class ProductService {
             kiotviet_category_name: productData.categoryName,
             kiotviet_trademark_id: productData.tradeMarkId,
             kiotviet_type: productData.type ?? 1,
-            kiotviet_price: productData.basePrice
-              ? new Prisma.Decimal(productData.basePrice)
-              : null,
+            kiotviet_price: priceToUse ? new Prisma.Decimal(priceToUse) : null,
             kiotviet_description: productData.description?.trim() || null,
             kiotviet_images: productData.images,
             kiotviet_synced_at: new Date(),
@@ -492,9 +506,7 @@ export class ProductService {
             kiotviet_category_name: productData.categoryName,
             kiotviet_trademark_id: productData.tradeMarkId,
             kiotviet_type: productData.type ?? 1,
-            kiotviet_price: productData.basePrice
-              ? new Prisma.Decimal(productData.basePrice)
-              : null,
+            kiotviet_price: priceToUse ? new Prisma.Decimal(priceToUse) : null,
             kiotviet_description: productData.description?.trim() || null,
             kiotviet_images: productData.images,
             kiotviet_synced_at: new Date(),
