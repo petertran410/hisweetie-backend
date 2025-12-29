@@ -11,7 +11,8 @@ export class KiotVietService {
   private readonly clientSecret: string;
   private readonly retailerName: string;
   private readonly websiteBranchId = 635934;
-  private accessToken: string;
+  private accessToken: string | null = null;
+  private tokenExpiry: Date | null = null;
 
   constructor(
     private configService: ConfigService,
@@ -53,18 +54,25 @@ export class KiotVietService {
   }
 
   private async getAccessToken(): Promise<string> {
-    if (this.accessToken) return this.accessToken;
+    if (
+      this.accessToken &&
+      this.tokenExpiry &&
+      this.tokenExpiry > new Date(Date.now() + 5 * 60 * 1000)
+    ) {
+      return this.accessToken;
+    }
 
     try {
-      const tokenUrl = this.configService.get('KIOT_TOKEN');
+      this.logger.log('🔄 Obtaining new KiotViet access token...');
+
       const response = await firstValueFrom(
         this.httpService.post(
-          tokenUrl,
+          'https://id.kiotviet.vn/connect/token',
           {
+            scopes: 'PublicApi.Access',
+            grant_type: 'client_credentials',
             client_id: this.clientId,
             client_secret: this.clientSecret,
-            grant_type: 'client_credentials',
-            scopes: 'PublicApi.Access',
           },
           {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -73,12 +81,18 @@ export class KiotVietService {
       );
 
       this.accessToken = response.data.access_token;
-      this.logger.log('✅ KiotViet access token obtained successfully');
-      return this.accessToken;
+      this.tokenExpiry = new Date(
+        Date.now() + (response.data.expires_in - 300) * 1000,
+      );
+
+      this.logger.log(
+        `✅ KiotViet access token obtained successfully. Expires at: ${this.tokenExpiry.toISOString()}`,
+      );
+      return this.accessToken as string;
     } catch (error) {
       this.logger.error(
-        'Failed to get KiotViet access token:',
-        error.response?.data || error,
+        '❌ Failed to get KiotViet access token:',
+        error.response?.data || error.message,
       );
       throw error;
     }
@@ -190,78 +204,95 @@ export class KiotVietService {
     district?: string;
     clientId?: number;
   }): Promise<any> {
-    const token = await this.getAccessToken();
+    const maxRetries = 2;
+    let lastError;
 
-    const internationalPhone = this.convertPhoneToInternational(
-      customerData.phone,
-    );
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const token = await this.getAccessToken();
+        const internationalPhone = this.convertPhoneToInternational(
+          customerData.phone,
+        );
 
-    const cleanProvinceName = (province: string): string => {
-      if (!province) return '';
-      return province.replace(/^(Thành phố|Tỉnh)\s+/i, '').trim();
-    };
+        const cleanProvinceName = (province: string): string => {
+          if (!province) return '';
+          return province.replace(/^(Thành phố|Tỉnh)\s+/i, '').trim();
+        };
 
-    const payload: any = {
-      name: customerData.name,
-      contactNumber: internationalPhone,
-      address: customerData.address || '',
-      branchId: 635934,
-    };
+        const payload: any = {
+          name: customerData.name,
+          contactNumber: internationalPhone,
+          address: customerData.address || '',
+          branchId: 635934,
+        };
 
-    if (customerData.clientId) {
-      payload.code = this.generateCustomerCode(customerData.clientId);
+        if (customerData.clientId) {
+          payload.code = this.generateCustomerCode(customerData.clientId);
+        }
+
+        if (customerData.email?.trim()) {
+          payload.email = customerData.email.trim();
+        }
+
+        if (customerData.ward?.trim()) {
+          payload.wardName = customerData.ward.trim();
+        }
+
+        if (customerData.province?.trim()) {
+          const cleanedProvince = cleanProvinceName(customerData.province);
+          const originalDistrict = customerData.district?.trim() || '';
+          payload.locationName = [cleanedProvince, originalDistrict]
+            .filter(Boolean)
+            .join(' - ');
+        }
+
+        const response = await firstValueFrom(
+          this.httpService.post(`${this.baseUrl}/customers`, payload, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Retailer: this.retailerName,
+              'Content-Type': 'application/json',
+            },
+          }),
+        );
+
+        this.logger.log(
+          '🔍 FULL API RESPONSE:',
+          JSON.stringify(response.data, null, 2),
+        );
+        this.logger.log('🔍 RESPONSE KEYS:', Object.keys(response.data || {}));
+        this.logger.log(
+          '🔍 DATA FIELD:',
+          JSON.stringify(response.data.data, null, 2),
+        );
+
+        const createdCustomer = response.data.data || response.data;
+
+        this.logger.log(
+          `✅ Created customer: ${createdCustomer.id} (${createdCustomer.name}) with code: ${createdCustomer.code}`,
+        );
+        return createdCustomer;
+      } catch (error) {
+        lastError = error;
+
+        if (error.response?.status === 401 && attempt < maxRetries - 1) {
+          this.logger.warn(
+            `🔄 Token expired, refreshing token and retrying... (Attempt ${attempt + 1}/${maxRetries})`,
+          );
+          this.accessToken = null;
+          this.tokenExpiry = null;
+          continue;
+        }
+
+        this.logger.error(
+          '❌ Create customer failed:',
+          JSON.stringify(error.response?.data, null, 2),
+        );
+        throw error;
+      }
     }
 
-    if (customerData.email?.trim()) {
-      payload.email = customerData.email.trim();
-    }
-
-    if (customerData.ward?.trim()) {
-      payload.wardName = customerData.ward.trim();
-    }
-
-    if (customerData.province?.trim()) {
-      const cleanedProvince = cleanProvinceName(customerData.province);
-      const originalDistrict = customerData.district?.trim() || '';
-      payload.locationName = [cleanedProvince, originalDistrict]
-        .filter(Boolean)
-        .join(' - ');
-    }
-
-    try {
-      const response = await firstValueFrom(
-        this.httpService.post(`${this.baseUrl}/customers`, payload, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Retailer: this.retailerName,
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
-
-      this.logger.log(
-        '🔍 FULL API RESPONSE:',
-        JSON.stringify(response.data, null, 2),
-      );
-      this.logger.log('🔍 RESPONSE KEYS:', Object.keys(response.data || {}));
-      this.logger.log(
-        '🔍 DATA FIELD:',
-        JSON.stringify(response.data.data, null, 2),
-      );
-
-      const customerData = response.data.data || response.data;
-
-      this.logger.log(
-        `✅ Created customer: ${customerData.id} (${customerData.name}) with code: ${customerData.code}`,
-      );
-      return customerData;
-    } catch (error) {
-      this.logger.error(
-        '❌ Create customer failed:',
-        JSON.stringify(error.response?.data, null, 2),
-      );
-      throw error;
-    }
+    throw lastError;
   }
 
   async updateCustomer(

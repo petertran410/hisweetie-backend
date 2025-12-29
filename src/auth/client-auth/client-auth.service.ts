@@ -660,6 +660,7 @@ export class ClientAuthService {
       throw new ConflictException('Phone number is already registered');
     }
 
+    // Tạo user trước
     const user = await this.prisma.client_user.create({
       data: {
         full_name: pendingOAuth.full_name,
@@ -672,6 +673,7 @@ export class ClientAuthService {
       },
     });
 
+    // TRY tạo KiotViet customer
     try {
       const kiotCustomer = await this.kiotVietService.createCustomer({
         name: user.full_name || 'Unknown User',
@@ -680,6 +682,7 @@ export class ClientAuthService {
         clientId: user.client_id,
       });
 
+      // Update user với KiotViet info
       await this.prisma.client_user.update({
         where: { client_id: user.client_id },
         data: {
@@ -688,11 +691,23 @@ export class ClientAuthService {
         },
       });
     } catch (error) {
-      console.error('Failed to create Kiot customer:', error.message);
+      console.error('❌ Failed to create Kiot customer:', error.message);
+
+      // ROLLBACK: Xóa user vừa tạo nếu KiotViet fail
+      await this.prisma.client_user.delete({
+        where: { client_id: user.client_id },
+      });
+
+      // THROW ERROR để frontend biết và hiển thị lỗi
+      throw new BadRequestException(
+        'Unable to create customer. Please try again or contact support.',
+      );
     }
 
+    // Cleanup pending data
     this.pendingOAuthUsers.delete(tempKey);
 
+    // Tạo session và return tokens
     const tokens = await this.createSession(user.client_id);
 
     return {
