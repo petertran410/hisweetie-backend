@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "mysql"
-  url      = env("DATABASE_URL")
+    url      = env("DATABASE_URL")
 }
 
 model kiotviet_trademark {
@@ -76,6 +76,7 @@ model product {
   orders                 orders[]
   category               category? @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   review                 review[]
+  site_configs  product_site_config[]
 
   @@index([category_id, is_visible])
   @@index([category_slug])
@@ -86,6 +87,44 @@ model product {
   @@index([kiotviet_trademark_id])
   @@index([is_from_kiotviet])
   @@index([slug])
+  @@index([category_id])
+}
+
+model product_site_config {
+  id                  BigInt    @id @default(autoincrement())
+  product_id          BigInt
+  site_code           String    @db.VarChar(20)
+
+  category_id         BigInt?
+
+  slug                String?   @db.VarChar(255)
+  category_slug       String?   @db.VarChar(255)
+  title_meta          String?
+
+  description         String?   @db.LongText
+  general_description String?   @db.LongText
+  instruction         String?   @db.LongText
+  description_en      String?   @db.LongText
+  instruction_en      String?   @db.LongText
+
+  is_visible          Boolean?  @default(dbgenerated("b'0'")) @db.Bit(1)
+  is_featured         Boolean?  @db.Bit(1)
+  featured_thumbnail  String?   @db.VarChar(255)
+  recipe_thumbnail    String?   @db.VarChar(255)
+
+  created_date        DateTime? @default(now()) @db.DateTime(6)
+  updated_date        DateTime? @default(now()) @db.DateTime(6)
+
+  product             product   @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  category            category? @relation(fields: [category_id], references: [id], onDelete: SetNull)
+
+  @@unique([product_id, site_code])
+  @@index([site_code])
+  @@index([site_code, is_visible])
+  @@index([site_code, category_id])
+  @@index([site_code, slug])
+  @@index([site_code, is_featured])
+  @@index([product_id])
   @@index([category_id])
 }
 
@@ -104,11 +143,16 @@ model category {
   slug                 String?    @db.VarChar(255)
   title_meta           String?
   image_url            String?    @db.VarChar(500)
+  site_code            String                @default("dieptra") @db.VarChar(20)
+
   parent               category?  @relation("CategoryHierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
   children             category[] @relation("CategoryHierarchy")
   product              product[]
+  site_configs         product_site_config[]
 
-  @@unique([slug, parent_id])
+  @@unique([slug, parent_id, site_code])
+  @@index([site_code])
+  @@index([site_code, parent_id, priority])
   @@index([parent_id, priority])
   @@index([path])
   @@index([level])
@@ -216,7 +260,11 @@ model news {
   description_en  String?   @db.LongText
   html_content_en String?   @db.LongText
   user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  site_code    String    @default("dieptra") @db.VarChar(20)
 
+  @@index([site_code])
+  @@index([site_code, type])
+  @@index([site_code, is_visible])
   @@index([user_id])
   @@index([is_visible])
 }
@@ -426,7 +474,10 @@ model pages {
   is_main_page     Boolean   @default(dbgenerated("b'0'")) @db.Bit(1)
   parent           pages?    @relation("PageHierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
   children         pages[]   @relation("PageHierarchy")
+  site_code    String    @default("dieptra") @db.VarChar(20)
 
+  @@unique([slug, site_code])
+  @@index([site_code])
   @@index([slug])
   @@index([parent_id])
   @@index([display_order])
