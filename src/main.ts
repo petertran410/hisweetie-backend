@@ -1,14 +1,17 @@
 import { NestFactory } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
-import * as cookieParser from 'cookie-parser';
+import cookieParser from 'cookie-parser';
 import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { SiteCodeInterceptor } from './common/interceptors/site-code.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   app.use(cookieParser());
+
+  app.useGlobalInterceptors(new SiteCodeInterceptor());
 
   app.useStaticAssets(join(__dirname, '..', 'public'), {
     prefix: '/public/',
@@ -61,6 +64,7 @@ async function bootstrap() {
       'Accept',
       'Origin',
       'X-Force-Signature',
+      'X-Site-Code',
     ],
     exposedHeaders: ['Set-Cookie'],
     maxAge: 86400,

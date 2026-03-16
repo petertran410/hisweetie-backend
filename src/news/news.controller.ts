@@ -1,3 +1,4 @@
+// src/news/news.controller.ts
 import {
   Controller,
   Get,
@@ -22,6 +23,7 @@ import {
   ApiParam,
   ApiQuery,
 } from '@nestjs/swagger';
+import { CurrentSiteCode } from '../common/decorators/site-code.decorator';
 
 @ApiTags('news')
 @Controller('news')
@@ -34,146 +36,110 @@ export class NewsController {
     @Query('pageNumber') pageNumber: string = '0',
     @Query('title') title?: string,
     @Query('type') type?: string,
+    @CurrentSiteCode() siteCode?: string,
   ) {
-    return this.newsService.findAll({
-      pageSize: parseInt(pageSize),
-      pageNumber: parseInt(pageNumber),
-      title,
-      type,
-    });
+    return this.newsService.findAll(
+      {
+        pageSize: parseInt(pageSize),
+        pageNumber: parseInt(pageNumber),
+        title,
+        type,
+      },
+      siteCode,
+    );
   }
 
   @Get('client/get-all')
-  @ApiOperation({ summary: 'Get paginated news for client (public view)' })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns paginated news list for public viewing',
-  })
+  @ApiOperation({ summary: 'Get paginated news for client' })
   @UsePipes(new ValidationPipe({ transform: true }))
-  findAllForClient(@Query() searchDto: ClientNewsSearchDto) {
-    return this.newsService.findAllForClient(searchDto);
+  findAllForClient(
+    @Query() searchDto: ClientNewsSearchDto,
+    @CurrentSiteCode() siteCode?: string,
+  ) {
+    return this.newsService.findAllForClient(searchDto, siteCode);
   }
 
   @Get('client/find-id-by-slug')
-  @ApiOperation({
-    summary: 'Find news ID by slug and type for URL mapping',
-    description: 'Returns news ID to support clean URLs without exposing IDs',
-  })
-  @ApiQuery({ name: 'slug', description: 'Article slug (from title)' })
-  @ApiQuery({
-    name: 'type',
-    description: 'Article type (NEWS, KIEN_THUC_TRA, etc.)',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns news ID for the given slug and type',
-    schema: {
-      type: 'object',
-      properties: {
-        id: { type: 'number', description: 'News article ID' },
-        title: {
-          type: 'string',
-          description: 'Article title for verification',
-        },
-      },
-    },
-  })
-  findIdBySlug(@Query('slug') slug: string, @Query('type') type: string) {
-    return this.newsService.findIdBySlug(slug, type);
+  @ApiOperation({ summary: 'Find news ID by slug and type' })
+  findIdBySlug(
+    @Query('slug') slug: string,
+    @Query('type') type: string,
+    @CurrentSiteCode() siteCode?: string,
+  ) {
+    return this.newsService.findIdBySlug(slug, type, siteCode);
   }
 
   @Get('client/article-sections')
-  @ApiOperation({
-    summary: 'Get article sections for main "Bài Viết" page',
-    description:
-      'Returns 6 sections with 3 latest articles each for the main article page',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns structured sections data for main article page',
-  })
-  getArticleSections() {
-    return this.newsService.getArticleSections();
+  @ApiOperation({ summary: 'Get article sections for main page' })
+  getArticleSections(@CurrentSiteCode() siteCode?: string) {
+    return this.newsService.getArticleSections(siteCode);
   }
 
   @Get('client/featured')
   @ApiOperation({ summary: 'Get featured news articles' })
-  @ApiResponse({ status: 200, description: 'Returns featured news articles' })
   getFeaturedNews(
     @Query('limit') limit: string = '5',
     @Query('type') type?: string,
+    @CurrentSiteCode() siteCode?: string,
   ) {
-    return this.newsService.getFeaturedNews(parseInt(limit), type);
+    return this.newsService.getFeaturedNews(parseInt(limit), type, siteCode);
   }
 
   @Get('client/related/:id')
-  @ApiOperation({ summary: 'Get related news articles' })
-  @ApiParam({ name: 'id', description: 'News article ID' })
-  @ApiResponse({ status: 200, description: 'Returns related news articles' })
-  getRelatedNews(@Param('id') id: string, @Query('limit') limit: string = '4') {
-    return this.newsService.getRelatedNews(+id, parseInt(limit));
+  @ApiOperation({ summary: 'Get related news' })
+  getRelatedNews(
+    @Param('id') id: string,
+    @Query('limit') limit: string = '4',
+    @CurrentSiteCode() siteCode?: string,
+  ) {
+    return this.newsService.getRelatedNews(+id, parseInt(limit), siteCode);
   }
 
   @Get('client/:id')
-  @ApiOperation({ summary: 'Get news article details for client' })
-  @ApiParam({ name: 'id', description: 'News article ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns news article details for public viewing',
-  })
+  @ApiOperation({ summary: 'Get news detail for client' })
   findOneForClient(@Param('id') id: string) {
-    return this.newsService.findOneForClient(+id);
-  }
-
-  @Post('client/increment-view/:id')
-  @ApiOperation({ summary: 'Increment view count for a news article' })
-  @ApiParam({ name: 'id', description: 'News article ID' })
-  @HttpCode(200)
-  incrementViewCount(@Param('id') id: string) {
-    return this.newsService.incrementViewCount(+id);
-  }
-
-  @Post()
-  create(@Body() createNewsDto: CreateNewsDto) {
-    return this.newsService.create(createNewsDto);
+    return this.newsService.findOne(+id);
   }
 
   @Get(':id')
+  @ApiOperation({ summary: 'Get news detail' })
   findOne(@Param('id') id: string) {
     return this.newsService.findOne(+id);
   }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateNewsDto: UpdateNewsDto) {
-    return this.newsService.update(+id, updateNewsDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.newsService.remove(+id);
+  @Post()
+  @ApiOperation({ summary: 'Create news' })
+  @UsePipes(new ValidationPipe({ transform: true }))
+  create(
+    @Body() createNewsDto: CreateNewsDto,
+    @CurrentSiteCode() siteCode?: string,
+  ) {
+    return this.newsService.create(createNewsDto, siteCode);
   }
 
   @Patch('toggle-visibility/:id')
-  @ApiOperation({
-    summary: 'Toggle news visibility',
-    description:
-      'Toggle the visibility status of a news article for frontend display',
-  })
-  @ApiParam({ name: 'id', description: 'News ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'News visibility toggled successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        id: { type: 'number' },
-        is_visible: { type: 'boolean' },
-        title: { type: 'string' },
-        message: { type: 'string' },
-      },
-    },
-  })
-  toggleVisibility(@Param('id') id: string) {
-    return this.newsService.toggleVisibility(+id);
+  @ApiOperation({ summary: 'Toggle news visibility' })
+  toggleVisibility(
+    @Param('id') id: string,
+    @CurrentSiteCode() siteCode?: string,
+  ) {
+    return this.newsService.toggleVisibility(+id, siteCode);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Update news' })
+  @UsePipes(new ValidationPipe({ transform: true }))
+  update(
+    @Param('id') id: string,
+    @Body() updateNewsDto: UpdateNewsDto,
+    @CurrentSiteCode() siteCode?: string,
+  ) {
+    return this.newsService.update(+id, updateNewsDto, siteCode);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete news' })
+  remove(@Param('id') id: string, @CurrentSiteCode() siteCode?: string) {
+    return this.newsService.remove(+id, siteCode);
   }
 }

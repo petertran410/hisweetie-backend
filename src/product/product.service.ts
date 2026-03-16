@@ -1485,6 +1485,97 @@ export class ProductService {
     }
   }
 
+  async searchForCMSWithSiteConfig(params: any, siteCode: string = 'dieptra') {
+    const {
+      pageSize = 10,
+      pageNumber = 0,
+      title,
+      categoryId,
+      categoryIds,
+      visibilityFilter,
+      includeHidden = true,
+      orderBy,
+      isDesc,
+      excludeProductId,
+      randomize,
+    } = params;
+
+    // Build product_site_config where clause
+    const siteConfigWhere: any = { site_code: siteCode };
+
+    if (visibilityFilter !== undefined) {
+      siteConfigWhere.is_visible = visibilityFilter;
+    }
+
+    if (categoryIds?.length > 0) {
+      siteConfigWhere.category_id = { in: categoryIds.map((id) => BigInt(id)) };
+    } else if (categoryId) {
+      siteConfigWhere.category_id = BigInt(categoryId);
+    }
+
+    // Build main product where clause
+    const where: any = {
+      site_configs: { some: siteConfigWhere },
+    };
+
+    if (title) {
+      where.OR = [
+        { title: { contains: title } },
+        { kiotviet_name: { contains: title } },
+        { title_en: { contains: title } },
+      ];
+    }
+
+    if (excludeProductId) {
+      where.id = { not: BigInt(excludeProductId) };
+    }
+
+    const skip = pageNumber * pageSize;
+    const take = pageSize;
+
+    const [products, total] = await Promise.all([
+      this.prisma.product.findMany({
+        where,
+        skip,
+        take,
+        orderBy: this.buildSortClause(orderBy, isDesc),
+        include: {
+          site_configs: {
+            where: { site_code: siteCode },
+            include: {
+              category: {
+                select: {
+                  id: true,
+                  name: true,
+                  name_en: true,
+                  slug: true,
+                  description: true,
+                  parent_id: true,
+                  level: true,
+                  path: true,
+                  image_url: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.product.count({ where }),
+    ]);
+
+    const content = products.map((product) =>
+      this.mergeProductWithSiteConfig(product, siteCode),
+    );
+
+    return {
+      content,
+      totalElements: total,
+      totalPages: Math.ceil(total / pageSize),
+      pageNumber,
+      pageSize,
+    };
+  }
+
   private buildSortClause(
     orderBy: string = 'id',
     isDesc: boolean = true,
@@ -2031,5 +2122,657 @@ export class ProductService {
     }
 
     return slugs.join('/');
+  }
+
+  private mergeProductWithSiteConfig(product: any, siteCode: string) {
+    const sc = product.site_configs?.[0]; // Already filtered by site_code
+
+    const productTitle =
+      product.title || product.kiotviet_name || product.title_en || 'Untitled';
+    const productPrice = product.kiotviet_price
+      ? Number(product.kiotviet_price)
+      : null;
+
+    let imagesUrl: string[] = [];
+    if (product.images_url) {
+      try {
+        imagesUrl = JSON.parse(product.images_url);
+      } catch {
+        imagesUrl = [];
+      }
+    } else if (
+      product.kiotviet_images &&
+      Array.isArray(product.kiotviet_images) &&
+      product.kiotviet_images.length > 0
+    ) {
+      imagesUrl = [product.kiotviet_images[0]];
+    }
+
+    return {
+      id: Number(product.id),
+      title: productTitle,
+      title_en: product.title_en,
+      title_meta: sc?.title_meta ?? product.title_meta,
+      slug: sc?.slug ?? this.convertToSlug(productTitle),
+      price: productPrice,
+      imagesUrl,
+
+      // Per-site content (from site_config → fallback product)
+      description: sc?.description ?? product.description,
+      general_description:
+        sc?.general_description ?? product.general_description,
+      instruction: sc?.instruction ?? product.instruction,
+      description_en: sc?.description_en ?? product.description_en,
+      instruction_en: sc?.instruction_en ?? product.instruction_en,
+
+      // Per-site display
+      is_visible: sc?.is_visible ?? false,
+      is_featured: sc?.is_featured ?? false,
+      featured_thumbnail: sc?.featured_thumbnail ?? product.featured_thumbnail,
+      recipe_thumbnail: sc?.recipe_thumbnail ?? product.recipe_thumbnail,
+
+      // Per-site category
+      category_id: sc?.category_id ? Number(sc.category_id) : null,
+      category_slug: sc?.category_slug ?? product.category_slug,
+      category: sc?.category
+        ? {
+            id: Number(sc.category.id),
+            name: sc.category.name,
+            name_en: sc.category.name_en,
+            slug: sc.category.slug,
+            description: sc.category.description,
+            parent_id: sc.category.parent_id
+              ? Number(sc.category.parent_id)
+              : null,
+            level: sc.category.level,
+            path: sc.category.path,
+            image_url: sc.category.image_url,
+          }
+        : null,
+
+      // Shared fields (always from product)
+      price_on: product.price_on,
+      rate: product.rate,
+      kiotviet_name: product.kiotviet_name,
+      kiotviet_code: product.kiotviet_code,
+      kiotviet_price: productPrice,
+      kiotviet_images: product.kiotviet_images,
+      kiotviet_description: product.kiotviet_description,
+      isFromKiotViet: product.is_from_kiotviet === true,
+      hasSiteConfig: !!sc,
+    };
+  }
+
+  // ============================================================
+  // SITE CONFIG: UPSERT
+  // ============================================================
+  async upsertProductSiteConfig(
+    productId: number,
+    siteCode: string = 'dieptra',
+    data: {
+      category_id?: number | null;
+      slug?: string;
+      title_meta?: string;
+      description?: string;
+      general_description?: string;
+      instruction?: string;
+      description_en?: string;
+      instruction_en?: string;
+      is_visible?: boolean;
+      is_featured?: boolean;
+      featured_thumbnail?: string;
+      recipe_thumbnail?: string;
+    },
+  ) {
+    // Validate product exists
+    const product = await this.prisma.product.findUnique({
+      where: { id: BigInt(productId) },
+      select: { id: true, title: true, kiotviet_name: true },
+    });
+
+    if (!product)
+      throw new NotFoundException(`Product with ID ${productId} not found`);
+
+    // Calculate category_slug
+    let categorySlug: string | null = null;
+    if (data.category_id) {
+      const category = await this.prisma.category.findUnique({
+        where: { id: BigInt(data.category_id) },
+        select: { slug: true, site_code: true },
+      });
+
+      if (category && category.site_code !== siteCode) {
+        throw new BadRequestException(
+          `Category belongs to site "${category.site_code}", not "${siteCode}"`,
+        );
+      }
+
+      categorySlug = category?.slug ?? null;
+    }
+
+    // Calculate slug
+    let slug = data.slug;
+    if (!slug) {
+      slug = this.convertToSlug(product.title || product.kiotviet_name || '');
+    }
+
+    const upsertData = {
+      category_id:
+        data.category_id !== undefined
+          ? data.category_id
+            ? BigInt(data.category_id)
+            : null
+          : undefined,
+      category_slug: categorySlug !== undefined ? categorySlug : undefined,
+      slug,
+      title_meta: data.title_meta,
+      description: data.description,
+      general_description: data.general_description,
+      instruction: data.instruction,
+      description_en: data.description_en,
+      instruction_en: data.instruction_en,
+      is_visible: data.is_visible,
+      is_featured: data.is_featured,
+      featured_thumbnail: data.featured_thumbnail,
+      recipe_thumbnail: data.recipe_thumbnail,
+    };
+
+    // Remove undefined values
+    Object.keys(upsertData).forEach((key) => {
+      if (upsertData[key] === undefined) delete upsertData[key];
+    });
+
+    const result = await this.prisma.product_site_config.upsert({
+      where: {
+        product_id_site_code: {
+          product_id: BigInt(productId),
+          site_code: siteCode,
+        },
+      },
+      update: {
+        ...upsertData,
+        updated_date: new Date(),
+      },
+      create: {
+        product_id: BigInt(productId),
+        site_code: siteCode,
+        ...upsertData,
+        created_date: new Date(),
+        updated_date: new Date(),
+      },
+      include: {
+        category: { select: { id: true, name: true, slug: true } },
+      },
+    });
+
+    return {
+      success: true,
+      data: {
+        id: Number(result.id),
+        product_id: Number(result.product_id),
+        site_code: result.site_code,
+        category_id: result.category_id ? Number(result.category_id) : null,
+        category: result.category
+          ? {
+              id: Number(result.category.id),
+              name: result.category.name,
+              slug: result.category.slug,
+            }
+          : null,
+        slug: result.slug,
+        is_visible: result.is_visible,
+        is_featured: result.is_featured,
+      },
+      message: `Product site config updated for "${siteCode}"`,
+    };
+  }
+
+  // ============================================================
+  // SITE CONFIG: TOGGLE VISIBILITY PER SITE
+  // ============================================================
+  async toggleVisibilityForSite(
+    productId: number,
+    siteCode: string = 'dieptra',
+  ) {
+    const existing = await this.prisma.product_site_config.findUnique({
+      where: {
+        product_id_site_code: {
+          product_id: BigInt(productId),
+          site_code: siteCode,
+        },
+      },
+    });
+
+    if (!existing) {
+      // Create with is_visible = true (first toggle)
+      await this.prisma.product_site_config.create({
+        data: {
+          product_id: BigInt(productId),
+          site_code: siteCode,
+          is_visible: true,
+          created_date: new Date(),
+          updated_date: new Date(),
+        },
+      });
+
+      return {
+        id: productId,
+        site_code: siteCode,
+        is_visible: true,
+        message: 'Product is now visible on this site',
+      };
+    }
+
+    const newVisibility = !existing.is_visible;
+
+    await this.prisma.product_site_config.update({
+      where: {
+        product_id_site_code: {
+          product_id: BigInt(productId),
+          site_code: siteCode,
+        },
+      },
+      data: { is_visible: newVisibility, updated_date: new Date() },
+    });
+
+    return {
+      id: productId,
+      site_code: siteCode,
+      is_visible: newVisibility,
+      message: `Product visibility ${newVisibility ? 'enabled' : 'disabled'} for "${siteCode}"`,
+    };
+  }
+
+  // ============================================================
+  // SITE CONFIG: FIND BY SLUG FOR SITE
+  // ============================================================
+  async findBySlugForSite(slug: string, siteCode: string = 'dieptra') {
+    // Strategy 1: Find via site_config slug
+    const siteConfig = await this.prisma.product_site_config.findFirst({
+      where: {
+        slug,
+        site_code: siteCode,
+        is_visible: true,
+      },
+      include: {
+        product: true,
+        category: {
+          select: {
+            id: true,
+            name: true,
+            name_en: true,
+            slug: true,
+            description: true,
+            parent_id: true,
+          },
+        },
+      },
+    });
+
+    if (siteConfig) {
+      const merged = { ...siteConfig.product, site_configs: [siteConfig] };
+      return this.buildProductDetailResponse(merged, siteCode);
+    }
+
+    // Strategy 2: Fallback — find by product title → slug
+    const products = await this.prisma.product.findMany({
+      where: {
+        site_configs: {
+          some: { site_code: siteCode, is_visible: true },
+        },
+      },
+      include: {
+        site_configs: {
+          where: { site_code: siteCode },
+          include: {
+            category: {
+              select: {
+                id: true,
+                name: true,
+                name_en: true,
+                slug: true,
+                description: true,
+                parent_id: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const match = products.find((p) => {
+      const title = p.title || p.kiotviet_name;
+      return title && this.convertToSlug(title) === slug;
+    });
+
+    if (!match) {
+      throw new NotFoundException(
+        `Product with slug "${slug}" not found on site "${siteCode}"`,
+      );
+    }
+
+    return this.buildProductDetailResponse(match, siteCode);
+  }
+
+  // ============================================================
+  // SITE CONFIG: BUILD DETAIL RESPONSE (with category hierarchy)
+  // ============================================================
+  private async buildProductDetailResponse(product: any, siteCode: string) {
+    const sc = product.site_configs?.[0];
+    const merged = this.mergeProductWithSiteConfig(product, siteCode);
+
+    // Build category hierarchy for breadcrumb
+    let categoryHierarchy: any[] = [];
+    if (sc?.category_id) {
+      categoryHierarchy = await this.buildCategoryHierarchy(
+        Number(sc.category_id),
+      );
+    }
+
+    return {
+      ...merged,
+      categoryId: sc?.category_id ? Number(sc.category_id) : null,
+      categoryHierarchy,
+      kiotViet: {
+        id: product.kiotviet_id ? Number(product.kiotviet_id) : null,
+        code: product.kiotviet_code,
+        name: product.kiotviet_name,
+        price: product.kiotviet_price ? Number(product.kiotviet_price) : null,
+        type: product.kiotviet_type,
+        images: product.kiotviet_images,
+        kiotviet_description: product.kiotviet_description,
+      },
+    };
+  }
+
+  private async buildCategoryHierarchy(categoryId: number): Promise<any[]> {
+    const hierarchy: any[] = [];
+    let currentId: number | null = categoryId;
+
+    while (currentId) {
+      const cat = await this.prisma.category.findUnique({
+        where: { id: BigInt(currentId) },
+        select: {
+          id: true,
+          name: true,
+          name_en: true,
+          slug: true,
+          parent_id: true,
+        },
+      });
+
+      if (!cat) break;
+      hierarchy.unshift({
+        id: Number(cat.id),
+        name: cat.name,
+        name_en: cat.name_en,
+        slug: cat.slug,
+      });
+      currentId = cat.parent_id ? Number(cat.parent_id) : null;
+    }
+
+    return hierarchy;
+  }
+
+  // ============================================================
+  // SITE CONFIG: GET BY CATEGORY FOR SITE
+  // ============================================================
+  async getProductsByCategoryForSite(
+    categoryId: number,
+    siteCode: string = 'dieptra',
+  ) {
+    // Get category + all descendants
+    const allCategoryIds = await this.getDescendantCategoryIds(
+      categoryId,
+      siteCode,
+    );
+    allCategoryIds.push(categoryId);
+
+    const configs = await this.prisma.product_site_config.findMany({
+      where: {
+        site_code: siteCode,
+        is_visible: true,
+        category_id: { in: allCategoryIds.map((id) => BigInt(id)) },
+      },
+      include: {
+        product: true,
+        category: {
+          select: {
+            id: true,
+            name: true,
+            name_en: true,
+            slug: true,
+            description: true,
+          },
+        },
+      },
+      orderBy: { product_id: 'desc' },
+    });
+
+    return configs.map((sc) => {
+      const p = sc.product;
+      const merged = { ...p, site_configs: [sc] };
+      return this.mergeProductWithSiteConfig(merged, siteCode);
+    });
+  }
+
+  private async getDescendantCategoryIds(
+    categoryId: number,
+    siteCode: string,
+  ): Promise<number[]> {
+    const children = await this.prisma.category.findMany({
+      where: { parent_id: BigInt(categoryId), site_code: siteCode },
+      select: { id: true },
+    });
+
+    const ids: number[] = [];
+    for (const child of children) {
+      ids.push(Number(child.id));
+      const subIds = await this.getDescendantCategoryIds(
+        Number(child.id),
+        siteCode,
+      );
+      ids.push(...subIds);
+    }
+
+    return ids;
+  }
+
+  // ============================================================
+  // SITE CONFIG: FEATURED BY CATEGORIES
+  // ============================================================
+  async getFeaturedProductsByCategoriesForSite(siteCode: string = 'dieptra') {
+    const configs = await this.prisma.product_site_config.findMany({
+      where: {
+        site_code: siteCode,
+        is_visible: true,
+        is_featured: true,
+      },
+      include: {
+        product: true,
+        category: {
+          select: {
+            id: true,
+            name: true,
+            name_en: true,
+            slug: true,
+            image_url: true,
+          },
+        },
+      },
+      orderBy: { product_id: 'desc' },
+    });
+
+    const groupedByCategory = new Map<string, any>();
+
+    for (const sc of configs) {
+      if (!sc.category_id || !sc.category) continue;
+
+      const categoryKey = sc.category_id.toString();
+
+      if (!groupedByCategory.has(categoryKey)) {
+        groupedByCategory.set(categoryKey, {
+          categoryId: Number(sc.category_id),
+          categoryName: sc.category.name,
+          categorySlug: sc.category.slug,
+          categoryImage: sc.category.image_url,
+          products: [],
+        });
+      }
+
+      const p = sc.product;
+      const merged = { ...p, site_configs: [sc] };
+      groupedByCategory
+        .get(categoryKey)
+        .products.push(this.mergeProductWithSiteConfig(merged, siteCode));
+    }
+
+    return Array.from(groupedByCategory.values()).filter(
+      (g) => g.products.length > 0,
+    );
+  }
+
+  // ============================================================
+  // SITE CONFIG: GET ALL PRODUCTS FOR CLIENT (simplified)
+  // ============================================================
+  async getAllProductsForClientBySite(siteCode: string = 'dieptra') {
+    const configs = await this.prisma.product_site_config.findMany({
+      where: {
+        site_code: siteCode,
+        is_visible: true,
+      },
+      include: {
+        product: {
+          select: {
+            id: true,
+            title: true,
+            title_en: true,
+            kiotviet_name: true,
+            kiotviet_price: true,
+            kiotviet_images: true,
+            images_url: true,
+            rate: true,
+            price_on: true,
+          },
+        },
+        category: {
+          select: { id: true, name: true, name_en: true, slug: true },
+        },
+      },
+      orderBy: { product_id: 'desc' },
+    });
+
+    const data = configs.map((sc) => {
+      const p = sc.product;
+      const productTitle =
+        p.title || p.kiotviet_name || p.title_en || 'Untitled';
+      const price = p.kiotviet_price ? Number(p.kiotviet_price) : null;
+
+      let imagesUrl: string[] = [];
+      if (p.images_url) {
+        try {
+          imagesUrl = JSON.parse(p.images_url as string);
+        } catch {
+          imagesUrl = [];
+        }
+      } else if (p.kiotviet_images && Array.isArray(p.kiotviet_images)) {
+        imagesUrl = (p.kiotviet_images as unknown[]).filter(
+          (img): img is string => typeof img === 'string',
+        );
+      }
+
+      return {
+        id: Number(p.id),
+        title: productTitle,
+        title_en: p.title_en,
+        slug: sc.slug || this.convertToSlug(productTitle),
+        kiotviet_price: price,
+        kiotviet_images: p.kiotviet_images,
+        imagesUrl,
+        rate: p.rate,
+        price_on: p.price_on,
+        is_featured: sc.is_featured,
+        category_id: sc.category_id ? Number(sc.category_id) : null,
+        category: sc.category
+          ? {
+              id: Number(sc.category.id),
+              name: sc.category.name,
+              slug: sc.category.slug,
+            }
+          : null,
+      };
+    });
+
+    return { success: true, data, total: data.length };
+  }
+
+  // ============================================================
+  // SITE CONFIG: FIND ID BY SLUG
+  // ============================================================
+  async findIdBySlugForSite(
+    slug: string,
+    categorySlug: string,
+    siteCode: string = 'dieptra',
+  ) {
+    const configs = await this.prisma.product_site_config.findMany({
+      where: {
+        site_code: siteCode,
+        category_slug: categorySlug || undefined,
+      },
+      include: {
+        product: { select: { id: true, title: true, kiotviet_name: true } },
+        category: { select: { slug: true, name: true } },
+      },
+    });
+
+    const match = configs.find((sc) => {
+      const title = sc.product.title || sc.product.kiotviet_name;
+      return title && this.convertToSlug(title) === slug;
+    });
+
+    if (!match) {
+      throw new NotFoundException(`Product not found for slug "${slug}"`);
+    }
+
+    return {
+      id: Number(match.product.id),
+      title: match.product.title || match.product.kiotviet_name,
+      slug,
+      category: match.category
+        ? { slug: match.category.slug, name: match.category.name }
+        : null,
+    };
+  }
+
+  // ============================================================
+  // SITE CONFIG: FIND ONE WITH SITE CONFIG
+  // ============================================================
+  async findOneWithSiteConfig(id: number, siteCode: string = 'dieptra') {
+    const product = await this.prisma.product.findUnique({
+      where: { id: BigInt(id) },
+      include: {
+        category: true,
+        site_configs: {
+          where: { site_code: siteCode },
+          include: {
+            category: {
+              select: {
+                id: true,
+                name: true,
+                name_en: true,
+                slug: true,
+                description: true,
+                parent_id: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!product)
+      throw new NotFoundException(`Product with ID ${id} not found`);
+
+    return this.buildProductDetailResponse(product, siteCode);
   }
 }

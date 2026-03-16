@@ -32,18 +32,17 @@ const convertToSlug = (str: string): string => {
 export class NewsService {
   prisma = new PrismaClient();
 
-  async findIdBySlug(slug: string, type: string) {
+  async findIdBySlug(slug: string, type: string, siteCode: string = 'dieptra') {
     try {
       const articles = await this.prisma.news.findMany({
-        where: { type },
+        where: { type, site_code: siteCode },
         select: { id: true, title: true },
         orderBy: { created_date: 'desc' },
       });
 
       const foundArticle = articles.find((article) => {
         const title = article.title || '';
-        const articleSlug = convertToSlug(title);
-        return articleSlug === slug;
+        return convertToSlug(title) === slug;
       });
 
       if (!foundArticle) {
@@ -58,16 +57,14 @@ export class NewsService {
         slug: convertToSlug(foundArticle.title || ''),
       };
     } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
+      if (error instanceof NotFoundException) throw error;
       throw new InternalServerErrorException(
         `Lỗi khi tìm bài viết: ${error.message}`,
       );
     }
   }
 
-  async getArticleSections() {
+  async getArticleSections(siteCode: string = 'dieptra') {
     try {
       const articleTypes = [
         'KIEN_THUC_NGUYEN_LIEU',
@@ -84,6 +81,7 @@ export class NewsService {
             where: {
               type,
               is_visible: true,
+              site_code: siteCode,
             },
             select: {
               id: true,
@@ -113,10 +111,7 @@ export class NewsService {
             type: article.type,
           }));
 
-          return {
-            type,
-            articles: formattedArticles,
-          };
+          return { type, articles: formattedArticles };
         }),
       );
 
@@ -164,22 +159,20 @@ export class NewsService {
     };
   };
 
-  async findAllForClient(searchDto: ClientNewsSearchDto) {
+  async findAllForClient(
+    searchDto: ClientNewsSearchDto,
+    siteCode: string = 'dieptra',
+  ) {
     const { pageSize = 10, pageNumber = 0, title, type, featured } = searchDto;
 
     const where: any = {
       is_visible: true,
+      site_code: siteCode,
     };
 
-    if (title) {
-      where.title = { contains: title };
-    }
-    if (type) {
-      where.type = type;
-    }
-    if (featured === true) {
-      where.is_featured = true;
-    }
+    if (title) where.title = { contains: title };
+    if (type) where.type = type;
+    if (featured === true) where.is_featured = true;
 
     const totalElements = await this.prisma.news.count({ where });
 
@@ -198,22 +191,24 @@ export class NewsService {
       totalPages: Math.ceil(totalElements / pageSize),
       number: pageNumber,
       size: pageSize,
-      pageable: {
-        pageNumber,
-        pageSize,
-      },
+      pageable: { pageNumber, pageSize },
     };
   }
 
-  async toggleVisibility(id: number) {
+  async toggleVisibility(id: number, siteCode: string = 'dieptra') {
     try {
       const existingNews = await this.prisma.news.findUnique({
         where: { id: BigInt(id) },
-        select: { id: true, title: true, is_visible: true },
+        select: { id: true, title: true, is_visible: true, site_code: true },
       });
 
-      if (!existingNews) {
+      if (!existingNews)
         throw new NotFoundException(`News with ID ${id} not found`);
+
+      if (existingNews.site_code !== siteCode) {
+        throw new BadRequestException(
+          `News belongs to site "${existingNews.site_code}"`,
+        );
       }
 
       const newVisibility = !existingNews.is_visible;
@@ -221,11 +216,7 @@ export class NewsService {
       const updatedNews = await this.prisma.news.update({
         where: { id: BigInt(id) },
         data: { is_visible: newVisibility },
-        select: {
-          id: true,
-          title: true,
-          is_visible: true,
-        },
+        select: { id: true, title: true, is_visible: true },
       });
 
       return {
@@ -235,16 +226,18 @@ export class NewsService {
         message: `Bài viết "${updatedNews.title}" đã được ${newVisibility ? 'hiển thị' : 'ẩn'}`,
       };
     } catch (error) {
-      if (error instanceof NotFoundException) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      )
         throw error;
-      }
       throw new BadRequestException(
         `Failed to toggle visibility: ${error.message}`,
       );
     }
   }
 
-  async create(createNewsDto: CreateNewsDto) {
+  async create(createNewsDto: CreateNewsDto, siteCode: string = 'dieptra') {
     try {
       const {
         title,
@@ -259,7 +252,7 @@ export class NewsService {
         titleMeta,
       } = createNewsDto;
 
-      const newsData = {
+      const newsData: any = {
         title,
         title_en,
         title_meta: titleMeta,
@@ -268,68 +261,50 @@ export class NewsService {
         html_content: htmlContent,
         html_content_en: html_content_en,
         images_url: imagesUrl ? JSON.stringify(imagesUrl) : null,
-        embed_url: embedUrl || null,
-        type,
+        type: type || 'NEWS',
+        embed_url: embedUrl,
         created_date: new Date(),
         updated_date: new Date(),
+        is_visible: true,
+        site_code: siteCode,
       };
 
-      const newNews = await this.prisma.news.create({
-        data: newsData,
-      });
+      const news = await this.prisma.news.create({ data: newsData });
 
-      return this.formatNewsForResponse(newNews);
+      return this.formatNewsForResponse(news);
     } catch (error) {
-      throw new InternalServerErrorException(
-        `Lỗi khi tạo tin tức: ${error.message}`,
-      );
+      throw new BadRequestException(`Failed to create news: ${error.message}`);
     }
   }
 
-  async findAll(params?: {
-    pageSize?: number;
-    pageNumber?: number;
-    title?: string;
-    type?: string;
-    excludeTypes?: string;
-  }) {
-    const {
-      pageSize = 10,
-      pageNumber = 0,
-      title,
-      type,
-      excludeTypes,
-    } = params || {};
+  async findAll(
+    searchDto: {
+      pageSize?: number;
+      pageNumber?: number;
+      title?: string;
+      type?: string;
+    },
+    siteCode: string = 'dieptra',
+  ) {
+    const { pageSize = 10, pageNumber = 0, title, type } = searchDto;
 
-    const where: any = {};
+    const where: any = { site_code: siteCode };
+    if (title) where.title = { contains: title };
+    if (type) where.type = type;
 
-    if (title) {
-      where.title = { contains: title };
-    }
+    const totalElements = await this.prisma.news.count({ where });
 
-    if (type) {
-      where.type = type;
-    }
+    const news = await this.prisma.news.findMany({
+      where,
+      skip: pageNumber * pageSize,
+      take: pageSize,
+      orderBy: [{ created_date: 'desc' }],
+    });
 
-    if (excludeTypes) {
-      const typesToExclude = excludeTypes.split(',');
-      where.type = {
-        notIn: typesToExclude,
-      };
-    }
-
-    const [news, totalElements] = await Promise.all([
-      this.prisma.news.findMany({
-        where,
-        skip: pageNumber * pageSize,
-        take: pageSize,
-        orderBy: [{ created_date: 'desc' }],
-      }),
-      this.prisma.news.count({ where }),
-    ]);
+    const content = news.map(this.formatNewsForResponse);
 
     return {
-      content: news.map(this.formatNewsForResponse),
+      content,
       totalElements,
       totalPages: Math.ceil(totalElements / pageSize),
       number: pageNumber,
@@ -339,30 +314,10 @@ export class NewsService {
 
   async findOne(id: number) {
     const news = await this.prisma.news.findUnique({
-      where: {
-        id: BigInt(id),
-      },
-      select: {
-        id: true,
-        title: true,
-        title_en: true,
-        title_meta: true,
-        description: true,
-        description_en: true,
-        html_content: true,
-        html_content_en: true,
-        images_url: true,
-        embed_url: true,
-        created_date: true,
-        updated_date: true,
-        view: true,
-        type: true,
-      },
+      where: { id: BigInt(id) },
     });
 
-    if (!news) {
-      throw new NotFoundException(`News with ID ${id} not found`);
-    }
+    if (!news) throw new NotFoundException(`News with ID ${id} not found`);
 
     return this.formatNewsForResponse(news);
   }
@@ -429,79 +384,83 @@ export class NewsService {
     };
   }
 
-  async update(id: number, updateNewsDto: UpdateNewsDto) {
-    try {
-      const existingNews = await this.prisma.news.findUnique({
-        where: { id: BigInt(id) },
-      });
-
-      if (!existingNews) {
-        throw new NotFoundException(`Không tìm thấy tin tức với ID ${id}`);
-      }
-
-      const {
-        title,
-        title_en,
-        description,
-        description_en,
-        htmlContent,
-        html_content_en,
-        imagesUrl,
-        type,
-        embedUrl,
-        titleMeta,
-      } = updateNewsDto;
-
-      const updateData: any = {
-        updated_date: new Date(),
-      };
-
-      if (title !== undefined) updateData.title = title;
-      if (title_en !== undefined) updateData.title_en = title_en;
-      if (titleMeta !== undefined) updateData.title_meta = titleMeta;
-      if (description !== undefined) updateData.description = description;
-      if (description_en !== undefined)
-        updateData.description_en = description_en;
-      if (htmlContent !== undefined) updateData.html_content = htmlContent;
-      if (html_content_en !== undefined)
-        updateData.html_content_en = html_content_en;
-      if (imagesUrl !== undefined)
-        updateData.images_url = JSON.stringify(imagesUrl);
-      if (embedUrl !== undefined) updateData.embed_url = embedUrl;
-      if (type !== undefined) updateData.type = type;
-
-      const updatedNews = await this.prisma.news.update({
-        where: { id: BigInt(id) },
-        data: updateData,
-      });
-
-      return this.formatNewsForResponse(updatedNews);
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new InternalServerErrorException(
-        `Lỗi khi cập nhật tin tức: ${error.message}`,
-      );
-    }
-  }
-
-  async remove(id: number) {
-    await this.prisma.news.delete({
+  async update(
+    id: number,
+    updateNewsDto: UpdateNewsDto,
+    siteCode: string = 'dieptra',
+  ) {
+    const existingNews = await this.prisma.news.findUnique({
       where: { id: BigInt(id) },
     });
 
+    if (!existingNews)
+      throw new NotFoundException(`News with ID ${id} not found`);
+
+    if (existingNews.site_code !== siteCode) {
+      throw new BadRequestException(
+        `News belongs to site "${existingNews.site_code}"`,
+      );
+    }
+
+    const updateData: any = { updated_date: new Date() };
+
+    if (updateNewsDto.title !== undefined)
+      updateData.title = updateNewsDto.title;
+    if (updateNewsDto.title_en !== undefined)
+      updateData.title_en = updateNewsDto.title_en;
+    if (updateNewsDto.titleMeta !== undefined)
+      updateData.title_meta = updateNewsDto.titleMeta;
+    if (updateNewsDto.description !== undefined)
+      updateData.description = updateNewsDto.description;
+    if (updateNewsDto.description_en !== undefined)
+      updateData.description_en = updateNewsDto.description_en;
+    if (updateNewsDto.htmlContent !== undefined)
+      updateData.html_content = updateNewsDto.htmlContent;
+    if (updateNewsDto.html_content_en !== undefined)
+      updateData.html_content_en = updateNewsDto.html_content_en;
+    if (updateNewsDto.type !== undefined) updateData.type = updateNewsDto.type;
+    if (updateNewsDto.embedUrl !== undefined)
+      updateData.embed_url = updateNewsDto.embedUrl;
+    if (updateNewsDto.imagesUrl !== undefined) {
+      updateData.images_url = updateNewsDto.imagesUrl
+        ? JSON.stringify(updateNewsDto.imagesUrl)
+        : null;
+    }
+
+    const updatedNews = await this.prisma.news.update({
+      where: { id: BigInt(id) },
+      data: updateData,
+    });
+
+    return this.formatNewsForResponse(updatedNews);
+  }
+
+  async remove(id: number, siteCode: string = 'dieptra') {
+    const news = await this.prisma.news.findUnique({
+      where: { id: BigInt(id) },
+    });
+
+    if (!news) throw new NotFoundException(`News with ID ${id} not found`);
+
+    if (news.site_code !== siteCode) {
+      throw new BadRequestException(`News belongs to site "${news.site_code}"`);
+    }
+
+    await this.prisma.news.delete({ where: { id: BigInt(id) } });
     return { message: 'News deleted successfully' };
   }
 
-  async getFeaturedNews(limit: number, type?: string) {
+  async getFeaturedNews(
+    limit: number = 5,
+    type?: string,
+    siteCode: string = 'dieptra',
+  ) {
     const where: any = {
       is_featured: true,
       is_visible: true,
+      site_code: siteCode,
     };
-    if (type) {
-      where.type = type;
-    }
+    if (type) where.type = type;
 
     const news = await this.prisma.news.findMany({
       where,
@@ -512,21 +471,24 @@ export class NewsService {
     return news.map(this.formatNewsForResponse);
   }
 
-  async getRelatedNews(currentId: number, limit: number = 4) {
+  async getRelatedNews(
+    currentId: number,
+    limit: number = 4,
+    siteCode: string = 'dieptra',
+  ) {
     const currentNews = await this.prisma.news.findUnique({
       where: { id: BigInt(currentId) },
-      select: { type: true },
+      select: { type: true, site_code: true },
     });
 
-    if (!currentNews) {
-      return [];
-    }
+    if (!currentNews) return [];
 
     const relatedNews = await this.prisma.news.findMany({
       where: {
         type: currentNews.type,
         id: { not: BigInt(currentId) },
         is_visible: true,
+        site_code: siteCode,
       },
       take: limit,
       orderBy: { created_date: 'desc' },

@@ -15,32 +15,29 @@ export class PagesService {
 
   constructor() {}
 
-  async create(createPagesDto: CreatePagesDto) {
-    // Check if slug already exists
-    const existingPage = await this.prisma.pages.findUnique({
-      where: { slug: createPagesDto.slug },
+  async create(createPagesDto: CreatePagesDto, siteCode: string = 'dieptra') {
+    const existingPage = await this.prisma.pages.findFirst({
+      where: { slug: createPagesDto.slug, site_code: siteCode },
     });
 
     if (existingPage) {
       throw new BadRequestException(
-        `Page with slug "${createPagesDto.slug}" already exists`,
+        `Page with slug "${createPagesDto.slug}" already exists for site "${siteCode}"`,
       );
     }
 
     return this.prisma.pages.create({
       data: {
         ...createPagesDto,
+        site_code: siteCode,
         created_date: new Date(),
         updated_date: new Date(),
       },
-      include: {
-        parent: true,
-        children: true,
-      },
+      include: { parent: true, children: true },
     });
   }
 
-  async findAll(searchDto: SearchPagesDto) {
+  async findAll(searchDto: SearchPagesDto, siteCode: string = 'dieptra') {
     const {
       pageSize = 10,
       pageNumber = 0,
@@ -50,32 +47,17 @@ export class PagesService {
       is_active,
     } = searchDto;
 
-    const where: any = {};
-
-    if (title) {
-      where.title = { contains: title };
-    }
-
-    if (slug) {
-      where.slug = { contains: slug };
-    }
-
-    if (parent_id !== undefined) {
-      where.parent_id = parent_id;
-    }
-
-    if (is_active !== undefined) {
-      where.is_active = is_active;
-    }
+    const where: any = { site_code: siteCode };
+    if (title) where.title = { contains: title };
+    if (slug) where.slug = { contains: slug };
+    if (parent_id !== undefined) where.parent_id = parent_id;
+    if (is_active !== undefined) where.is_active = is_active;
 
     const [total, data] = await Promise.all([
       this.prisma.pages.count({ where }),
       this.prisma.pages.findMany({
         where,
-        include: {
-          parent: true,
-          children: true,
-        },
+        include: { parent: true, children: true },
         orderBy: [{ display_order: 'asc' }, { created_date: 'desc' }],
         skip: pageNumber * pageSize,
         take: pageSize,
@@ -91,9 +73,9 @@ export class PagesService {
     };
   }
 
-  async findOne(id: number) {
+  async findOne(id: number, siteCode: string = 'dieptra') {
     const page = await this.prisma.pages.findUnique({
-      where: { id: BigInt(id) }, // Convert to BigInt for Prisma
+      where: { id: BigInt(id) },
       include: {
         parent: true,
         children: {
@@ -103,16 +85,17 @@ export class PagesService {
       },
     });
 
-    if (!page) {
-      throw new NotFoundException(`Page with ID ${id} not found`);
+    if (!page) throw new NotFoundException(`Page with ID ${id} not found`);
+    if (page.site_code !== siteCode) {
+      throw new BadRequestException('Page does not belong to this site');
     }
 
     return page;
   }
 
-  async findBySlug(slug: string) {
-    const page = await this.prisma.pages.findUnique({
-      where: { slug },
+  async findBySlug(slug: string, siteCode: string = 'dieptra') {
+    const page = await this.prisma.pages.findFirst({
+      where: { slug, site_code: siteCode },
       include: {
         parent: true,
         children: {
@@ -122,59 +105,44 @@ export class PagesService {
       },
     });
 
-    if (!page) {
-      throw new NotFoundException(`Page with slug "${slug}" not found`);
-    }
-
+    if (!page)
+      throw new NotFoundException(
+        `Page with slug "${slug}" not found for site "${siteCode}"`,
+      );
     return page;
   }
 
-  async update(id: number, updatePagesDto: UpdatePagesDto) {
-    // Check if page exists
-    const existingPage = await this.findOne(id);
-
-    // Check slug uniqueness if slug is being updated
-    if (updatePagesDto.slug && updatePagesDto.slug !== existingPage.slug) {
-      const slugExists = await this.prisma.pages.findUnique({
-        where: { slug: updatePagesDto.slug },
-      });
-
-      if (slugExists) {
-        throw new BadRequestException(
-          `Page with slug "${updatePagesDto.slug}" already exists`,
-        );
-      }
+  async update(
+    id: number,
+    updatePagesDto: UpdatePagesDto,
+    siteCode: string = 'dieptra',
+  ) {
+    const page = await this.prisma.pages.findUnique({
+      where: { id: BigInt(id) },
+    });
+    if (!page) throw new NotFoundException(`Page with ID ${id} not found`);
+    if (page.site_code !== siteCode) {
+      throw new BadRequestException('Page does not belong to this site');
     }
 
     return this.prisma.pages.update({
-      where: { id: BigInt(id) }, // Convert to BigInt for Prisma
-      data: {
-        ...updatePagesDto,
-        updated_date: new Date(),
-      },
-      include: {
-        parent: true,
-        children: true,
-      },
+      where: { id: BigInt(id) },
+      data: { ...updatePagesDto, updated_date: new Date() },
+      include: { parent: true, children: true },
     });
   }
 
-  async remove(id: number) {
-    // Check if page exists
-    await this.findOne(id);
-
-    // Check if page has children
-    const childrenCount = await this.prisma.pages.count({
-      where: { parent_id: BigInt(id) }, // Convert to BigInt for Prisma
+  async remove(id: number, siteCode: string = 'dieptra') {
+    const page = await this.prisma.pages.findUnique({
+      where: { id: BigInt(id) },
     });
-
-    if (childrenCount > 0) {
-      throw new BadRequestException('Cannot delete page that has child pages');
+    if (!page) throw new NotFoundException(`Page with ID ${id} not found`);
+    if (page.site_code !== siteCode) {
+      throw new BadRequestException('Page does not belong to this site');
     }
 
-    return this.prisma.pages.delete({
-      where: { id: BigInt(id) }, // Convert to BigInt for Prisma
-    });
+    await this.prisma.pages.delete({ where: { id: BigInt(id) } });
+    return { message: 'Page deleted successfully' };
   }
 
   // Get hierarchy for sidebar - FIXED parentId type

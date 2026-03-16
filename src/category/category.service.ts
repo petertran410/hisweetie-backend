@@ -1,4 +1,3 @@
-import { Prisma } from './../../node_modules/.prisma/client/index.d';
 import {
   Injectable,
   Logger,
@@ -19,7 +18,10 @@ export class CategoryService {
 
   constructor(private prisma: PrismaService) {}
 
-  async create(createCategoryDto: CreateCategoryDto) {
+  async create(
+    createCategoryDto: CreateCategoryDto,
+    siteCode: string = 'dieptra',
+  ) {
     try {
       if (createCategoryDto.parent_id) {
         const parentCategory = await this.prisma.category.findUnique({
@@ -28,6 +30,12 @@ export class CategoryService {
 
         if (!parentCategory) {
           throw new BadRequestException('Parent category not found');
+        }
+
+        if (parentCategory.site_code !== siteCode) {
+          throw new BadRequestException(
+            `Parent category belongs to site "${parentCategory.site_code}", not "${siteCode}"`,
+          );
         }
       }
 
@@ -42,10 +50,12 @@ export class CategoryService {
             : null,
           priority: createCategoryDto.priority || 0,
           slug: this.convertToSlug(createCategoryDto.name),
+          image_url: createCategoryDto.image_url,
+          site_code: siteCode,
         },
       });
 
-      await this.recalculateHierarchy();
+      await this.recalculateHierarchy(siteCode);
 
       return {
         success: true,
@@ -62,9 +72,12 @@ export class CategoryService {
     }
   }
 
-  async getAllCategoriesTree(): Promise<CategoryTreeDto[]> {
+  async getAllCategoriesTree(
+    siteCode: string = 'dieptra',
+  ): Promise<CategoryTreeDto[]> {
     try {
       const categories = await this.prisma.category.findMany({
+        where: { site_code: siteCode },
         include: {
           product: {
             select: { id: true },
@@ -93,75 +106,75 @@ export class CategoryService {
     }
   }
 
-  async getAllCategories(params: {
-    pageSize: number;
-    pageNumber: number;
-    name?: string;
-  }) {
-    const { pageNumber, pageSize, name } = params;
-    const skip = pageNumber * pageSize;
+  async getAllCategories(
+    params: { pageSize: number; pageNumber: number; name?: string },
+    siteCode: string = 'dieptra',
+  ) {
+    const { pageSize = 10, pageNumber = 0, name } = params;
 
-    const whereClause = name
-      ? {
-          name: { contains: name, mode: 'insensitive' },
-        }
-      : {};
+    const where: any = { site_code: siteCode };
+    if (name) {
+      where.name = { contains: name };
+    }
 
-    const [categories, totalCount] = await Promise.all([
+    const [total, categories] = await Promise.all([
+      this.prisma.category.count({ where }),
       this.prisma.category.findMany({
-        where: whereClause,
+        where,
         include: {
+          parent: true,
+          children: true,
           product: { select: { id: true } },
-          parent: { select: { id: true, name: true, name_en: true } },
         },
-        orderBy: [{ priority: 'asc' }, { name: 'asc' }],
-        skip,
+        orderBy: [{ level: 'asc' }, { priority: 'asc' }, { name: 'asc' }],
+        skip: pageNumber * pageSize,
         take: pageSize,
       }),
-      this.prisma.category.count({ where: whereClause }),
     ]);
 
-    const transformedCategories = categories.map((cat) => ({
+    const data = categories.map((cat) => ({
       id: Number(cat.id),
       name: cat.name,
       name_en: cat.name_en,
       description: cat.description,
+      title_meta: cat.title_meta,
+      slug: cat.slug,
+      image_url: cat.image_url,
       parent_id: cat.parent_id ? Number(cat.parent_id) : null,
-      parent_name: cat.parent?.name || null,
+      parent_name: cat.parent?.name,
       priority: cat.priority || 0,
-      productCount: cat.product.length,
-      level: 0,
-      displayName: cat.name,
-      hasChildren: false,
+      level: cat.level,
+      path: cat.path,
+      productCount: cat.product_count,
+      directProductCount: cat.direct_product_count,
+      childCount: cat.child_count,
+      hasChildren: cat.children.length > 0,
       hasProducts: cat.product.length > 0,
     }));
 
     return {
-      success: true,
-      content: transformedCategories,
-      totalElements: totalCount,
-      totalPages: Math.ceil(totalCount / pageSize),
-      number: pageNumber,
+      content: data,
+      totalElements: total,
+      totalPages: Math.ceil(total / pageSize),
       size: pageSize,
-      message: 'Categories for CMS fetched successfully',
+      number: pageNumber,
     };
   }
 
-  async findOne(id: number) {
+  async findOne(id: number, siteCode: string = 'dieptra') {
     const category = await this.prisma.category.findUnique({
       where: { id: BigInt(id) },
       include: {
-        product: {
-          select: { id: true, title: true, kiotviet_name: true },
-        },
-        parent: {
-          select: { id: true, name: true, name_en: true },
-        },
+        parent: true,
+        children: { orderBy: { priority: 'asc' } },
+        product: { select: { id: true, title: true, kiotviet_name: true } },
       },
     });
 
-    if (!category) {
-      throw new NotFoundException(`Category with ID ${id} not found`);
+    if (!category) throw new NotFoundException('Category not found');
+
+    if (category.site_code !== siteCode) {
+      throw new BadRequestException('Category does not belong to this site');
     }
 
     return {
@@ -173,15 +186,18 @@ export class CategoryService {
         description: category.description,
         title_meta: category.title_meta,
         slug: category.slug,
+        image_url: category.image_url,
         priority: category.priority,
         level: category.level,
         path: category.path,
-        image_url: category.image_url,
-        product_count: category.product_count,
-        direct_product_count: category.direct_product_count,
-        child_count: category.child_count,
+        site_code: category.site_code,
         parent_id: category.parent_id ? Number(category.parent_id) : null,
         parent_name: category.parent?.name,
+        children: category.children.map((c) => ({
+          id: Number(c.id),
+          name: c.name,
+          slug: c.slug,
+        })),
         products: category.product.map((p) => ({
           id: Number(p.id),
           name: p.title || p.kiotviet_name,
@@ -191,9 +207,12 @@ export class CategoryService {
     };
   }
 
-  async update(id: number, updateCategoryDto: UpdateCategoryDto) {
+  async update(
+    id: number,
+    updateCategoryDto: UpdateCategoryDto,
+    siteCode: string = 'dieptra',
+  ) {
     try {
-      const updateData: any = { ...updateCategoryDto };
       const existingCategory = await this.prisma.category.findUnique({
         where: { id: BigInt(id) },
       });
@@ -202,43 +221,66 @@ export class CategoryService {
         throw new NotFoundException('Category not found');
       }
 
-      if (updateCategoryDto.name) {
-        updateData.slug = this.convertToSlug(updateCategoryDto.name);
+      if (existingCategory.site_code !== siteCode) {
+        throw new BadRequestException(
+          `Category belongs to site "${existingCategory.site_code}", cannot edit from "${siteCode}"`,
+        );
       }
 
-      if (updateCategoryDto.parent_id) {
-        if (updateCategoryDto.parent_id === id) {
+      const updateData: any = {};
+
+      if (updateCategoryDto.name) {
+        updateData.name = updateCategoryDto.name;
+        updateData.slug = this.convertToSlug(updateCategoryDto.name);
+      }
+      if (updateCategoryDto.name_en !== undefined)
+        updateData.name_en = updateCategoryDto.name_en;
+      if (updateCategoryDto.description !== undefined)
+        updateData.description = updateCategoryDto.description;
+      if (updateCategoryDto.title_meta !== undefined)
+        updateData.title_meta = updateCategoryDto.title_meta;
+      if (updateCategoryDto.priority !== undefined)
+        updateData.priority = updateCategoryDto.priority;
+      if (updateCategoryDto.image_url !== undefined)
+        updateData.image_url = updateCategoryDto.image_url;
+
+      if (updateCategoryDto.parent_id !== undefined) {
+        if (updateCategoryDto.parent_id && updateCategoryDto.parent_id === id) {
           throw new BadRequestException('Category cannot be its own parent');
         }
 
-        const parentCategory = await this.prisma.category.findUnique({
-          where: { id: BigInt(updateCategoryDto.parent_id) },
-        });
+        if (updateCategoryDto.parent_id) {
+          const parentCategory = await this.prisma.category.findUnique({
+            where: { id: BigInt(updateCategoryDto.parent_id) },
+          });
 
-        if (!parentCategory) {
-          throw new BadRequestException('Parent category not found');
+          if (!parentCategory) {
+            throw new BadRequestException('Parent category not found');
+          }
+
+          if (parentCategory.site_code !== siteCode) {
+            throw new BadRequestException(
+              'Parent category belongs to a different site',
+            );
+          }
+
+          await this.validateNoCircularReference(
+            id,
+            updateCategoryDto.parent_id,
+          );
         }
 
-        await this.validateNoCircularReference(id, updateCategoryDto.parent_id);
+        updateData.parent_id = updateCategoryDto.parent_id
+          ? BigInt(updateCategoryDto.parent_id)
+          : null;
       }
 
       const updatedCategory = await this.prisma.category.update({
         where: { id: BigInt(id) },
-        data: {
-          name: updateCategoryDto.name,
-          name_en: updateCategoryDto.name_en,
-          description: updateCategoryDto.description,
-          title_meta: updateCategoryDto.title_meta,
-          parent_id: updateCategoryDto.parent_id
-            ? BigInt(updateCategoryDto.parent_id)
-            : null,
-          priority: updateCategoryDto.priority,
-          slug: updateData.slug,
-          image_url: updateCategoryDto.image_url,
-        },
+        data: updateData,
       });
 
-      await this.recalculateHierarchy();
+      await this.recalculateHierarchy(siteCode);
 
       return {
         success: true,
@@ -252,20 +294,37 @@ export class CategoryService {
         message: 'Category updated successfully',
       };
     } catch (error) {
-      this.logger.error(`Error updating category ${id}: ${error.message}`);
-      throw error;
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      )
+        throw error;
+      this.logger.error(`Error updating category: ${error.message}`);
+      throw new BadRequestException(
+        `Failed to update category: ${error.message}`,
+      );
     }
   }
 
   private async validateNoCircularReference(
     categoryId: number,
     newParentId: number,
-  ): Promise<void> {
-    const ancestors = await this.getAncestorIds(newParentId);
-    if (ancestors.includes(categoryId)) {
-      throw new BadRequestException(
-        'Cannot create circular reference in category hierarchy',
-      );
+  ) {
+    let currentId: number | null = newParentId;
+    const visited = new Set<number>();
+
+    while (currentId) {
+      if (currentId === categoryId) {
+        throw new BadRequestException('Circular reference detected');
+      }
+      if (visited.has(currentId)) break;
+      visited.add(currentId);
+
+      const parent = await this.prisma.category.findUnique({
+        where: { id: BigInt(currentId) },
+        select: { parent_id: true },
+      });
+      currentId = parent?.parent_id ? Number(parent.parent_id) : null;
     }
   }
 
@@ -291,185 +350,93 @@ export class CategoryService {
     return ancestors;
   }
 
-  async recalculateHierarchy(): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      await this.updateLevelsAndPaths(tx);
+  async recalculateHierarchy(siteCode?: string) {
+    const where: any = siteCode ? { site_code: siteCode } : {};
 
-      await this.updateChildCounts(tx);
-
-      await this.updateProductCounts(tx);
-    });
-  }
-
-  private async updateLevelsAndPaths(tx: any): Promise<void> {
-    const categories = await tx.category.findMany({
+    const allCategories = await this.prisma.category.findMany({
+      where,
+      include: {
+        children: { select: { id: true } },
+        product: { select: { id: true } },
+      },
       orderBy: { id: 'asc' },
     });
 
-    for (const category of categories) {
-      const level = await this.calculateLevel(Number(category.id), tx);
-      const path = await this.calculatePath(Number(category.id), tx);
-
-      await tx.category.update({
-        where: { id: category.id },
-        data: { level, path },
-      });
-    }
-  }
-
-  private async calculateLevel(categoryId: number, tx: any): Promise<number> {
-    const category = await tx.category.findUnique({
-      where: { id: BigInt(categoryId) },
-      select: { parent_id: true },
-    });
-
-    if (!category?.parent_id) return 0;
-
-    const parentLevel = await this.calculateLevel(
-      Number(category.parent_id),
-      tx,
-    );
-    return parentLevel + 1;
-  }
-
-  private async calculatePath(categoryId: number, tx: any): Promise<string> {
-    const ancestors: number[] = [];
-    let currentId: number | null = categoryId;
-
-    while (currentId) {
-      ancestors.unshift(currentId);
-
-      const category = await tx.category.findUnique({
-        where: { id: BigInt(currentId) },
-        select: { parent_id: true },
-      });
-
-      currentId = category?.parent_id ? Number(category.parent_id) : null;
-    }
-
-    return `/${ancestors.join('/')}/`;
-  }
-
-  private async updateChildCounts(tx: any): Promise<void> {
-    const categories = await tx.category.findMany({
-      orderBy: { id: 'asc' },
-    });
-
-    for (const category of categories) {
-      const childCount = await tx.category.count({
-        where: { parent_id: category.id },
-      });
-
-      await tx.category.update({
-        where: { id: category.id },
-        data: { child_count: childCount },
-      });
-    }
-  }
-
-  private async updateProductCounts(tx: any): Promise<void> {
-    const categories = await tx.category.findMany({
-      orderBy: { id: 'asc' },
-    });
-
-    for (const category of categories) {
-      const directCount = await tx.product.count({
-        where: { category_id: category.id },
-      });
-
-      const descendantIds = await this.getDescendantIds(
-        Number(category.id),
-        tx,
+    for (const cat of allCategories) {
+      const level = await this.calculateLevel(cat.id, allCategories);
+      const path = await this.buildPath(cat.id, allCategories);
+      const descendantIds = this.getDescendantIds(
+        Number(cat.id),
+        allCategories,
       );
 
-      const allCategoryIds = [
-        category.id,
-        ...descendantIds.map((id) => BigInt(id)),
-      ];
+      const totalProductCount = allCategories
+        .filter(
+          (c) =>
+            descendantIds.includes(Number(c.id)) ||
+            Number(c.id) === Number(cat.id),
+        )
+        .reduce((sum, c) => sum + c.product.length, 0);
 
-      const totalCount = await tx.product.count({
-        where: { category_id: { in: allCategoryIds } },
-      });
-
-      await tx.category.update({
-        where: { id: category.id },
+      await this.prisma.category.update({
+        where: { id: cat.id },
         data: {
-          direct_product_count: Math.max(0, directCount),
-          product_count: Math.max(0, totalCount),
+          level,
+          path,
+          child_count: cat.children.length,
+          direct_product_count: cat.product.length,
+          product_count: totalProductCount,
         },
       });
     }
   }
 
-  private async getDescendantIds(
-    categoryId: number,
-    tx: any,
-  ): Promise<number[]> {
-    const descendants: number[] = [];
-
-    const children = await tx.category.findMany({
-      where: { parent_id: BigInt(categoryId) },
-      select: { id: true },
-    });
-
-    for (const child of children) {
-      const childId = Number(child.id);
-      descendants.push(childId);
-
-      const grandChildren = await this.getDescendantIds(childId, tx);
-      descendants.push(...grandChildren);
+  private async calculateLevel(
+    categoryId: bigint,
+    allCategories: any[],
+  ): Promise<number> {
+    let level = 0;
+    let current = allCategories.find((c) => c.id === categoryId);
+    while (current?.parent_id) {
+      level++;
+      current = allCategories.find((c) => c.id === current.parent_id);
+      if (level > 10) break;
     }
+    return level;
+  }
 
+  private getDescendantIds(categoryId: number, allCategories: any[]): number[] {
+    const descendants: number[] = [];
+    const children = allCategories.filter(
+      (c) => Number(c.parent_id) === categoryId,
+    );
+    for (const child of children) {
+      descendants.push(Number(child.id));
+      descendants.push(
+        ...this.getDescendantIds(Number(child.id), allCategories),
+      );
+    }
     return descendants;
   }
 
-  async remove(id: number) {
-    try {
-      const category = await this.prisma.category.findUnique({
-        where: { id: BigInt(id) },
-        include: {
-          product: { select: { id: true, title: true, kiotviet_name: true } },
-          children: { select: { id: true, name: true, name_en: true } },
-        },
-      });
+  async remove(id: number, siteCode: string = 'dieptra') {
+    const category = await this.prisma.category.findUnique({
+      where: { id: BigInt(id) },
+      include: { children: true, product: { select: { id: true } } },
+    });
 
-      if (!category) {
-        throw new NotFoundException('Category not found');
-      }
+    if (!category) throw new NotFoundException('Category not found');
 
-      if (category.children.length > 0) {
-        throw new BadRequestException(
-          `Cannot delete category. It has ${category.children.length} child categories: ${category.children.map((c) => c.name).join(', ')}`,
-        );
-      }
-
-      if (category.product.length > 0) {
-        const productNames = category.product
-          .map((p) => p.title || p.kiotviet_name)
-          .slice(0, 3);
-        const displayNames =
-          productNames.join(', ') +
-          (category.product.length > 3
-            ? `... và ${category.product.length - 3} sản phẩm khác`
-            : '');
-
-        throw new BadRequestException(
-          `Cannot delete category "${category.name}". It has ${category.product.length} products assigned: ${displayNames}. Please reassign these products to another category first.`,
-        );
-      }
-
-      await this.prisma.category.delete({
-        where: { id: BigInt(id) },
-      });
-
-      return {
-        success: true,
-        message: 'Category deleted successfully',
-      };
-    } catch (error) {
-      this.logger.error(`Error deleting category ${id}: ${error.message}`);
-      throw error;
+    if (category.site_code !== siteCode) {
+      throw new BadRequestException(
+        `Category belongs to site "${category.site_code}", cannot delete from "${siteCode}"`,
+      );
     }
+
+    await this.prisma.category.delete({ where: { id: BigInt(id) } });
+    await this.recalculateHierarchy(siteCode);
+
+    return { success: true, message: 'Category deleted successfully' };
   }
 
   async reassignProducts(fromCategoryId: number, toCategoryId: number | null) {
@@ -560,22 +527,14 @@ export class CategoryService {
     const categoryMap = new Map();
     const roots: CategoryTreeDto[] = [];
 
+    categories.forEach((cat) =>
+      categoryMap.set(cat.id, { ...cat, children: [] }),
+    );
     categories.forEach((cat) => {
-      categoryMap.set(cat.id, { ...cat, children: [] });
-    });
-
-    categories.forEach((cat) => {
-      const categoryNode = categoryMap.get(cat.id);
-
-      if (cat.parent_id) {
-        const parent = categoryMap.get(cat.parent_id);
-        if (parent) {
-          parent.children.push(categoryNode);
-        } else {
-          roots.push(categoryNode);
-        }
+      if (cat.parent_id && categoryMap.has(cat.parent_id)) {
+        categoryMap.get(cat.parent_id).children.push(categoryMap.get(cat.id));
       } else {
-        roots.push(categoryNode);
+        roots.push(categoryMap.get(cat.id));
       }
     });
 
@@ -630,88 +589,65 @@ export class CategoryService {
     }
   }
 
-  async getCategoriesForCMS() {
-    try {
-      const categories = await this.prisma.category.findMany({
-        include: {
-          product: {
-            select: { id: true },
-          },
-        },
-        orderBy: [{ priority: 'asc' }, { name: 'asc' }],
-      });
-
-      const transformedCategories = categories.map((cat) => ({
-        id: Number(cat.id),
-        name: cat.name,
-        name_en: cat.name_en,
-        description: cat.description,
-        parent_id: cat.parent_id ? Number(cat.parent_id) : null,
-        priority: cat.priority || 0,
-        slug: cat.slug,
-        image_url: cat.image_url,
-        productCount: cat.product.length,
-        title_meta: cat.title_meta,
-        level: 0,
-        displayName: cat.name,
-        hasChildren: false,
-        hasProducts: cat.product.length > 0,
-      }));
-
-      const calculateLevel = (
-        categoryId: number,
-        visited = new Set(),
-      ): number => {
-        if (visited.has(categoryId)) return 0;
-        visited.add(categoryId);
-
-        const category = transformedCategories.find((c) => c.id === categoryId);
-        if (!category || !category.parent_id) return 0;
-
-        return 1 + calculateLevel(category.parent_id, visited);
-      };
-
-      const categoryMap = new Map(
-        transformedCategories.map((cat) => [cat.id, cat]),
-      );
-      transformedCategories.forEach((cat) => {
-        cat.level = calculateLevel(cat.id);
-        cat.displayName = ''.repeat(cat.level) + cat.name;
-        cat.hasChildren = transformedCategories.some(
-          (child) => child.parent_id === cat.id,
-        );
-      });
-
-      return {
-        success: true,
-        data: transformedCategories,
-        total: transformedCategories.length,
-        message: 'Categories for CMS fetched successfully',
-      };
-    } catch (error) {
-      this.logger.error(`Error fetching categories for CMS: ${error.message}`);
-      throw new BadRequestException(
-        `Failed to fetch categories for CMS: ${error.message}`,
-      );
-    }
-  }
-
-  async findBySlug(slug: string): Promise<category | null> {
-    return this.prisma.category.findFirst({
-      where: { slug },
+  async getCategoriesForCMS(siteCode: string = 'dieptra') {
+    const categories = await this.prisma.category.findMany({
+      where: { site_code: siteCode },
+      include: {
+        parent: true,
+        children: true,
+        product: { select: { id: true } },
+      },
+      orderBy: [{ level: 'asc' }, { priority: 'asc' }, { name: 'asc' }],
     });
+
+    const data = categories.map((cat) => ({
+      id: Number(cat.id),
+      name: cat.name,
+      name_en: cat.name_en,
+      description: cat.description,
+      title_meta: cat.title_meta,
+      slug: cat.slug,
+      image_url: cat.image_url,
+      parent_id: cat.parent_id ? Number(cat.parent_id) : null,
+      parent_name: cat.parent?.name,
+      priority: cat.priority || 0,
+      level: cat.level,
+      path: cat.path,
+      productCount: cat.product_count,
+      directProductCount: cat.direct_product_count,
+      childCount: cat.child_count,
+      displayName:
+        cat.level > 0 ? `${'— '.repeat(cat.level)}${cat.name}` : cat.name,
+      hasChildren: cat.children.length > 0,
+      hasProducts: cat.product.length > 0,
+    }));
+
+    return {
+      success: true,
+      data,
+      total: data.length,
+      message: 'Categories fetched successfully',
+    };
   }
 
-  private convertToSlug(name: string): string {
-    return name
+  async findBySlug(slug: string, siteCode: string = 'dieptra') {
+    const category = await this.prisma.category.findFirst({
+      where: { slug, site_code: siteCode },
+    });
+
+    return category;
+  }
+
+  convertToSlug(str: string): string {
+    if (!str) return '';
+    return str
       .toLowerCase()
-      .trim()
-      .replace(/[áàảãạâấầẩẫậăắằẳẵặ]/g, 'a')
-      .replace(/[éèẻẽẹêếềểễệ]/g, 'e')
-      .replace(/[íìỉĩị]/g, 'i')
-      .replace(/[óòỏõọôốồổỗộơớờởỡợ]/g, 'o')
-      .replace(/[úùủũụưứừửữự]/g, 'u')
-      .replace(/[ýỳỷỹỵ]/g, 'y')
+      .replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, 'a')
+      .replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, 'e')
+      .replace(/ì|í|ị|ỉ|ĩ/g, 'i')
+      .replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, 'o')
+      .replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, 'u')
+      .replace(/ỳ|ý|ỵ|ỷ|ỹ/g, 'y')
       .replace(/đ/g, 'd')
       .replace(/[^a-z0-9\s-]/g, '')
       .replace(/\s+/g, '-')
@@ -719,93 +655,69 @@ export class CategoryService {
       .replace(/^-|-$/g, '');
   }
 
-  async generateSlugsForExistingCategories(): Promise<any> {
-    try {
-      const categories = await this.prisma.category.findMany({
-        where: {
-          OR: [{ slug: null }, { slug: '' }],
-        },
-        select: { id: true, name: true, name_en: true },
-      });
+  async generateSlugsForExistingCategories(siteCode?: string) {
+    const where: any = { OR: [{ slug: null }, { slug: '' }] };
+    if (siteCode) where.site_code = siteCode;
 
-      let updated = 0;
-      let skipped = 0;
+    const categories = await this.prisma.category.findMany({ where });
 
-      for (const category of categories) {
-        if (category.name) {
-          const slug = this.convertToSlug(category.name);
-          if (slug) {
-            try {
-              await this.prisma.category.update({
-                where: { id: category.id },
-                data: { slug },
-              });
-              updated++;
-            } catch (error) {
-              // Handle duplicate slugs
-              const uniqueSlug = `${slug}-${category.id}`;
-              await this.prisma.category.update({
-                where: { id: category.id },
-                data: { slug: uniqueSlug },
-              });
-              updated++;
-            }
-          } else {
-            skipped++;
-          }
-        } else {
-          skipped++;
-        }
+    let updated = 0;
+    for (const cat of categories) {
+      if (cat.name) {
+        await this.prisma.category.update({
+          where: { id: cat.id },
+          data: { slug: this.convertToSlug(cat.name) },
+        });
+        updated++;
       }
-
-      return {
-        success: true,
-        message: `Generated slugs for ${updated} categories, skipped ${skipped}`,
-        statistics: { updated, skipped, total: categories.length },
-      };
-    } catch (error) {
-      throw new BadRequestException(
-        `Failed to generate slugs: ${error.message}`,
-      );
     }
+
+    return { success: true, updated, total: categories.length };
   }
 
-  async resolveCategoryPath(slugPath: string[]): Promise<any> {
-    const categories: any[] = [];
-    let currentParentId: bigint | null = null;
+  async getCategoriesForDropdown(siteCode: string = 'dieptra') {
+    const result = await this.getCategoriesForCMS(siteCode);
+
+    return result.data.map((cat) => ({
+      id: cat.id,
+      name: cat.name,
+      displayName: cat.displayName || cat.name,
+      level: cat.level || 0,
+      parent_id: cat.parent_id,
+    }));
+  }
+
+  async resolveCategoryPath(slugPath: string[], siteCode: string = 'dieptra') {
+    let parentId: bigint | null = null;
 
     for (const slug of slugPath) {
       const category = await this.prisma.category.findFirst({
         where: {
           slug,
-          parent_id: currentParentId ? BigInt(currentParentId) : null,
-        },
-        include: {
-          children: {
-            select: { id: true, name: true, slug: true, name_en: true },
-          },
+          parent_id: parentId,
+          site_code: siteCode,
         },
       });
 
-      if (!category) throw new NotFoundException(`Category not found: ${slug}`);
-
-      categories.push(category);
-      currentParentId = category.id;
+      if (!category) return null;
+      parentId = category.id;
     }
 
-    return {
-      categoryHierarchy: categories,
-      finalCategory: categories[categories.length - 1],
-      breadcrumbPath: categories.map((cat) => ({
-        name: cat.name,
-        name_en: cat.name_en,
-        slug: cat.slug,
-        href: `/san-pham/${categories
-          .slice(0, categories.indexOf(cat) + 1)
-          .map((c) => c.slug)
-          .join('/')}`,
-      })),
-    };
+    if (!parentId) return null;
+
+    const finalCategory = await this.prisma.category.findUnique({
+      where: { id: parentId },
+    });
+
+    return finalCategory
+      ? {
+          id: Number(finalCategory.id),
+          name: finalCategory.name,
+          name_en: finalCategory.name_en,
+          slug: finalCategory.slug,
+          description: finalCategory.description,
+        }
+      : null;
   }
 
   private sortCategoriesByHierarchy(categories: any[]): any[] {
@@ -814,6 +726,20 @@ export class CategoryService {
       if (a.parent_id && !b.parent_id) return 1;
       return 0;
     });
+  }
+
+  private async buildPath(
+    categoryId: bigint,
+    allCategories: any[],
+  ): Promise<string> {
+    const path: number[] = [];
+    let current = allCategories.find((c) => c.id === categoryId);
+    while (current) {
+      path.unshift(Number(current.id));
+      if (!current.parent_id) break;
+      current = allCategories.find((c) => c.id === current.parent_id);
+    }
+    return path.join('/');
   }
 
   async buildCategoryPath(categoryIds: number[]): Promise<string[]> {
