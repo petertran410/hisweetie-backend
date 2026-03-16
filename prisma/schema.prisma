@@ -112,6 +112,12 @@ model product_site_config {
   featured_thumbnail  String?   @db.VarChar(255)
   recipe_thumbnail    String?   @db.VarChar(255)
 
+  price_on            Boolean?  @default(dbgenerated("b'0'")) @db.Bit(1)
+  title               String?   @db.VarChar(255)
+  title_en            String?   @db.VarChar(255)
+  images_url          String?   @db.LongText
+  rate                Float?
+
   created_date        DateTime? @default(now()) @db.DateTime(6)
   updated_date        DateTime? @default(now()) @db.DateTime(6)
 

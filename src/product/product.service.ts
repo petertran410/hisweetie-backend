@@ -536,9 +536,11 @@ export class ProductService {
               create: {
                 product_id: product.id,
                 site_code: siteCode,
+                title: productData.name?.trim() || null,
                 slug,
                 is_visible: siteCode === 'dieptra' ? true : false,
                 is_featured: false,
+                price_on: false,
                 created_date: new Date(),
                 updated_date: new Date(),
               },
@@ -2162,18 +2164,28 @@ export class ProductService {
   }
 
   private mergeProductWithSiteConfig(product: any, siteCode: string) {
-    const sc = product.site_configs?.[0]; // Already filtered by site_code
+    const sc = product.site_configs?.[0];
 
+    // Per-site title: site_config → fallback product → fallback kiotviet
     const productTitle =
-      product.title || product.kiotviet_name || product.title_en || 'Untitled';
+      sc?.title ||
+      product.title ||
+      product.kiotviet_name ||
+      product.title_en ||
+      'Untitled';
+
+    // Shared price (luôn từ product)
     const productPrice = product.kiotviet_price
       ? Number(product.kiotviet_price)
       : null;
 
+    // Per-site images: site_config → fallback product → fallback kiotviet
     let imagesUrl: string[] = [];
-    if (product.images_url) {
+    const rawImages = sc?.images_url ?? product.images_url;
+    if (rawImages) {
       try {
-        imagesUrl = JSON.parse(product.images_url);
+        imagesUrl =
+          typeof rawImages === 'string' ? JSON.parse(rawImages) : rawImages;
       } catch {
         imagesUrl = [];
       }
@@ -2187,14 +2199,17 @@ export class ProductService {
 
     return {
       id: Number(product.id),
+
       title: productTitle,
-      title_en: product.title_en,
+      title_en: sc?.title_en ?? product.title_en,
       title_meta: sc?.title_meta ?? product.title_meta,
       slug: sc?.slug ?? this.convertToSlug(productTitle),
-      price: productPrice,
       imagesUrl,
+      rate: sc?.rate ?? product.rate,
+      price_on: sc?.price_on ?? product.price_on ?? false,
 
-      // Per-site content (from site_config → fallback product)
+      price: productPrice,
+
       description: sc?.description ?? product.description,
       general_description:
         sc?.general_description ?? product.general_description,
@@ -2202,13 +2217,11 @@ export class ProductService {
       description_en: sc?.description_en ?? product.description_en,
       instruction_en: sc?.instruction_en ?? product.instruction_en,
 
-      // Per-site display
       is_visible: sc?.is_visible ?? false,
       is_featured: sc?.is_featured ?? false,
       featured_thumbnail: sc?.featured_thumbnail ?? product.featured_thumbnail,
       recipe_thumbnail: sc?.recipe_thumbnail ?? product.recipe_thumbnail,
 
-      // Per-site category
       category_id: sc?.category_id ? Number(sc.category_id) : null,
       category_slug: sc?.category_slug ?? product.category_slug,
       category: sc?.category
@@ -2227,9 +2240,6 @@ export class ProductService {
           }
         : null,
 
-      // Shared fields (always from product)
-      price_on: product.price_on,
-      rate: product.rate,
       kiotviet_name: product.kiotviet_name,
       kiotviet_code: product.kiotviet_code,
       kiotviet_price: productPrice,
@@ -2240,9 +2250,6 @@ export class ProductService {
     };
   }
 
-  // ============================================================
-  // SITE CONFIG: UPSERT
-  // ============================================================
   async upsertProductSiteConfig(
     productId: number,
     siteCode: string = 'dieptra',
@@ -2259,9 +2266,13 @@ export class ProductService {
       is_featured?: boolean;
       featured_thumbnail?: string;
       recipe_thumbnail?: string;
+      price_on?: boolean;
+      title?: string;
+      title_en?: string;
+      images_url?: string | string[];
+      rate?: number;
     },
   ) {
-    // Validate product exists
     const product = await this.prisma.product.findUnique({
       where: { id: BigInt(productId) },
       select: { id: true, title: true, kiotviet_name: true },
@@ -2270,7 +2281,6 @@ export class ProductService {
     if (!product)
       throw new NotFoundException(`Product with ID ${productId} not found`);
 
-    // Calculate category_slug
     let categorySlug: string | null = null;
     if (data.category_id) {
       const category = await this.prisma.category.findUnique({
@@ -2283,17 +2293,28 @@ export class ProductService {
           `Category belongs to site "${category.site_code}", not "${siteCode}"`,
         );
       }
-
       categorySlug = category?.slug ?? null;
     }
 
-    // Calculate slug
     let slug = data.slug;
     if (!slug) {
-      slug = this.convertToSlug(product.title || product.kiotviet_name || '');
+      const titleForSlug =
+        data.title || product.title || product.kiotviet_name || '';
+      slug = this.convertToSlug(titleForSlug);
     }
 
-    const upsertData = {
+    let imagesUrlString: string | null | undefined = undefined;
+    if (data.images_url !== undefined) {
+      if (data.images_url === null) {
+        imagesUrlString = null;
+      } else if (Array.isArray(data.images_url)) {
+        imagesUrlString = JSON.stringify(data.images_url);
+      } else {
+        imagesUrlString = data.images_url;
+      }
+    }
+
+    const upsertData: any = {
       category_id:
         data.category_id !== undefined
           ? data.category_id
@@ -2312,9 +2333,13 @@ export class ProductService {
       is_featured: data.is_featured,
       featured_thumbnail: data.featured_thumbnail,
       recipe_thumbnail: data.recipe_thumbnail,
+      price_on: data.price_on,
+      title: data.title,
+      title_en: data.title_en,
+      images_url: imagesUrlString,
+      rate: data.rate,
     };
 
-    // Remove undefined values
     Object.keys(upsertData).forEach((key) => {
       if (upsertData[key] === undefined) delete upsertData[key];
     });
@@ -2326,10 +2351,7 @@ export class ProductService {
           site_code: siteCode,
         },
       },
-      update: {
-        ...upsertData,
-        updated_date: new Date(),
-      },
+      update: { ...upsertData, updated_date: new Date() },
       create: {
         product_id: BigInt(productId),
         site_code: siteCode,
@@ -2359,6 +2381,7 @@ export class ProductService {
         slug: result.slug,
         is_visible: result.is_visible,
         is_featured: result.is_featured,
+        price_on: result.price_on,
       },
       message: `Product site config updated for "${siteCode}"`,
     };
@@ -2669,9 +2692,6 @@ export class ProductService {
     );
   }
 
-  // ============================================================
-  // SITE CONFIG: GET ALL PRODUCTS FOR CLIENT (simplified)
-  // ============================================================
   async getAllProductsForClientBySite(siteCode: string = 'dieptra') {
     const configs = await this.prisma.product_site_config.findMany({
       where: {
@@ -2721,13 +2741,13 @@ export class ProductService {
       return {
         id: Number(p.id),
         title: productTitle,
-        title_en: p.title_en,
+        title_en: sc.title_en || p.title_en,
         slug: sc.slug || this.convertToSlug(productTitle),
         kiotviet_price: price,
         kiotviet_images: p.kiotviet_images,
         imagesUrl,
-        rate: p.rate,
-        price_on: p.price_on,
+        rate: sc.rate ?? p.rate,
+        price_on: sc.price_on ?? p.price_on ?? false,
         is_featured: sc.is_featured,
         category_id: sc.category_id ? Number(sc.category_id) : null,
         category: sc.category

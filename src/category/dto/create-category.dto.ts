@@ -11,11 +11,13 @@ export class CreateCategoryDto {
   name: string;
 
   @ApiProperty({
-    description: 'Category name',
+    description: 'Category name in English',
     example: 'Ingredients for Making Special Tea',
+    required: false,
   })
+  @IsOptional()
   @IsString()
-  name_en: string;
+  name_en?: string;
 
   @ApiProperty({
     description: 'Category description',

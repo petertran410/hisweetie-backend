@@ -105,7 +105,7 @@ export class ClientAuthService {
     const secretKey = this.configService.get<string>('APP_SECRET_KEY');
     return this.jwtService.sign(
       { ...payload, type: 'client' },
-      { secret: secretKey, expiresIn: '30m' },
+      { secret: secretKey, expiresIn: '5d' },
     );
   }
 

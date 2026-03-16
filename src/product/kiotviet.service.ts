@@ -602,12 +602,14 @@ export class KiotVietService {
                     create: {
                       product_id: newProduct.id,
                       site_code: siteCode,
+                      title: kiotProduct.name || null,
                       slug: this.convertToSlug(kiotProduct.name || ''),
                       is_visible:
                         siteCode === 'dieptra'
                           ? kiotProduct.allowsSale !== false
                           : false,
                       is_featured: false,
+                      price_on: false,
                       created_date: new Date(),
                       updated_date: new Date(),
                     },
