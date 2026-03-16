@@ -441,8 +441,6 @@ export class KiotVietService {
     this.logger.log('Starting product synchronization from KiotViet');
 
     const errors: string[] = [];
-    let totalSynced = 0;
-    let totalUpdated = 0;
 
     try {
       const beforeSync = await this.prisma.product.count({
@@ -585,9 +583,37 @@ export class KiotVietService {
                   `Updated product: ${kiotProduct.name} (ID: ${kiotProduct.id})`,
                 );
               } else {
-                await prisma.product.create({
+                const newProduct = await prisma.product.create({
                   data: productData,
                 });
+
+                const siteCodes = ['dieptra', 'lermao'];
+                for (const siteCode of siteCodes) {
+                  await prisma.product_site_config.upsert({
+                    where: {
+                      product_id_site_code: {
+                        product_id: newProduct.id,
+                        site_code: siteCode,
+                      },
+                    },
+                    update: {
+                      updated_date: new Date(),
+                    },
+                    create: {
+                      product_id: newProduct.id,
+                      site_code: siteCode,
+                      slug: this.convertToSlug(kiotProduct.name || ''),
+                      is_visible:
+                        siteCode === 'dieptra'
+                          ? kiotProduct.allowsSale !== false
+                          : false,
+                      is_featured: false,
+                      created_date: new Date(),
+                      updated_date: new Date(),
+                    },
+                  });
+                }
+
                 newRecords++;
                 this.logger.debug(
                   `Created product: ${kiotProduct.name} (ID: ${kiotProduct.id})`,
@@ -733,5 +759,22 @@ export class KiotVietService {
       trademarksCount,
       recommendations,
     };
+  }
+
+  private convertToSlug(str: string): string {
+    if (!str) return '';
+    return str
+      .toLowerCase()
+      .replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, 'a')
+      .replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, 'e')
+      .replace(/ì|í|ị|ỉ|ĩ/g, 'i')
+      .replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, 'o')
+      .replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, 'u')
+      .replace(/ỳ|ý|ỵ|ỷ|ỹ/g, 'y')
+      .replace(/đ/g, 'd')
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
   }
 }

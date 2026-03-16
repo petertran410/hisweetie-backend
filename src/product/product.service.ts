@@ -484,6 +484,11 @@ export class ProductService {
           priceToUse = productData.basePrice;
         }
 
+        const existingProduct = await this.prismaService.product.findUnique({
+          where: { kiotviet_id: BigInt(productData.id) },
+          select: { id: true },
+        });
+
         const product = await this.prismaService.product.upsert({
           where: { kiotviet_id: BigInt(productData.id) },
           update: {
@@ -512,6 +517,38 @@ export class ProductService {
             kiotviet_synced_at: new Date(),
           },
         });
+
+        if (!existingProduct) {
+          const siteCodes = ['dieptra', 'lermao'];
+          const slug = this.convertToSlug(productData.name?.trim() || '');
+
+          for (const siteCode of siteCodes) {
+            await this.prismaService.product_site_config.upsert({
+              where: {
+                product_id_site_code: {
+                  product_id: product.id,
+                  site_code: siteCode,
+                },
+              },
+              update: {
+                updated_date: new Date(),
+              },
+              create: {
+                product_id: product.id,
+                site_code: siteCode,
+                slug,
+                is_visible: siteCode === 'dieptra' ? true : false,
+                is_featured: false,
+                created_date: new Date(),
+                updated_date: new Date(),
+              },
+            });
+          }
+
+          this.logger.debug(
+            `Created site configs for product: ${productData.name} (ID: ${product.id})`,
+          );
+        }
 
         savedProducts.push(product);
       } catch (error) {
