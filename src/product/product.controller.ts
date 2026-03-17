@@ -125,9 +125,6 @@ export class ProductController {
     return this.productService.toggleVisibilityForSite(+id, siteCode);
   }
 
-  // ============================
-  // CLIENT: GET ALL — filter site
-  // ============================
   @Get('client/get-all')
   @ApiOperation({ summary: 'Get all visible products for client' })
   getClientProducts(
@@ -163,9 +160,6 @@ export class ProductController {
     return this.productService.searchForCMSWithSiteConfig(filters, siteCode);
   }
 
-  // ============================
-  // CLIENT: GET ALL PRODUCT LIST (simplified)
-  // ============================
   @Get('client/get-all-product-list')
   @ApiOperation({ summary: 'Get all visible products (simplified)' })
   getAllProductsForClient(@CurrentSiteCode() siteCode?: string) {
