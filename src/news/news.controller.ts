@@ -95,6 +95,13 @@ export class NewsController {
     return this.newsService.getRelatedNews(+id, parseInt(limit), siteCode);
   }
 
+  @Post('client/increment-view/:id')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Increment article view count' })
+  incrementView(@Param('id') id: string) {
+    return this.newsService.incrementViewCount(+id);
+  }
+
   @Get('client/:id')
   @ApiOperation({ summary: 'Get news detail for client' })
   findOneForClient(@Param('id') id: string) {
