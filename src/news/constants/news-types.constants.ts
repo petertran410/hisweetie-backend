@@ -1,4 +1,3 @@
-// src/news/constants/news-types.constants.ts - MỚI
 export const NEWS_TYPES = {
   NEWS: 'NEWS',
   CULTURE: 'CULTURE',
@@ -8,6 +7,7 @@ export const NEWS_TYPES = {
   TREND_PHA_CHE: 'TREND_PHA_CHE',
   REVIEW_SAN_PHAM: 'REVIEW_SAN_PHAM',
   CONG_THUC_PHA_CHE: 'CONG_THUC_PHA_CHE',
+  WORKSHOP: 'WORKSHOP',
 } as const;
 
 export const NEWS_TYPE_LABELS = {
@@ -19,6 +19,7 @@ export const NEWS_TYPE_LABELS = {
   [NEWS_TYPES.TREND_PHA_CHE]: 'Trend Pha Chế',
   [NEWS_TYPES.REVIEW_SAN_PHAM]: 'Review - Đánh Giá Sản Phẩm',
   [NEWS_TYPES.CONG_THUC_PHA_CHE]: 'Công thức pha chế',
+  [NEWS_TYPES.WORKSHOP]: 'Workshop pha chế',
 } as const;
 
 export const ARTICLE_SECTIONS = [
@@ -51,6 +52,11 @@ export const ARTICLE_SECTIONS = [
     type: NEWS_TYPES.NEWS,
     label: NEWS_TYPE_LABELS[NEWS_TYPES.NEWS],
     slug: 'tin-tuc',
+  },
+  {
+    type: NEWS_TYPES.WORKSHOP,
+    label: NEWS_TYPE_LABELS[NEWS_TYPES.WORKSHOP],
+    slug: 'workshop-pha-che',
   },
 ] as const;
 

@@ -10,6 +10,7 @@ export enum ContentType {
   TREND_PHA_CHE = 'TREND_PHA_CHE',
   REVIEW_SAN_PHAM = 'REVIEW_SAN_PHAM',
   CONG_THUC_PHA_CHE = 'CONG_THUC_PHA_CHE',
+  WORKSHO = 'WORKSHOP',
 }
 
 export class CreateNewsDto {
@@ -19,7 +20,8 @@ export class CreateNewsDto {
 
   @ApiProperty({ description: 'Title English of the news/content item' })
   @IsString()
-  title_en: string;
+  @IsOptional()
+  title_en?: string;
 
   @ApiProperty({ description: 'SEO title meta tag', required: false })
   @IsString()

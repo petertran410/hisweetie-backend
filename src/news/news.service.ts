@@ -73,6 +73,7 @@ export class NewsService {
         'REVIEW_SAN_PHAM',
         'CONG_THUC_PHA_CHE',
         'NEWS',
+        'WORKSHOP',
       ];
 
       const sections = await Promise.all(

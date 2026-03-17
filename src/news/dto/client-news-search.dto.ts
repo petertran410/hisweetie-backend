@@ -1,4 +1,3 @@
-// src/news/dto/client-news-search.dto.ts - UPDATED với types mới
 import { ApiProperty } from '@nestjs/swagger';
 import { IsNumber, IsOptional, IsString, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -12,6 +11,7 @@ export enum NewsType {
   TREND_PHA_CHE = 'TREND_PHA_CHE',
   REVIEW_SAN_PHAM = 'REVIEW_SAN_PHAM',
   CONG_THUC_PHA_CHE = 'CONG_THUC_PHA_CHE',
+  WORKSHOP = 'WORKSHOP',
 }
 
 export class ClientNewsSearchDto {
