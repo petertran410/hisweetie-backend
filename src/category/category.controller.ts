@@ -73,9 +73,12 @@ export class CategoryController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get category detail' })
   findOne(@Param('id') id: string, @CurrentSiteCode() siteCode: string) {
-    return this.categoryService.findOne(+id, siteCode);
+    const numId = +id;
+    if (isNaN(numId)) {
+      throw new BadRequestException(`Invalid category ID: "${id}"`);
+    }
+    return this.categoryService.findOne(numId, siteCode);
   }
 
   @Post()

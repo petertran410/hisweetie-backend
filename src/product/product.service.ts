@@ -2181,7 +2181,13 @@ export class ProductService {
 
     // Per-site images: site_config → fallback product → fallback kiotviet
     let imagesUrl: string[] = [];
-    const rawImages = sc?.images_url ?? product.images_url;
+    const scImages = sc?.images_url;
+    const hasScImages =
+      scImages != null &&
+      scImages !== '' &&
+      scImages !== '[]' &&
+      scImages !== '""';
+    const rawImages = hasScImages ? scImages : product.images_url;
     if (rawImages) {
       try {
         imagesUrl =
