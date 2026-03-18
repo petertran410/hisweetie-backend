@@ -687,14 +687,6 @@ export class ProductService {
           category: {
             select: { id: true, name: true, description: true, name_en: true },
           },
-          review: {
-            select: {
-              id: true,
-              rate: true,
-              comment: true,
-              user: { select: { full_name: true } },
-            },
-          },
         },
       });
 

@@ -75,7 +75,6 @@ model product {
   cart                   cart[]
   orders                 orders[]
   category               category? @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  review                 review[]
   site_configs  product_site_config[]
 
   @@index([category_id, is_visible])
@@ -331,20 +330,13 @@ model pending_orders {
 }
 
 model review {
-  id           BigInt    @id @default(autoincrement())
-  created_by   String?   @db.VarChar(255)
-  created_date DateTime? @db.DateTime(6)
-  updated_by   String?   @db.VarChar(255)
-  updated_date DateTime? @db.DateTime(6)
-  comment      String?   @db.VarChar(255)
-  rate         Int?
-  product_id   BigInt?
-  user_id      String?   @db.VarChar(255)
-  product      product?  @relation(fields: [product_id], references: [id])
-  user         user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                 BigInt    @id @default(autoincrement())
+  name               String?   @db.VarChar(255)
+  review_description String?   @db.LongText
+  image              String?   @db.VarChar(500)
+  site_code          String    @default("dieptra") @db.VarChar(20)
 
-  @@index([user_id])
-  @@index([product_id])
+  @@index([site_code])
 }
 
 model user {
@@ -363,7 +355,6 @@ model user {
   authority        authority[]
   code_forgot_pass code_forgot_pass[]
   news             news[]
-  review           review[]
 
   @@index([phone, email])
   @@index([email])
