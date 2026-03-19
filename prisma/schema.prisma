@@ -140,6 +140,7 @@ model category {
   name_en              String?    @db.VarChar(255)
   parent_id            BigInt?
   priority             Int?
+  is_featured          Boolean    @default(false)          // <-- THÊM MỚI
   child_count          Int        @default(0)
   direct_product_count Int        @default(0)
   level                Int        @default(0)
@@ -148,7 +149,7 @@ model category {
   slug                 String?    @db.VarChar(255)
   title_meta           String?
   image_url            String?    @db.VarChar(500)
-  site_code            String                @default("dieptra") @db.VarChar(20)
+  site_code            String     @default("dieptra") @db.VarChar(20)
 
   parent               category?  @relation("CategoryHierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
   children             category[] @relation("CategoryHierarchy")
@@ -162,6 +163,7 @@ model category {
   @@index([path])
   @@index([level])
   @@index([slug])
+  @@index([site_code, is_featured])                        // <-- THÊM INDEX
 }
 
 model kiotviet_sync_log {

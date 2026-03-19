@@ -49,6 +49,7 @@ export class CategoryService {
             ? createCategoryDto.parent_id
             : null,
           priority: createCategoryDto.priority || 0,
+          is_featured: createCategoryDto.is_featured ?? false,
           slug: this.convertToSlug(createCategoryDto.name),
           image_url: createCategoryDto.image_url,
           site_code: siteCode,
@@ -143,6 +144,7 @@ export class CategoryService {
       parent_id: cat.parent_id ? Number(cat.parent_id) : null,
       parent_name: cat.parent?.name,
       priority: cat.priority || 0,
+      is_featured: cat.is_featured ?? false,
       level: cat.level,
       path: cat.path,
       productCount: cat.product_count,
@@ -243,6 +245,8 @@ export class CategoryService {
         updateData.priority = updateCategoryDto.priority;
       if (updateCategoryDto.image_url !== undefined)
         updateData.image_url = updateCategoryDto.image_url;
+      if (updateCategoryDto.is_featured !== undefined)
+        updateData.is_featured = updateCategoryDto.is_featured;
 
       if (updateCategoryDto.parent_id !== undefined) {
         if (updateCategoryDto.parent_id && updateCategoryDto.parent_id === id) {
@@ -611,6 +615,7 @@ export class CategoryService {
       parent_id: cat.parent_id ? Number(cat.parent_id) : null,
       parent_name: cat.parent?.name,
       priority: cat.priority || 0,
+      is_featured: cat.is_featured ?? false,
       level: cat.level,
       path: cat.path,
       productCount: cat.product_count,

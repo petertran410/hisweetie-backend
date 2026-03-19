@@ -1,5 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString, IsNumber, IsInt, Min } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsNumber,
+  IsInt,
+  Min,
+  IsBoolean,
+} from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
 export class CreateCategoryDto {
@@ -56,6 +63,20 @@ export class CreateCategoryDto {
   priority?: number;
 
   @ApiProperty({
+    description: 'Featured category flag',
+    required: false,
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => {
+    if (value === 'true' || value === true || value === 1) return true;
+    if (value === 'false' || value === false || value === 0) return false;
+    return value;
+  })
+  is_featured?: boolean;
+
+  @ApiProperty({
     description: 'Parent category ID',
     required: false,
     example: 1,
@@ -92,6 +113,9 @@ export class CategoryTreeDto {
 
   @ApiProperty({ required: false })
   priority?: number;
+
+  @ApiProperty({ required: false })
+  is_featured?: boolean;
 
   @ApiProperty({ type: [CategoryTreeDto], required: false })
   children?: CategoryTreeDto[];
