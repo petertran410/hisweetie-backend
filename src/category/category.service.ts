@@ -5,12 +5,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  CreateCategoryDto,
-  UpdateCategoryDto,
-  CategoryTreeDto,
-} from './dto/create-category.dto';
-import { category } from '@prisma/client';
+import { CreateCategoryDto, CategoryTreeDto } from './dto/create-category.dto';
+import { UpdateCategoryDto } from './dto/update-category.dto';
 
 @Injectable()
 export class CategoryService {

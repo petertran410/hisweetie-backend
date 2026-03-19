@@ -15,25 +15,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CategoryService } from './category.service';
-import {
-  CreateCategoryDto,
-  UpdateCategoryDto,
-} from './dto/create-category.dto';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiParam,
-  ApiQuery,
-  ApiBody,
-} from '@nestjs/swagger';
+import { CreateCategoryDto } from './dto/create-category.dto';
+import { UpdateCategoryDto } from './dto/update-category.dto';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { CurrentSiteCode } from '../common/decorators/site-code.decorator';
 
 @ApiTags('category')
 @Controller('category')
 export class CategoryController {
-  private readonly logger = new Logger(CategoryController.name);
-
   constructor(private readonly categoryService: CategoryService) {}
 
   @Get('dropdown')
