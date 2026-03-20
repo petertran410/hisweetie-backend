@@ -166,6 +166,21 @@ model category {
   @@index([site_code, is_featured])                        // <-- THÊM INDEX
 }
 
+model contact_inquiry {
+  id             BigInt    @id @default(autoincrement())
+  full_name      String    @db.VarChar(100)
+  email          String    @db.VarChar(255)
+  phone          String    @db.VarChar(20)
+  note           String    @db.LongText
+  site_code      String    @default("lermao") @db.VarChar(20)
+  webhook_sent   Boolean   @default(false)
+  created_date   DateTime  @default(now())
+
+  @@index([site_code])
+  @@index([created_date])
+  @@index([email])
+}
+
 model kiotviet_sync_log {
   id            Int       @id @default(autoincrement())
   sync_type     String    @db.VarChar(50)

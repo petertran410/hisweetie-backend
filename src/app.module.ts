@@ -16,6 +16,7 @@ import { ClientAuthModule } from './auth/client-auth/client-auth.module';
 import { KiotVietModule } from './kiotviet/kiotviet.module';
 import { CartModule } from './cart/cart.module';
 import { ReviewModule } from './review/review.module';
+import { ContactModule } from './contact/contact.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { ReviewModule } from './review/review.module';
     KiotVietModule,
     CartModule,
     ReviewModule,
+    ContactModule,
   ],
   controllers: [],
   providers: [],
