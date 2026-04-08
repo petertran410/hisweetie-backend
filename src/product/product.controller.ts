@@ -97,6 +97,134 @@ export class ProductController {
     );
   }
 
+  @Post('kiotviet/sync/trademarks')
+  @ApiOperation({
+    summary: 'Sync trademarks from KiotViet',
+    description:
+      'Syncs KiotViet trademarks to separate kiotviet_trademarks table',
+  })
+  async syncTrademarksFromKiotViet() {
+    try {
+      this.logger.log('Starting KiotViet trademark sync');
+
+      const result = await this.kiotVietService.syncTrademarks();
+
+      const response = {
+        success: result.success,
+        message: result.success
+          ? `Successfully synced ${result.totalSynced + result.totalUpdated} trademarks from KiotViet`
+          : `Trademark sync completed with ${result.errors.length} errors`,
+        summary: result.summary,
+        errors: result.errors,
+        timestamp: new Date().toISOString(),
+      };
+
+      return response;
+    } catch (error) {
+      this.logger.error('KiotViet trademark sync failed:', error.message);
+      throw new BadRequestException(`Trademark sync failed: ${error.message}`);
+    }
+  }
+
+  @Get('kiotviet/test-connection')
+  @ApiOperation({
+    summary: 'Test KiotViet API connection',
+    description: 'Test the connection to KiotViet API and authentication',
+  })
+  async testKiotVietConnection() {
+    try {
+      const result = await this.kiotVietService.testConnection();
+
+      if (result.success) {
+        this.logger.log('KiotViet connection test successful');
+      } else {
+        this.logger.warn('KiotViet connection test failed:', result.message);
+      }
+
+      return {
+        ...result,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      this.logger.error('KiotViet connection test error:', error.message);
+      throw new BadRequestException(`Connection test failed: ${error.message}`);
+    }
+  }
+
+  @Get('kiotviet/sync/status')
+  @ApiOperation({
+    summary: 'Get KiotViet sync status',
+    description: 'Get current synchronization status and statistics',
+  })
+  async getKiotVietSyncStatus() {
+    try {
+      const [
+        totalProducts,
+        kiotVietProducts,
+        customProducts,
+        kiotVietCategories,
+        kiotVietTrademarks,
+        customCategories,
+      ] = await Promise.all([
+        this.productService.prisma.product.count(),
+        this.productService.prisma.product.count({
+          where: { is_from_kiotviet: true },
+        }),
+        this.productService.prisma.product.count({
+          where: { is_from_kiotviet: false },
+        }),
+        this.productService.prisma.kiotviet_category.count(),
+        this.productService.prisma.kiotviet_trademark.count(),
+        this.productService.prisma.category.count(),
+      ]);
+
+      let connectionStatus = { success: false, message: 'Not tested' };
+      try {
+        connectionStatus = await this.kiotVietService.testConnection();
+      } catch (error) {
+        connectionStatus = { success: false, message: error.message };
+      }
+
+      return {
+        connected: connectionStatus.success,
+        connectionMessage: connectionStatus.message,
+        statistics: {
+          products: {
+            total: totalProducts,
+            fromKiotViet: kiotVietProducts,
+            custom: customProducts,
+          },
+          categories: {
+            kiotViet: kiotVietCategories,
+            custom: customCategories,
+          },
+          trademarks: {
+            kiotViet: kiotVietTrademarks,
+          },
+        },
+        syncConfig: {
+          syncedFields: [
+            'kiotviet_id',
+            'code',
+            'name',
+            'image',
+            'price',
+            'type',
+            'category',
+          ],
+          separateTables: ['kiotviet_categories', 'kiotviet_trademarks'],
+          productTable: 'product (enhanced with KiotViet fields)',
+        },
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      this.logger.error('Failed to get KiotViet sync status:', error.message);
+      throw new BadRequestException(
+        `Failed to get sync status: ${error.message}`,
+      );
+    }
+  }
+
   // ============================
   // CMS: UPSERT SITE CONFIG
   // ============================
