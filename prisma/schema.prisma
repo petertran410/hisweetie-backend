@@ -124,10 +124,12 @@ model product_site_config {
   category            category? @relation(fields: [category_id], references: [id], onDelete: SetNull)
 
   @@unique([product_id, site_code])
+  // Đảm bảo mỗi slug là duy nhất trong 1 site.
+  // NULL slug được bỏ qua bởi constraint này (MySQL behavior).
+  @@unique([site_code, slug])
   @@index([site_code])
   @@index([site_code, is_visible])
   @@index([site_code, category_id])
-  @@index([site_code, slug])
   @@index([site_code, is_featured])
   @@index([product_id])
   @@index([category_id])

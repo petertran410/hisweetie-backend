@@ -401,6 +401,7 @@ export class ProductController {
     @Query('is_visible') is_visible?: string,
     @Query('orderBy') orderBy?: string,
     @Query('isDesc') isDesc?: string,
+    @CurrentSiteCode() siteCode?: string,
   ) {
     const filters: any = { includeHidden: true };
     if (title) filters.title = title;
@@ -419,11 +420,14 @@ export class ProductController {
       filters.isDesc = isDesc === 'true';
     }
 
-    return this.productService.searchForCMS({
-      pageSize: +pageSize,
-      pageNumber: +pageNumber,
-      ...filters,
-    });
+    return this.productService.searchForCMSWithSiteConfig(
+      {
+        pageSize: +pageSize,
+        pageNumber: +pageNumber,
+        ...filters,
+      },
+      siteCode,
+    );
   }
 
   @Get('get-by-id/:id')

@@ -2362,10 +2362,28 @@ export class ProductService {
       rate: data.rate,
     };
 
+    // Các text/html field được phép lưu null (để clear nội dung)
+    // và được phép lưu empty string.
+    // Chỉ xóa key khi giá trị là undefined (không truyền vào).
+    // Boolean fields (is_visible, is_featured, price_on) vẫn bị
+    // loại nếu undefined — tránh ghi đè không mong muốn.
+    const TEXT_FIELDS = new Set([
+      'description', 'general_description', 'instruction',
+      'description_en', 'instruction_en', 'title_meta',
+      'title', 'title_en', 'featured_thumbnail', 'recipe_thumbnail',
+      'images_url',
+    ]);
+
     Object.keys(upsertData).forEach((key) => {
-      if (upsertData[key] === undefined || upsertData[key] === null) {
+      if (upsertData[key] === undefined) {
+        delete upsertData[key];
+        return;
+      }
+      // Với non-text field: xóa nếu null (vẫn giữ hành vi cũ)
+      if (!TEXT_FIELDS.has(key) && upsertData[key] === null) {
         delete upsertData[key];
       }
+      // TEXT_FIELDS: giữ lại null và '' để có thể clear nội dung
     });
 
     if (Object.keys(upsertData).length === 0) {
@@ -2475,25 +2493,30 @@ export class ProductService {
   // SITE CONFIG: FIND BY SLUG FOR SITE
   // ============================================================
   async findBySlugForSite(slug: string, siteCode: string = 'dieptra') {
-    // Strategy 1: Find via site_config slug
+    const categorySelect = {
+      id: true,
+      name: true,
+      name_en: true,
+      slug: true,
+      description: true,
+      parent_id: true,
+    };
+
+    // ─────────────────────────────────────────────────────────
+    // Strategy 1: Tìm chính xác theo (slug, site_code) trong
+    //             product_site_config — KHÔNG lọc is_visible
+    //             để đảm bảo luôn trả đúng record của đúng site.
+    //             is_visible = false sẽ được frontend xử lý
+    //             (redirect về list page nếu cần).
+    // ─────────────────────────────────────────────────────────
     const siteConfig = await this.prisma.product_site_config.findFirst({
       where: {
         slug,
         site_code: siteCode,
-        is_visible: true,
       },
       include: {
         product: true,
-        category: {
-          select: {
-            id: true,
-            name: true,
-            name_en: true,
-            slug: true,
-            description: true,
-            parent_id: true,
-          },
-        },
+        category: { select: categorySelect },
       },
     });
 
@@ -2502,36 +2525,59 @@ export class ProductService {
       return this.buildProductDetailResponse(merged, siteCode);
     }
 
-    // Strategy 2: Fallback — find by product title → slug
-    const products = await this.prisma.product.findMany({
+    // ─────────────────────────────────────────────────────────
+    // Strategy 2: Tìm theo product.slug (field trực tiếp trên
+    //             product table), sau đó lấy site_config đúng
+    //             site_code — cũng KHÔNG lọc is_visible.
+    // ─────────────────────────────────────────────────────────
+    const productBySlug = await this.prisma.product.findFirst({
+      where: { slug },
+      include: {
+        site_configs: {
+          where: { site_code: siteCode },
+          include: { category: { select: categorySelect } },
+        },
+      },
+    });
+
+    if (productBySlug) {
+      return this.buildProductDetailResponse(productBySlug, siteCode);
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // Strategy 3: Fallback — tìm bằng convertToSlug(title)
+    //             qua tất cả product có site_config của site đó
+    //             (kể cả is_visible = false).
+    // ─────────────────────────────────────────────────────────
+    const allProductsForSite = await this.prisma.product.findMany({
       where: {
         site_configs: {
-          some: { site_code: siteCode, is_visible: true },
+          some: { site_code: siteCode },
         },
       },
       include: {
         site_configs: {
           where: { site_code: siteCode },
-          include: {
-            category: {
-              select: {
-                id: true,
-                name: true,
-                name_en: true,
-                slug: true,
-                description: true,
-                parent_id: true,
-              },
-            },
-          },
+          include: { category: { select: categorySelect } },
         },
       },
     });
 
-    const match = products.find((p) => {
-      const title = p.title || p.kiotviet_name;
-      return title && this.convertToSlug(title) === slug;
+    // Ưu tiên match theo sc.slug trước (để xử lý trường hợp
+    // slug trong site_config khác với slug được convert từ title)
+    let match = allProductsForSite.find((p) => {
+      const sc = p.site_configs?.[0];
+      return sc?.slug === slug;
     });
+
+    // Nếu không tìm được theo sc.slug thì fallback theo title
+    if (!match) {
+      match = allProductsForSite.find((p) => {
+        const title =
+          p.site_configs?.[0]?.title || p.title || p.kiotviet_name;
+        return title && this.convertToSlug(title) === slug;
+      });
+    }
 
     if (!match) {
       throw new NotFoundException(
@@ -2799,21 +2845,32 @@ export class ProductService {
     categorySlug: string,
     siteCode: string = 'dieptra',
   ) {
+    const where: any = {
+      site_code: siteCode,
+    };
+    if (categorySlug) {
+      where.category_slug = categorySlug;
+    }
+
     const configs = await this.prisma.product_site_config.findMany({
-      where: {
-        site_code: siteCode,
-        category_slug: categorySlug || undefined,
-      },
+      where,
       include: {
         product: { select: { id: true, title: true, kiotviet_name: true } },
         category: { select: { slug: true, name: true } },
       },
     });
 
-    const match = configs.find((sc) => {
-      const title = sc.product.title || sc.product.kiotviet_name;
-      return title && this.convertToSlug(title) === slug;
-    });
+    // Ưu tiên tìm theo sc.slug đã lưu trước
+    let match = configs.find((sc) => sc.slug === slug);
+
+    // Fallback: match bằng convertToSlug(title)
+    if (!match) {
+      match = configs.find((sc) => {
+        const title =
+          sc.title || sc.product.title || sc.product.kiotviet_name;
+        return title && this.convertToSlug(title) === slug;
+      });
+    }
 
     if (!match) {
       throw new NotFoundException(`Product not found for slug "${slug}"`);
@@ -2821,7 +2878,7 @@ export class ProductService {
 
     return {
       id: Number(match.product.id),
-      title: match.product.title || match.product.kiotviet_name,
+      title: match.title || match.product.title || match.product.kiotviet_name,
       slug,
       category: match.category
         ? { slug: match.category.slug, name: match.category.name }
