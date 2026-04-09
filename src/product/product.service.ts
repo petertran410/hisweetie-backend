@@ -2158,7 +2158,6 @@ export class ProductService {
   private mergeProductWithSiteConfig(product: any, siteCode: string) {
     const sc = product.site_configs?.[0];
 
-    // Per-site title: site_config → fallback product → fallback kiotviet
     const productTitle =
       sc?.title ||
       product.title ||
@@ -2166,12 +2165,13 @@ export class ProductService {
       product.title_en ||
       'Untitled';
 
-    // Shared price (luôn từ product)
     const productPrice = product.kiotviet_price
       ? Number(product.kiotviet_price)
       : null;
 
-    // Per-site images: site_config → fallback product → fallback kiotviet
+    // ═══════════════════════════════════════════════════════
+    // FIX 1: Không fallback images về product table
+    // ═══════════════════════════════════════════════════════
     let imagesUrl: string[] = [];
     const scImages = sc?.images_url;
     const hasScImages =
@@ -2179,22 +2179,34 @@ export class ProductService {
       scImages !== '' &&
       scImages !== '[]' &&
       scImages !== '""';
-    const rawImages = hasScImages ? scImages : product.images_url;
-    if (rawImages) {
+
+    if (hasScImages) {
+      // Chỉ dùng site_config images
       try {
         imagesUrl =
-          typeof rawImages === 'string' ? JSON.parse(rawImages) : rawImages;
+          typeof scImages === 'string' ? JSON.parse(scImages) : scImages;
       } catch {
         imagesUrl = [];
       }
-    } else if (
-      product.kiotviet_images &&
-      Array.isArray(product.kiotviet_images) &&
-      product.kiotviet_images.length > 0
-    ) {
-      imagesUrl = [product.kiotviet_images[0]];
+    } else {
+      // Nếu site_config không có → trả về empty, KHÔNG fallback
+      // Ngoại lệ: nếu product này chưa có site_config nào, dùng kiotviet_images làm default
+      const hasAnySiteConfig = product.site_configs?.length > 0;
+      if (
+        !hasAnySiteConfig &&
+        product.kiotviet_images &&
+        Array.isArray(product.kiotviet_images) &&
+        product.kiotviet_images.length > 0
+      ) {
+        imagesUrl = [product.kiotviet_images[0]];
+      } else {
+        imagesUrl = [];
+      }
     }
 
+    // ═══════════════════════════════════════════════════════
+    // FIX 2: Không fallback text fields về product table
+    // ═══════════════════════════════════════════════════════
     return {
       id: Number(product.id),
 
@@ -2208,12 +2220,12 @@ export class ProductService {
 
       price: productPrice,
 
-      description: sc?.description ?? product.description,
-      general_description:
-        sc?.general_description ?? product.general_description,
-      instruction: sc?.instruction ?? product.instruction,
-      description_en: sc?.description_en ?? product.description_en,
-      instruction_en: sc?.instruction_en ?? product.instruction_en,
+      // Chỉ dùng site_config, không fallback
+      description: sc?.description ?? null,
+      general_description: sc?.general_description ?? null,
+      instruction: sc?.instruction ?? null,
+      description_en: sc?.description_en ?? null,
+      instruction_en: sc?.instruction_en ?? null,
 
       is_visible: sc?.is_visible ?? false,
       is_featured: sc?.is_featured ?? false,
@@ -2306,7 +2318,15 @@ export class ProductService {
       if (data.images_url === null) {
         imagesUrlString = null;
       } else if (Array.isArray(data.images_url)) {
-        imagesUrlString = JSON.stringify(data.images_url);
+        // Nếu empty array → lưu null thay vì "[]"
+        if (data.images_url.length === 0) {
+          imagesUrlString = null;
+        } else {
+          imagesUrlString = JSON.stringify(data.images_url);
+        }
+      } else if (data.images_url === '' || data.images_url === '[]') {
+        // Xử lý edge case: string rỗng hoặc "[]"
+        imagesUrlString = null;
       } else {
         imagesUrlString = data.images_url;
       }
