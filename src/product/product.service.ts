@@ -2169,71 +2169,58 @@ export class ProductService {
       ? Number(product.kiotviet_price)
       : null;
 
-    // ═══════════════════════════════════════════════════════
-    // IMAGES: Chỉ dùng site_config, KHÔNG fallback về product
-    // ═══════════════════════════════════════════════════════
     let imagesUrl: string[] = [];
     const scImages = sc?.images_url;
-    const hasScImages =
-      scImages != null &&
-      scImages !== '' &&
-      scImages !== '[]' &&
-      scImages !== '""';
 
-    if (hasScImages) {
+    if (scImages) {
+      if (typeof scImages === 'string') {
+        try {
+          imagesUrl = JSON.parse(scImages);
+        } catch (e) {
+          this.logger.warn(
+            `Failed to parse sc.images_url for product ${product.id}`,
+          );
+          imagesUrl = [];
+        }
+      } else if (Array.isArray(scImages)) {
+        imagesUrl = scImages;
+      }
+    } else if (product.images_url) {
       try {
-        imagesUrl =
-          typeof scImages === 'string' ? JSON.parse(scImages) : scImages;
-      } catch {
+        imagesUrl = JSON.parse(product.images_url);
+      } catch (e) {
+        this.logger.warn(
+          `Failed to parse product.images_url for product ${product.id}`,
+        );
         imagesUrl = [];
       }
-    } else {
-      // NẾU site_config không có images:
-      // - Nếu product này chưa có site_config NÀO → dùng kiotviet_images làm default
-      // - Nếu đã có site_config nhưng rỗng → trả về []
-      const hasAnySiteConfig = product.site_configs?.length > 0;
-      if (
-        !hasAnySiteConfig &&
-        product.kiotviet_images &&
-        Array.isArray(product.kiotviet_images) &&
-        product.kiotviet_images.length > 0
-      ) {
-        imagesUrl = [product.kiotviet_images[0]];
-      } else {
-        imagesUrl = [];
-      }
+    } else if (
+      product.kiotviet_images &&
+      Array.isArray(product.kiotviet_images) &&
+      product.kiotviet_images.length > 0
+    ) {
+      imagesUrl = [product.kiotviet_images[0]];
     }
 
     return {
       id: Number(product.id),
-
       title: productTitle,
       title_en: sc?.title_en ?? product.title_en,
+      title_meta: sc?.title_meta ?? product.title_meta,
       slug: sc?.slug ?? this.convertToSlug(productTitle),
-      imagesUrl,
-      rate: sc?.rate ?? product.rate,
-      price_on: sc?.price_on ?? product.price_on ?? false,
-
-      // ═══════════════════════════════════════════════════════
-      // PRICE: Luôn từ product table (KiotViet quản lý)
-      // ═══════════════════════════════════════════════════════
       price: productPrice,
-
-      // ═══════════════════════════════════════════════════════
-      // CRITICAL FIX: KHÔNG FALLBACK về product table
-      // Chỉ dùng site_config, nếu null thì trả về null
-      // ═══════════════════════════════════════════════════════
-      title_meta: sc?.title_meta ?? null, // ← KHÔNG fallback về product.title_meta
-      description: sc?.description ?? null, // ← KHÔNG fallback về product.description
-      general_description: sc?.general_description ?? null, // ← KHÔNG fallback
-      instruction: sc?.instruction ?? null, // ← KHÔNG fallback về product.instruction
+      imagesUrl: imagesUrl,
+      description: sc?.description ?? null,
+      general_description: sc?.general_description ?? null,
+      instruction: sc?.instruction ?? null,
       description_en: sc?.description_en ?? null,
       instruction_en: sc?.instruction_en ?? null,
 
-      is_visible: sc?.is_visible ?? false,
-      is_featured: sc?.is_featured ?? false,
-      featured_thumbnail: sc?.featured_thumbnail ?? product.featured_thumbnail,
-      recipe_thumbnail: sc?.recipe_thumbnail ?? product.recipe_thumbnail,
+      isVisible: sc?.is_visible ?? false,
+      isFeatured: sc?.is_featured ?? false,
+      featuredThumbnail: sc?.featured_thumbnail ?? product.featured_thumbnail,
+      recipeThumbnail: sc?.recipe_thumbnail ?? product.recipe_thumbnail,
+      price_on: sc?.price_on ?? false,
 
       category_id: sc?.category_id ? Number(sc.category_id) : null,
       category_slug: sc?.category_slug ?? product.category_slug,
@@ -2253,9 +2240,6 @@ export class ProductService {
           }
         : null,
 
-      // ═══════════════════════════════════════════════════════
-      // KIOTVIET DATA: Luôn từ product table
-      // ═══════════════════════════════════════════════════════
       kiotviet_name: product.kiotviet_name,
       kiotviet_code: product.kiotviet_code,
       kiotviet_price: productPrice,
@@ -2368,9 +2352,16 @@ export class ProductService {
     // Boolean fields (is_visible, is_featured, price_on) vẫn bị
     // loại nếu undefined — tránh ghi đè không mong muốn.
     const TEXT_FIELDS = new Set([
-      'description', 'general_description', 'instruction',
-      'description_en', 'instruction_en', 'title_meta',
-      'title', 'title_en', 'featured_thumbnail', 'recipe_thumbnail',
+      'description',
+      'general_description',
+      'instruction',
+      'description_en',
+      'instruction_en',
+      'title_meta',
+      'title',
+      'title_en',
+      'featured_thumbnail',
+      'recipe_thumbnail',
       'images_url',
     ]);
 
@@ -2573,8 +2564,7 @@ export class ProductService {
     // Nếu không tìm được theo sc.slug thì fallback theo title
     if (!match) {
       match = allProductsForSite.find((p) => {
-        const title =
-          p.site_configs?.[0]?.title || p.title || p.kiotviet_name;
+        const title = p.site_configs?.[0]?.title || p.title || p.kiotviet_name;
         return title && this.convertToSlug(title) === slug;
       });
     }
@@ -2595,7 +2585,6 @@ export class ProductService {
     const sc = product.site_configs?.[0];
     const merged = this.mergeProductWithSiteConfig(product, siteCode);
 
-    // Build category hierarchy for breadcrumb
     let categoryHierarchy: any[] = [];
     if (sc?.category_id) {
       categoryHierarchy = await this.buildCategoryHierarchy(
@@ -2866,8 +2855,7 @@ export class ProductService {
     // Fallback: match bằng convertToSlug(title)
     if (!match) {
       match = configs.find((sc) => {
-        const title =
-          sc.title || sc.product.title || sc.product.kiotviet_name;
+        const title = sc.title || sc.product.title || sc.product.kiotviet_name;
         return title && this.convertToSlug(title) === slug;
       });
     }
