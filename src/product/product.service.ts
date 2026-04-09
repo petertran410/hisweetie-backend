@@ -2170,7 +2170,7 @@ export class ProductService {
       : null;
 
     // ═══════════════════════════════════════════════════════
-    // FIX 1: Không fallback images về product table
+    // IMAGES: Chỉ dùng site_config, KHÔNG fallback về product
     // ═══════════════════════════════════════════════════════
     let imagesUrl: string[] = [];
     const scImages = sc?.images_url;
@@ -2181,7 +2181,6 @@ export class ProductService {
       scImages !== '""';
 
     if (hasScImages) {
-      // Chỉ dùng site_config images
       try {
         imagesUrl =
           typeof scImages === 'string' ? JSON.parse(scImages) : scImages;
@@ -2189,8 +2188,9 @@ export class ProductService {
         imagesUrl = [];
       }
     } else {
-      // Nếu site_config không có → trả về empty, KHÔNG fallback
-      // Ngoại lệ: nếu product này chưa có site_config nào, dùng kiotviet_images làm default
+      // NẾU site_config không có images:
+      // - Nếu product này chưa có site_config NÀO → dùng kiotviet_images làm default
+      // - Nếu đã có site_config nhưng rỗng → trả về []
       const hasAnySiteConfig = product.site_configs?.length > 0;
       if (
         !hasAnySiteConfig &&
@@ -2204,26 +2204,29 @@ export class ProductService {
       }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // FIX 2: Không fallback text fields về product table
-    // ═══════════════════════════════════════════════════════
     return {
       id: Number(product.id),
 
       title: productTitle,
       title_en: sc?.title_en ?? product.title_en,
-      title_meta: sc?.title_meta ?? product.title_meta,
       slug: sc?.slug ?? this.convertToSlug(productTitle),
       imagesUrl,
       rate: sc?.rate ?? product.rate,
       price_on: sc?.price_on ?? product.price_on ?? false,
 
+      // ═══════════════════════════════════════════════════════
+      // PRICE: Luôn từ product table (KiotViet quản lý)
+      // ═══════════════════════════════════════════════════════
       price: productPrice,
 
-      // Chỉ dùng site_config, không fallback
-      description: sc?.description ?? null,
-      general_description: sc?.general_description ?? null,
-      instruction: sc?.instruction ?? null,
+      // ═══════════════════════════════════════════════════════
+      // CRITICAL FIX: KHÔNG FALLBACK về product table
+      // Chỉ dùng site_config, nếu null thì trả về null
+      // ═══════════════════════════════════════════════════════
+      title_meta: sc?.title_meta ?? null, // ← KHÔNG fallback về product.title_meta
+      description: sc?.description ?? null, // ← KHÔNG fallback về product.description
+      general_description: sc?.general_description ?? null, // ← KHÔNG fallback
+      instruction: sc?.instruction ?? null, // ← KHÔNG fallback về product.instruction
       description_en: sc?.description_en ?? null,
       instruction_en: sc?.instruction_en ?? null,
 
@@ -2250,6 +2253,9 @@ export class ProductService {
           }
         : null,
 
+      // ═══════════════════════════════════════════════════════
+      // KIOTVIET DATA: Luôn từ product table
+      // ═══════════════════════════════════════════════════════
       kiotviet_name: product.kiotviet_name,
       kiotviet_code: product.kiotviet_code,
       kiotviet_price: productPrice,
@@ -2318,14 +2324,12 @@ export class ProductService {
       if (data.images_url === null) {
         imagesUrlString = null;
       } else if (Array.isArray(data.images_url)) {
-        // Nếu empty array → lưu null thay vì "[]"
         if (data.images_url.length === 0) {
           imagesUrlString = null;
         } else {
           imagesUrlString = JSON.stringify(data.images_url);
         }
       } else if (data.images_url === '' || data.images_url === '[]') {
-        // Xử lý edge case: string rỗng hoặc "[]"
         imagesUrlString = null;
       } else {
         imagesUrlString = data.images_url;
@@ -2359,8 +2363,14 @@ export class ProductService {
     };
 
     Object.keys(upsertData).forEach((key) => {
-      if (upsertData[key] === undefined) delete upsertData[key];
+      if (upsertData[key] === undefined || upsertData[key] === null) {
+        delete upsertData[key];
+      }
     });
+
+    if (Object.keys(upsertData).length === 0) {
+      throw new BadRequestException('No valid fields to update');
+    }
 
     const result = await this.prisma.product_site_config.upsert({
       where: {
