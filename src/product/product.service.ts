@@ -2171,45 +2171,46 @@ export class ProductService {
 
     let imagesUrl: string[] = [];
     const scImages = sc?.images_url;
+    const hasScImages =
+      scImages != null &&
+      scImages !== '' &&
+      scImages !== '[]' &&
+      scImages !== '""';
 
-    if (scImages) {
-      if (typeof scImages === 'string') {
-        try {
-          imagesUrl = JSON.parse(scImages);
-        } catch (e) {
-          this.logger.warn(
-            `Failed to parse sc.images_url for product ${product.id}`,
-          );
-          imagesUrl = [];
-        }
-      } else if (Array.isArray(scImages)) {
-        imagesUrl = scImages;
-      }
-    } else if (product.images_url) {
+    if (hasScImages) {
       try {
-        imagesUrl = JSON.parse(product.images_url);
-      } catch (e) {
-        this.logger.warn(
-          `Failed to parse product.images_url for product ${product.id}`,
-        );
+        imagesUrl =
+          typeof scImages === 'string' ? JSON.parse(scImages) : scImages;
+      } catch {
         imagesUrl = [];
       }
-    } else if (
-      product.kiotviet_images &&
-      Array.isArray(product.kiotviet_images) &&
-      product.kiotviet_images.length > 0
-    ) {
-      imagesUrl = [product.kiotviet_images[0]];
+    } else {
+      // NẾU site_config không có images:
+      // - Nếu product này chưa có site_config NÀO → dùng kiotviet_images làm default
+      // - Nếu đã có site_config nhưng rỗng → trả về []
+      const hasAnySiteConfig = product.site_configs?.length > 0;
+      if (
+        !hasAnySiteConfig &&
+        product.kiotviet_images &&
+        Array.isArray(product.kiotviet_images) &&
+        product.kiotviet_images.length > 0
+      ) {
+        imagesUrl = [product.kiotviet_images[0]];
+      } else {
+        imagesUrl = [];
+      }
     }
 
     return {
       id: Number(product.id),
       title: productTitle,
       title_en: sc?.title_en ?? product.title_en,
-      title_meta: sc?.title_meta ?? product.title_meta,
       slug: sc?.slug ?? this.convertToSlug(productTitle),
+      imagesUrl,
+      rate: sc?.rate ?? product.rate,
+      price_on: sc?.price_on ?? product.price_on ?? false,
       price: productPrice,
-      imagesUrl: imagesUrl,
+      title_meta: sc?.title_meta ?? null,
       description: sc?.description ?? null,
       general_description: sc?.general_description ?? null,
       instruction: sc?.instruction ?? null,
@@ -2220,7 +2221,6 @@ export class ProductService {
       isFeatured: sc?.is_featured ?? false,
       featuredThumbnail: sc?.featured_thumbnail ?? product.featured_thumbnail,
       recipeThumbnail: sc?.recipe_thumbnail ?? product.recipe_thumbnail,
-      price_on: sc?.price_on ?? false,
 
       category_id: sc?.category_id ? Number(sc.category_id) : null,
       category_slug: sc?.category_slug ?? product.category_slug,
