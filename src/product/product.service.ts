@@ -520,7 +520,8 @@ export class ProductService {
 
         if (!existingProduct) {
           const siteCodes = ['dieptra', 'lermao'];
-          const slug = this.convertToSlug(productData.name?.trim() || '');
+          // '' -> null để không vi phạm @@unique([site_code, slug]) khi tên rỗng
+          const slug = this.convertToSlug(productData.name?.trim() || '') || null;
 
           for (const siteCode of siteCodes) {
             await this.prismaService.product_site_config.upsert({

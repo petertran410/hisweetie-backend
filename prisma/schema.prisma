@@ -151,6 +151,7 @@ model category {
   slug                 String?    @db.VarChar(255)
   title_meta           String?
   image_url            String?    @db.VarChar(500)
+  is_active            Boolean    @default(true)
   site_code            String     @default("dieptra") @db.VarChar(20)
 
   parent               category?  @relation("CategoryHierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
@@ -166,6 +167,7 @@ model category {
   @@index([level])
   @@index([slug])
   @@index([site_code, is_featured])                        // <-- THÊM INDEX
+  @@index([site_code, is_active])
 }
 
 model contact_inquiry {
@@ -532,4 +534,20 @@ model user_sessions {
   @@index([client_id, is_active])
   @@index([expires_at])
   @@index([id, is_active])
+}
+
+model url_redirect {
+  id           BigInt    @id @default(autoincrement())
+  source_path  String    @db.VarChar(500)
+  target_path  String    @db.VarChar(500)
+  status_code  Int       @default(301)
+  match_type   String    @default("exact") @db.VarChar(10)
+  is_active    Boolean   @default(true)
+  note         String?   @db.VarChar(255)
+  site_code    String    @default("dieptra") @db.VarChar(20)
+  created_date DateTime? @default(now()) @db.DateTime(6)
+  updated_date DateTime? @default(now()) @db.DateTime(6)
+
+  @@unique([site_code, source_path])
+  @@index([site_code, is_active])
 }

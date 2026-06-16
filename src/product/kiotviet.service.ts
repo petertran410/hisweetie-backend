@@ -603,7 +603,8 @@ export class KiotVietService {
                       product_id: newProduct.id,
                       site_code: siteCode,
                       title: kiotProduct.name || null,
-                      slug: this.convertToSlug(kiotProduct.name || ''),
+                      // '' -> null để không vi phạm @@unique([site_code, slug]) khi tên rỗng
+                      slug: this.convertToSlug(kiotProduct.name || '') || null,
                       is_visible:
                         siteCode === 'dieptra'
                           ? kiotProduct.allowsSale !== false

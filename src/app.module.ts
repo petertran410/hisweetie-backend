@@ -17,6 +17,7 @@ import { KiotVietModule } from './kiotviet/kiotviet.module';
 import { CartModule } from './cart/cart.module';
 import { ReviewModule } from './review/review.module';
 import { ContactModule } from './contact/contact.module';
+import { RedirectModule } from './redirect/redirect.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { ContactModule } from './contact/contact.module';
     CartModule,
     ReviewModule,
     ContactModule,
+    RedirectModule,
   ],
   controllers: [],
   providers: [],

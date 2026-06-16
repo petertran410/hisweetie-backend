@@ -37,6 +37,13 @@ export class CategoryController {
     return this.categoryService.getCategoriesForCMS(siteCode);
   }
 
+  // Public: client chỉ lấy danh mục đang hiển thị (is_active=true).
+  @Get('client/list')
+  @ApiOperation({ summary: 'Danh mục đang hiển thị cho client (lọc is_active)' })
+  async getActiveCategoriesForClient(@CurrentSiteCode() siteCode: string) {
+    return this.categoryService.getActiveCategoriesForClient(siteCode);
+  }
+
   @Get('paginated')
   @ApiOperation({ summary: 'Get paginated categories for CMS' })
   getCategoriesForCMSPaginated(
@@ -155,6 +162,29 @@ export class CategoryController {
     return this.categoryService.reassignProducts(
       fromCategoryId,
       toCategoryId || null,
+    );
+  }
+
+  // Gộp danh mục: reassign sản phẩm + re-parent con + ẩn danh mục cũ + tạo redirect prefix.
+  @Post('merge')
+  @ApiOperation({
+    summary: 'Gộp danh mục nguồn vào danh mục đích (1 thao tác)',
+  })
+  async mergeCategory(
+    @Body() body: { fromCategoryId: number; toCategoryId: number },
+    @CurrentSiteCode() siteCode: string,
+  ) {
+    const { fromCategoryId, toCategoryId } = body;
+    if (!fromCategoryId || isNaN(fromCategoryId)) {
+      throw new BadRequestException('Invalid fromCategoryId');
+    }
+    if (!toCategoryId || isNaN(toCategoryId)) {
+      throw new BadRequestException('Invalid toCategoryId');
+    }
+    return this.categoryService.mergeCategory(
+      fromCategoryId,
+      toCategoryId,
+      siteCode,
     );
   }
 }

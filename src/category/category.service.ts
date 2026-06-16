@@ -141,6 +141,7 @@ export class CategoryService {
       parent_name: cat.parent?.name,
       priority: cat.priority || 0,
       is_featured: cat.is_featured ?? false,
+      is_active: cat.is_active ?? true,
       level: cat.level,
       path: cat.path,
       productCount: cat.product_count,
@@ -186,6 +187,7 @@ export class CategoryService {
         slug: category.slug,
         image_url: category.image_url,
         priority: category.priority,
+        is_active: category.is_active ?? true,
         level: category.level,
         path: category.path,
         site_code: category.site_code,
@@ -243,6 +245,8 @@ export class CategoryService {
         updateData.image_url = updateCategoryDto.image_url;
       if (updateCategoryDto.is_featured !== undefined)
         updateData.is_featured = updateCategoryDto.is_featured;
+      if (updateCategoryDto.is_active !== undefined)
+        updateData.is_active = updateCategoryDto.is_active;
 
       if (updateCategoryDto.parent_id !== undefined) {
         if (updateCategoryDto.parent_id && updateCategoryDto.parent_id === id) {
@@ -481,6 +485,151 @@ export class CategoryService {
     }
   }
 
+  // Dựng URL danh mục theo chuỗi slug cha→con: "/san-pham/<slug-cha>/<slug-con>".
+  // Trả null nếu thiếu slug ở bất kỳ tầng nào (không dựng được URL hợp lệ).
+  private buildCategoryUrl(
+    categoryId: bigint,
+    allCategories: { id: bigint; slug: string | null; parent_id: bigint | null }[],
+  ): string | null {
+    const slugs: string[] = [];
+    let current = allCategories.find((c) => c.id === categoryId);
+    const guard = new Set<string>();
+    while (current) {
+      if (!current.slug) return null;
+      if (guard.has(current.id.toString())) break; // chống vòng lặp dữ liệu hỏng
+      guard.add(current.id.toString());
+      slugs.unshift(current.slug);
+      if (!current.parent_id) break;
+      const parentId = current.parent_id;
+      current = allCategories.find((c) => c.id === parentId);
+    }
+    if (!slugs.length) return null;
+    return `/san-pham/${slugs.join('/')}`;
+  }
+
+  // Gộp danh mục "from" vào "to" trong 1 transaction:
+  //  1. Chuyển toàn bộ sản phẩm trực tiếp from → to
+  //  2. Đổi cha của danh mục con trực tiếp from → to (cả subtree theo)
+  //  3. Ẩn danh mục from (is_active=false) — link cũ không còn hiển thị
+  //  4. Tạo redirect PREFIX: URL cũ (from) → URL mới (to), bao mọi con cháu
+  async mergeCategory(
+    fromCategoryId: number,
+    toCategoryId: number,
+    siteCode: string = 'dieptra',
+  ) {
+    if (!fromCategoryId || !toCategoryId) {
+      throw new BadRequestException('Thiếu fromCategoryId hoặc toCategoryId');
+    }
+    if (fromCategoryId === toCategoryId) {
+      throw new BadRequestException('Không thể gộp một danh mục vào chính nó');
+    }
+
+    const [fromCat, toCat] = await Promise.all([
+      this.prisma.category.findUnique({ where: { id: BigInt(fromCategoryId) } }),
+      this.prisma.category.findUnique({ where: { id: BigInt(toCategoryId) } }),
+    ]);
+
+    if (!fromCat) throw new NotFoundException('Danh mục nguồn không tồn tại');
+    if (!toCat) throw new NotFoundException('Danh mục đích không tồn tại');
+    if (fromCat.site_code !== siteCode || toCat.site_code !== siteCode) {
+      throw new BadRequestException('Danh mục không thuộc site này');
+    }
+
+    // Chặn gộp vào chính con cháu của from (sẽ tạo vòng cây + loop redirect).
+    const allForSite = await this.prisma.category.findMany({
+      where: { site_code: siteCode },
+      select: { id: true, slug: true, parent_id: true },
+    });
+    const fromDescendants = this.getDescendantIds(
+      Number(fromCat.id),
+      allForSite,
+    );
+    if (fromDescendants.includes(Number(toCat.id))) {
+      throw new BadRequestException(
+        'Không thể gộp vào danh mục con của chính nó',
+      );
+    }
+
+    const sourceUrl = this.buildCategoryUrl(fromCat.id, allForSite);
+    const targetUrl = this.buildCategoryUrl(toCat.id, allForSite);
+
+    if (!sourceUrl || !targetUrl) {
+      throw new BadRequestException(
+        'Không dựng được đường dẫn URL (danh mục thiếu slug)',
+      );
+    }
+    // Chống loop prefix: target không được trùng hoặc nằm trong source.
+    if (sourceUrl === targetUrl || targetUrl.startsWith(`${sourceUrl}/`)) {
+      throw new BadRequestException(
+        'Đường dẫn đích trùng hoặc nằm trong đường dẫn nguồn (gây vòng lặp)',
+      );
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. Sản phẩm trực tiếp from → to
+      const movedProducts = await tx.product.updateMany({
+        where: { category_id: BigInt(fromCategoryId) },
+        data: { category_id: BigInt(toCategoryId) },
+      });
+
+      // 2. Con trực tiếp from → to (cháu/chắt tự theo)
+      const movedChildren = await tx.category.updateMany({
+        where: { parent_id: BigInt(fromCategoryId), site_code: siteCode },
+        data: { parent_id: BigInt(toCategoryId) },
+      });
+
+      // 3. Ẩn danh mục nguồn
+      await tx.category.update({
+        where: { id: BigInt(fromCategoryId) },
+        data: { is_active: false },
+      });
+
+      // 4. Tạo/ghi đè redirect prefix cũ → mới
+      const redirect = await tx.url_redirect.upsert({
+        where: {
+          site_code_source_path: { site_code: siteCode, source_path: sourceUrl },
+        },
+        update: {
+          target_path: targetUrl,
+          match_type: 'prefix',
+          status_code: 301,
+          is_active: true,
+          updated_date: new Date(),
+        },
+        create: {
+          source_path: sourceUrl,
+          target_path: targetUrl,
+          match_type: 'prefix',
+          status_code: 301,
+          is_active: true,
+          site_code: siteCode,
+          note: `Gộp danh mục "${fromCat.name}" → "${toCat.name}"`,
+        },
+      });
+
+      return {
+        movedProducts: movedProducts.count,
+        movedChildren: movedChildren.count,
+        redirectId: Number(redirect.id),
+      };
+    });
+
+    // Cây thay đổi (con dời nhánh) → tính lại level/path/đếm.
+    await this.recalculateHierarchy(siteCode);
+
+    return {
+      success: true,
+      data: {
+        fromCategory: fromCat.name,
+        toCategory: toCat.name,
+        sourcePath: sourceUrl,
+        targetPath: targetUrl,
+        ...result,
+      },
+      message: `Đã gộp "${fromCat.name}" vào "${toCat.name}": chuyển ${result.movedProducts} sản phẩm, ${result.movedChildren} danh mục con, tạo redirect.`,
+    };
+  }
+
   async updateCategory(productId: number, categoryId: number) {
     try {
       const product = await this.prisma.product.findUnique({
@@ -612,6 +761,7 @@ export class CategoryService {
       parent_name: cat.parent?.name,
       priority: cat.priority || 0,
       is_featured: cat.is_featured ?? false,
+      is_active: cat.is_active ?? true,
       level: cat.level,
       path: cat.path,
       productCount: cat.product_count,
@@ -628,6 +778,51 @@ export class CategoryService {
       data,
       total: data.length,
       message: 'Categories fetched successfully',
+    };
+  }
+
+  // Public client: CHỈ trả danh mục đang bật (is_active=true).
+  // Client dùng list này để buildPath/resolve URL → danh mục ẩn sẽ tự rớt khỏi
+  // menu/sidebar/breadcrumb và link của nó chết (đúng cơ chế 2a).
+  async getActiveCategoriesForClient(siteCode: string = 'dieptra') {
+    const categories = await this.prisma.category.findMany({
+      where: { site_code: siteCode, is_active: true },
+      include: {
+        parent: true,
+        children: { where: { is_active: true } },
+        product: { select: { id: true } },
+      },
+      orderBy: [{ level: 'asc' }, { priority: 'asc' }, { name: 'asc' }],
+    });
+
+    const data = categories.map((cat) => ({
+      id: Number(cat.id),
+      name: cat.name,
+      name_en: cat.name_en,
+      description: cat.description,
+      title_meta: cat.title_meta,
+      slug: cat.slug,
+      image_url: cat.image_url,
+      parent_id: cat.parent_id ? Number(cat.parent_id) : null,
+      parent_name: cat.parent?.name,
+      priority: cat.priority || 0,
+      is_featured: cat.is_featured ?? false,
+      level: cat.level,
+      path: cat.path,
+      productCount: cat.product_count,
+      directProductCount: cat.direct_product_count,
+      childCount: cat.child_count,
+      displayName:
+        cat.level > 0 ? `${'— '.repeat(cat.level)}${cat.name}` : cat.name,
+      hasChildren: cat.children.length > 0,
+      hasProducts: cat.product.length > 0,
+    }));
+
+    return {
+      success: true,
+      data,
+      total: data.length,
+      message: 'Active categories fetched successfully',
     };
   }
 

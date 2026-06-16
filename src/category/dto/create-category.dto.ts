@@ -77,6 +77,20 @@ export class CreateCategoryDto {
   is_featured?: boolean;
 
   @ApiProperty({
+    description: 'Hiển thị danh mục (false = ẩn khỏi client)',
+    required: false,
+    example: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => {
+    if (value === 'true' || value === true || value === 1) return true;
+    if (value === 'false' || value === false || value === 0) return false;
+    return value;
+  })
+  is_active?: boolean;
+
+  @ApiProperty({
     description: 'Parent category ID',
     required: false,
     example: 1,
