@@ -7,12 +7,16 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRedirectDto } from './dto/create-redirect.dto';
 import { UpdateRedirectDto } from './dto/update-redirect.dto';
+import { RevalidateService } from '../common/revalidate.service';
 
 @Injectable()
 export class RedirectService {
   private readonly logger = new Logger(RedirectService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly revalidate: RevalidateService,
+  ) {}
 
   private serialize(redirect: any) {
     return {
@@ -72,6 +76,8 @@ export class RedirectService {
           site_code: siteCode,
         },
       });
+
+      this.revalidate.revalidateSite(siteCode);
 
       return {
         success: true,
@@ -197,6 +203,8 @@ export class RedirectService {
         },
       });
 
+      this.revalidate.revalidateSite(siteCode);
+
       return {
         success: true,
         data: this.serialize(redirect),
@@ -222,6 +230,8 @@ export class RedirectService {
     }
 
     await this.prisma.url_redirect.delete({ where: { id: BigInt(id) } });
+
+    this.revalidate.revalidateSite(siteCode);
 
     return { success: true, message: 'Xóa redirect thành công' };
   }

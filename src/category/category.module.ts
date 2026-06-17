@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { CategoryService } from './category.service';
 import { CategoryController } from './category.controller';
 import { KiotVietService } from '../product/kiotviet.service';
+import { RevalidateService } from '../common/revalidate.service';
 import { HttpModule } from '@nestjs/axios';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { AuthModule } from 'src/auth/auth.module';
@@ -18,7 +19,7 @@ import { AuthModule } from 'src/auth/auth.module';
     AuthModule,
   ],
   controllers: [CategoryController],
-  providers: [CategoryService, KiotVietService],
+  providers: [CategoryService, KiotVietService, RevalidateService],
   exports: [CategoryService],
 })
 export class CategoryModule {}

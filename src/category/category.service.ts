@@ -7,12 +7,16 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCategoryDto, CategoryTreeDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
+import { RevalidateService } from '../common/revalidate.service';
 
 @Injectable()
 export class CategoryService {
   private readonly logger = new Logger(CategoryService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly revalidate: RevalidateService,
+  ) {}
 
   async create(
     createCategoryDto: CreateCategoryDto,
@@ -53,6 +57,7 @@ export class CategoryService {
       });
 
       await this.recalculateHierarchy(siteCode);
+      this.revalidate.revalidateSite(siteCode);
 
       return {
         success: true,
@@ -285,6 +290,7 @@ export class CategoryService {
       });
 
       await this.recalculateHierarchy(siteCode);
+      this.revalidate.revalidateSite(siteCode);
 
       return {
         success: true,
@@ -439,6 +445,8 @@ export class CategoryService {
 
     await this.prisma.category.delete({ where: { id: BigInt(id) } });
     await this.recalculateHierarchy(siteCode);
+
+    this.revalidate.revalidateSite(siteCode);
 
     return { success: true, message: 'Category deleted successfully' };
   }
@@ -644,6 +652,9 @@ export class CategoryService {
 
     // Cây thay đổi (con dời nhánh) → tính lại level/path/đếm.
     await this.recalculateHierarchy(siteCode);
+
+    // Xả cache client ngay (redirect + danh mục + sản phẩm vừa đổi).
+    this.revalidate.revalidateSite(siteCode);
 
     return {
       success: true,
