@@ -447,28 +447,46 @@ export class CategoryService {
     try {
       const fromCategory = await this.prisma.category.findUnique({
         where: { id: BigInt(fromCategoryId) },
-        select: { name: true, name_en: true },
+        select: { name: true, name_en: true, site_code: true },
       });
 
       if (!fromCategory) {
         throw new NotFoundException('Source category not found');
       }
 
+      let toSlug: string | null = null;
       if (toCategoryId) {
         const toCategory = await this.prisma.category.findUnique({
           where: { id: BigInt(toCategoryId) },
-          select: { name: true, name_en: true },
+          select: { name: true, name_en: true, slug: true },
         });
 
         if (!toCategory) {
           throw new NotFoundException('Destination category not found');
         }
+        toSlug = toCategory.slug ?? null;
       }
 
-      const result = await this.prisma.product.updateMany({
-        where: { category_id: BigInt(fromCategoryId) },
-        data: { category_id: toCategoryId ? BigInt(toCategoryId) : null },
-      });
+      // Đồng bộ CẢ 2 nơi gắn category trong 1 transaction:
+      //  - product.category_id           (CMS đếm + tree)
+      //  - product_site_config.category_id (client lọc sản phẩm theo site)
+      // Nếu chỉ đổi product.category_id, client (đọc qua site_config) sẽ KHÔNG thấy sản phẩm.
+      const [result] = await this.prisma.$transaction([
+        this.prisma.product.updateMany({
+          where: { category_id: BigInt(fromCategoryId) },
+          data: { category_id: toCategoryId ? BigInt(toCategoryId) : null },
+        }),
+        this.prisma.product_site_config.updateMany({
+          where: {
+            category_id: BigInt(fromCategoryId),
+            site_code: fromCategory.site_code,
+          },
+          data: {
+            category_id: toCategoryId ? BigInt(toCategoryId) : null,
+            category_slug: toSlug,
+          },
+        }),
+      ]);
 
       return {
         success: true,
@@ -566,10 +584,20 @@ export class CategoryService {
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
-      // 1. Sản phẩm trực tiếp from → to
+      // 1. Sản phẩm trực tiếp from → to (toàn cục)
       const movedProducts = await tx.product.updateMany({
         where: { category_id: BigInt(fromCategoryId) },
         data: { category_id: BigInt(toCategoryId) },
+      });
+
+      // 1b. Đồng bộ product_site_config CỦA SITE NÀY (client lọc theo đây).
+      //     Cập nhật cả category_slug denormalized để breadcrumb/URL không lệch.
+      await tx.product_site_config.updateMany({
+        where: { category_id: BigInt(fromCategoryId), site_code: siteCode },
+        data: {
+          category_id: BigInt(toCategoryId),
+          category_slug: toCat.slug ?? null,
+        },
       });
 
       // 2. Con trực tiếp from → to (cháu/chắt tự theo)
