@@ -443,6 +443,44 @@ export class CategoryService {
       );
     }
 
+    // parent_id là Cascade -> xóa danh mục sẽ xóa luôn con cháu.
+    // Nhưng product.category_id là NoAction -> nếu danh mục (hoặc bất kỳ con cháu)
+    // còn sản phẩm tham chiếu thì DB chặn (P2003). Chặn trước, báo lỗi rõ ràng.
+    const allCategories = await this.prisma.category.findMany({
+      where: { site_code: siteCode },
+      select: { id: true, parent_id: true },
+    });
+    const affectedIds = [
+      id,
+      ...this.getDescendantIds(id, allCategories),
+    ].map((cid) => BigInt(cid));
+
+    const productCount = await this.prisma.product.count({
+      where: { category_id: { in: affectedIds } },
+    });
+
+    if (productCount > 0) {
+      // Lấy danh sách sản phẩm còn tham chiếu để báo rõ (giới hạn 20 để tránh quá dài).
+      const products = await this.prisma.product.findMany({
+        where: { category_id: { in: affectedIds } },
+        select: { id: true, title: true, kiotviet_code: true, kiotviet_name: true },
+        take: 20,
+        orderBy: { id: 'asc' },
+      });
+
+      const productLabels = products.map((p) => {
+        const name = p.title || p.kiotviet_name || `#${Number(p.id)}`;
+        return p.kiotviet_code ? `${name} (${p.kiotviet_code})` : name;
+      });
+
+      const more = productCount > products.length ? ` và ${productCount - products.length} sản phẩm khác` : '';
+
+      throw new BadRequestException(
+        `Không thể xóa: danh mục (hoặc danh mục con) còn ${productCount} sản phẩm. ` +
+          `Vui lòng chuyển các sản phẩm sau sang danh mục khác trước khi xóa: ${productLabels.join(', ')}${more}.`,
+      );
+    }
+
     await this.prisma.category.delete({ where: { id: BigInt(id) } });
     await this.recalculateHierarchy(siteCode);
 
