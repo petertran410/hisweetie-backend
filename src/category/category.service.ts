@@ -444,8 +444,6 @@ export class CategoryService {
     }
 
     // parent_id là Cascade -> xóa danh mục sẽ xóa luôn con cháu.
-    // Nhưng product.category_id là NoAction -> nếu danh mục (hoặc bất kỳ con cháu)
-    // còn sản phẩm tham chiếu thì DB chặn (P2003). Chặn trước, báo lỗi rõ ràng.
     const allCategories = await this.prisma.category.findMany({
       where: { site_code: siteCode },
       select: { id: true, parent_id: true },
@@ -455,33 +453,50 @@ export class CategoryService {
       ...this.getDescendantIds(id, allCategories),
     ].map((cid) => BigInt(cid));
 
-    const productCount = await this.prisma.product.count({
-      where: { category_id: { in: affectedIds } },
+    // QUAN TRỌNG (multi-site): product KHÔNG có site_code. Việc 1 sản phẩm thuộc
+    // site nào và danh mục nào của site đó được quyết định bởi product_site_config.
+    // => Đếm sản phẩm "thực sự thuộc danh mục này trong site hiện tại" qua site_config,
+    //    KHÔNG dùng product.category_id (cột legacy, toàn cục, có thể trỏ rác từ site khác).
+    const siteProductCount = await this.prisma.product_site_config.count({
+      where: { category_id: { in: affectedIds }, site_code: siteCode },
     });
 
-    if (productCount > 0) {
-      // Lấy danh sách sản phẩm còn tham chiếu để báo rõ (giới hạn 20 để tránh quá dài).
-      const products = await this.prisma.product.findMany({
-        where: { category_id: { in: affectedIds } },
-        select: { id: true, title: true, kiotviet_code: true, kiotviet_name: true },
+    if (siteProductCount > 0) {
+      // Còn sản phẩm gắn danh mục trong site này -> chặn, báo rõ để admin chuyển trước.
+      const configs = await this.prisma.product_site_config.findMany({
+        where: { category_id: { in: affectedIds }, site_code: siteCode },
+        select: { title: true, product: { select: { kiotviet_code: true, kiotviet_name: true } } },
         take: 20,
         orderBy: { id: 'asc' },
       });
 
-      const productLabels = products.map((p) => {
-        const name = p.title || p.kiotviet_name || `#${Number(p.id)}`;
-        return p.kiotviet_code ? `${name} (${p.kiotviet_code})` : name;
+      const productLabels = configs.map((c) => {
+        const name = c.title || c.product?.kiotviet_name || 'Sản phẩm';
+        const code = c.product?.kiotviet_code;
+        return code ? `${name} (${code})` : name;
       });
 
-      const more = productCount > products.length ? ` và ${productCount - products.length} sản phẩm khác` : '';
+      const more =
+        siteProductCount > configs.length ? ` và ${siteProductCount - configs.length} sản phẩm khác` : '';
 
       throw new BadRequestException(
-        `Không thể xóa: danh mục (hoặc danh mục con) còn ${productCount} sản phẩm. ` +
+        `Không thể xóa: danh mục (hoặc danh mục con) còn ${siteProductCount} sản phẩm. ` +
           `Vui lòng chuyển các sản phẩm sau sang danh mục khác trước khi xóa: ${productLabels.join(', ')}${more}.`,
       );
     }
 
-    await this.prisma.category.delete({ where: { id: BigInt(id) } });
+    // Site này không còn sản phẩm gắn danh mục. Nhưng cột legacy product.category_id
+    // (NoAction) có thể vẫn trỏ tới các id sắp xóa -> DB chặn P2003.
+    // Gỡ con trỏ legacy về null trong transaction rồi mới xóa danh mục.
+    // An toàn: hiển thị sản phẩm ở mọi site đều dựa trên site_config, không dựa cột này.
+    await this.prisma.$transaction([
+      this.prisma.product.updateMany({
+        where: { category_id: { in: affectedIds } },
+        data: { category_id: null },
+      }),
+      this.prisma.category.delete({ where: { id: BigInt(id) } }),
+    ]);
+
     await this.recalculateHierarchy(siteCode);
 
     this.revalidate.revalidateSite(siteCode);
