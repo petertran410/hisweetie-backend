@@ -551,3 +551,15 @@ model url_redirect {
   @@unique([site_code, source_path])
   @@index([site_code, is_active])
 }
+
+model site_config {
+  id           BigInt    @id @default(autoincrement())
+  site_code    String    @default("dieptra") @db.VarChar(20)
+  config_key   String    @db.VarChar(100)
+  config_value String?   @db.Text
+  created_date DateTime? @default(now()) @db.DateTime(6)
+  updated_date DateTime? @default(now()) @db.DateTime(6)
+
+  @@unique([site_code, config_key])
+  @@index([site_code])
+}

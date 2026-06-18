@@ -18,6 +18,7 @@ import { CartModule } from './cart/cart.module';
 import { ReviewModule } from './review/review.module';
 import { ContactModule } from './contact/contact.module';
 import { RedirectModule } from './redirect/redirect.module';
+import { SiteConfigModule } from './site-config/site-config.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { RedirectModule } from './redirect/redirect.module';
     ReviewModule,
     ContactModule,
     RedirectModule,
+    SiteConfigModule,
   ],
   controllers: [],
   providers: [],
