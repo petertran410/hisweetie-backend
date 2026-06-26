@@ -10,6 +10,8 @@ Dockerfile
 deploy-synology.sh
 dieptra.sql
 
+public
+
 # Logs
 logs
 *.log
