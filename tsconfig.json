@@ -1,5 +1,8 @@
 {
   "compilerOptions": {
+    "useUnknownInCatchVariables": false,
+    "rootDir": "./src",
+    "ignoreDeprecations": "5.0",
     "module": "commonjs",
     "declaration": true,
     "removeComments": true,
