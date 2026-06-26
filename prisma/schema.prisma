@@ -153,6 +153,8 @@ model category {
   image_url            String?    @db.VarChar(500)
   is_active            Boolean    @default(true)
   site_code            String     @default("dieptra") @db.VarChar(20)
+  top_text             String?    @db.LongText              // <-- THÊM MỚI: Plain text, hiển thị phía trên danh sách SP
+  bottom_content       String?    @db.LongText              // <-- THÊM MỚI: HTML từ editor, hiển thị phía dưới danh sách SP
 
   parent               category?  @relation("CategoryHierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
   children             category[] @relation("CategoryHierarchy")

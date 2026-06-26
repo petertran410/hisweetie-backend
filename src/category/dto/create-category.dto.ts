@@ -44,6 +44,22 @@ export class CreateCategoryDto {
   title_meta?: string;
 
   @ApiProperty({
+    description: 'Top text (plain text) - hiển thị phía trên danh sách sản phẩm',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  top_text?: string;
+
+  @ApiProperty({
+    description: 'Bottom HTML content - hiển thị phía dưới danh sách sản phẩm (HTML từ editor)',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  bottom_content?: string;
+
+  @ApiProperty({
     description: 'Category image',
     required: false,
   })

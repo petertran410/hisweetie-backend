@@ -53,6 +53,8 @@ export class CategoryService {
           slug: this.convertToSlug(createCategoryDto.name),
           image_url: createCategoryDto.image_url,
           site_code: siteCode,
+          top_text: createCategoryDto.top_text ?? null,
+          bottom_content: createCategoryDto.bottom_content ?? null,
         },
       });
 
@@ -198,6 +200,8 @@ export class CategoryService {
         site_code: category.site_code,
         parent_id: category.parent_id ? Number(category.parent_id) : null,
         parent_name: category.parent?.name,
+        top_text: category.top_text,
+        bottom_content: category.bottom_content,
         children: category.children.map((c) => ({
           id: Number(c.id),
           name: c.name,
@@ -244,6 +248,10 @@ export class CategoryService {
         updateData.description = updateCategoryDto.description;
       if (updateCategoryDto.title_meta !== undefined)
         updateData.title_meta = updateCategoryDto.title_meta;
+      if (updateCategoryDto.top_text !== undefined)
+        updateData.top_text = updateCategoryDto.top_text;
+      if (updateCategoryDto.bottom_content !== undefined)
+        updateData.bottom_content = updateCategoryDto.bottom_content;
       if (updateCategoryDto.priority !== undefined)
         updateData.priority = updateCategoryDto.priority;
       if (updateCategoryDto.image_url !== undefined)
@@ -859,6 +867,8 @@ export class CategoryService {
       productCount: cat.product_count,
       directProductCount: cat.direct_product_count,
       childCount: cat.child_count,
+      top_text: cat.top_text,
+      bottom_content: cat.bottom_content,
       displayName:
         cat.level > 0 ? `${'— '.repeat(cat.level)}${cat.name}` : cat.name,
       hasChildren: cat.children.length > 0,
@@ -904,6 +914,8 @@ export class CategoryService {
       productCount: cat.product_count,
       directProductCount: cat.direct_product_count,
       childCount: cat.child_count,
+      top_text: cat.top_text,
+      bottom_content: cat.bottom_content,
       displayName:
         cat.level > 0 ? `${'— '.repeat(cat.level)}${cat.name}` : cat.name,
       hasChildren: cat.children.length > 0,
