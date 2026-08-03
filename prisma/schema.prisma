@@ -72,6 +72,7 @@ model product {
   slug                   String?
   title_meta             String?
   price_on               Boolean?  @default(dbgenerated("b'0'")) @db.Bit(1)
+  embed_url              String?   @db.LongText
   cart                   cart[]
   orders                 orders[]
   category               category? @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -105,6 +106,7 @@ model product_site_config {
   instruction         String?   @db.LongText
   description_en      String?   @db.LongText
   instruction_en      String?   @db.LongText
+  embed_url           String?   @db.LongText
 
   is_visible          Boolean?  @default(dbgenerated("b'0'")) @db.Bit(1)
   is_featured         Boolean?  @db.Bit(1)

@@ -925,6 +925,7 @@ export class ProductService {
       instruction: product.instruction,
       description_en: product.description_en,
       instruction_en: product.instruction_en,
+      embedUrl: product.embed_url,
       rate: product.rate,
       isFeatured: product.is_featured === true,
       isVisible: product.is_visible === true,
@@ -962,6 +963,7 @@ export class ProductService {
         description: createProductDto.description,
         general_description: createProductDto.general_description,
         instruction: createProductDto.instruction,
+        embed_url: createProductDto.embed_url,
         is_featured: createProductDto.is_featured,
         is_visible: createProductDto.is_visible,
         rate: createProductDto.rate,
@@ -1074,6 +1076,7 @@ export class ProductService {
         general_description: updateProductDto.general_description,
         instruction: updateProductDto.instruction,
         instruction_en: updateProductDto.instruction_en,
+        embed_url: updateProductDto.embed_url,
         is_featured: updateProductDto.is_featured,
         is_visible: updateProductDto.is_visible,
         price_on: updateProductDto.price_on,
@@ -2202,6 +2205,14 @@ export class ProductService {
       }
     }
 
+    // embedUrl: nếu product đã có site_config thì tôn trọng giá trị của nó
+    // (kể cả null — cho phép clear video). Chỉ fallback về product.embed_url
+    // khi product CHƯA có site_config nào (sản phẩm mới tạo trực tiếp).
+    const hasAnySiteConfig = product.site_configs?.length > 0;
+    const embedUrl = hasAnySiteConfig
+      ? (sc?.embed_url ?? null)
+      : (product.embed_url ?? null);
+
     return {
       id: Number(product.id),
       title: productTitle,
@@ -2217,6 +2228,7 @@ export class ProductService {
       instruction: sc?.instruction ?? null,
       description_en: sc?.description_en ?? null,
       instruction_en: sc?.instruction_en ?? null,
+      embedUrl,
 
       isVisible: sc?.is_visible ?? false,
       isFeatured: sc?.is_featured ?? false,
@@ -2263,6 +2275,7 @@ export class ProductService {
       instruction?: string;
       description_en?: string;
       instruction_en?: string;
+      embed_url?: string | null;
       is_visible?: boolean;
       is_featured?: boolean;
       featured_thumbnail?: string;
@@ -2336,6 +2349,7 @@ export class ProductService {
       instruction: data.instruction,
       description_en: data.description_en,
       instruction_en: data.instruction_en,
+      embed_url: data.embed_url,
       is_visible: data.is_visible,
       is_featured: data.is_featured,
       featured_thumbnail: data.featured_thumbnail,
@@ -2364,6 +2378,7 @@ export class ProductService {
       'featured_thumbnail',
       'recipe_thumbnail',
       'images_url',
+      'embed_url',
     ]);
 
     Object.keys(upsertData).forEach((key) => {

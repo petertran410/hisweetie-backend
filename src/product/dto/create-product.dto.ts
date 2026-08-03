@@ -79,6 +79,15 @@ export class CreateProductDto {
   instruction_en?: string;
 
   @ApiProperty({
+    description: 'Embedded video URL (e.g. YouTube embed link)',
+    example: 'https://www.youtube.com/embed/4letvWcz-ic',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  embed_url?: string;
+
+  @ApiProperty({
     description: 'Custom category ID',
     example: 1,
     required: false,
