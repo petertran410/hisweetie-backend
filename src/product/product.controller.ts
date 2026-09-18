@@ -18,6 +18,7 @@ import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { KiotVietService } from './kiotviet.service';
+import { PosProductSyncService } from './pos-product-sync.service';
 import {
   ApiOperation,
   ApiResponse,
@@ -28,7 +29,6 @@ import {
 } from '@nestjs/swagger';
 import { GetAllProductsResponseDto } from './dto/product-list-response.dto';
 import { CategoryService } from 'src/category/category.service';
-import { PrismaService } from 'src/prisma/prisma.service';
 import { CurrentSiteCode } from '../common/decorators/site-code.decorator';
 
 @ApiTags('product')
@@ -39,31 +39,34 @@ export class ProductController {
   constructor(
     private readonly productService: ProductService,
     private readonly kiotVietService: KiotVietService,
+    private readonly posProductSyncService: PosProductSyncService,
     private readonly categoryService: CategoryService,
-    private readonly prismaService: PrismaService,
   ) {}
 
   // ============================
-  // SYNC (giữ nguyên — không filter site)
+  // POS PRODUCT SYNC (global, no site filter)
   // ============================
+  @Post('pos/sync')
+  @ApiOperation({
+    summary: 'Synchronize products and pricebook 22 from Hisweetie POS',
+  })
+  syncProductsFromPos() {
+    return this.posProductSyncService.syncProducts();
+  }
+
+  @Get('pos/sync/status')
+  @ApiOperation({ summary: 'Get Hisweetie POS product sync status' })
+  getPosProductSyncStatus() {
+    return this.posProductSyncService.getStatus();
+  }
+
+  // Deprecated compatibility alias for existing CMS callers.
   @Post('products')
   async syncProducts() {
-    try {
-      this.logger.log('Starting product sync...');
-      await this.productService.syncAllProducts();
-      return {
-        success: true,
-        message: 'Product sync completed',
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      this.logger.error(`Product sync failed: ${error.message}`);
-      return {
-        success: false,
-        error: error.message,
-        timestamp: new Date().toISOString(),
-      };
-    }
+    this.logger.warn(
+      'Deprecated POST /product/products called; using POS product synchronization',
+    );
+    return this.posProductSyncService.syncProducts();
   }
 
   // ============================

@@ -68,6 +68,14 @@ model product {
   kiotviet_type          Int?
   kiotviet_description   String?
   kiotviet_category_name String?
+  pos_product_id         Int?      @unique
+  pos_code               String?   @unique @db.VarChar(255)
+  pos_name               String?   @db.VarChar(500)
+  pos_images             Json?
+  pos_price              Decimal?  @db.Decimal(15, 2)
+  pos_is_active          Boolean?
+  pos_updated_at         DateTime? @db.DateTime(6)
+  pos_synced_at          DateTime? @db.DateTime(6)
   category_slug          String?
   slug                   String?
   title_meta             String?
@@ -88,6 +96,21 @@ model product {
   @@index([is_from_kiotviet])
   @@index([slug])
   @@index([category_id])
+}
+
+model pos_product_sync_state {
+  source             String    @id @db.VarChar(50)
+  status             String    @default("IDLE") @db.VarChar(20)
+  started_at         DateTime? @db.DateTime(6)
+  completed_at       DateTime? @db.DateTime(6)
+  last_successful_at DateTime? @db.DateTime(6)
+  locked_until       DateTime? @db.DateTime(6)
+  summary            Json?
+  error_message      String?   @db.Text
+  created_at         DateTime  @default(now()) @db.DateTime(6)
+  updated_at         DateTime  @updatedAt @db.DateTime(6)
+
+  @@map("pos_product_sync_state")
 }
 
 model product_site_config {

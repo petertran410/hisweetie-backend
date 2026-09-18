@@ -31,6 +31,27 @@
 $ yarn install
 ```
 
+## POS product synchronization
+
+The CMS product sync uses the Hisweetie POS Public API and pricebook `22`
+(`BẢNG GIÁ LẺ HCM`). Configure these backend-only environment variables:
+
+```bash
+POS_PUBLIC_API_BASE_URL=https://backendpos.hisweetievietnam.com/api/public/v1
+POS_PUBLIC_API_CLIENT_ID=<public-api-client-id>
+POS_PUBLIC_API_CLIENT_SECRET=<public-api-client-secret>
+```
+
+Before deploying this feature, back up the website database, apply
+`prisma/manual-sql/2026-09-18-pos-product-sync.sql`, then run:
+
+```bash
+yarn prisma generate
+```
+
+The SQL backfills `pos_code` from `kiotviet_code` and does not modify existing
+KiotViet fields or website-specific `product_site_config` content.
+
 ## Compile and run the project
 
 ```bash

@@ -4,6 +4,7 @@ import { ProductService } from './product.service';
 import { ProductController } from './product.controller';
 import { CategoryModule } from '../category/category.module';
 import { KiotVietService } from './kiotviet.service';
+import { PosProductSyncService } from './pos-product-sync.service';
 import { HttpModule } from '@nestjs/axios';
 import { AuthModule } from 'src/auth/auth.module';
 import { PrismaModule } from 'src/prisma/prisma.module';
@@ -20,7 +21,7 @@ import { PrismaModule } from 'src/prisma/prisma.module';
     CategoryModule,
   ],
   controllers: [ProductController],
-  providers: [ProductService, KiotVietService],
-  exports: [ProductService, KiotVietService],
+  providers: [ProductService, KiotVietService, PosProductSyncService],
+  exports: [ProductService, KiotVietService, PosProductSyncService],
 })
 export class ProductModule {}

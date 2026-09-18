@@ -599,6 +599,7 @@ export class ProductService {
       if (title) {
         where.OR = [
           { title: { contains: title } },
+          { pos_name: { contains: title } },
           { kiotviet_name: { contains: title } },
         ];
       }
@@ -606,6 +607,7 @@ export class ProductService {
       if (title_en) {
         where.OR = [
           { title_en: { contains: title_en } },
+          { pos_name: { contains: title } },
           { kiotviet_name: { contains: title } },
         ];
       }
@@ -741,6 +743,7 @@ export class ProductService {
       if (title) {
         where.OR = [
           { title: { contains: title } },
+          { pos_name: { contains: title } },
           { kiotviet_name: { contains: title } },
         ];
       }
@@ -748,6 +751,7 @@ export class ProductService {
       if (title_en) {
         where.OR = [
           { title_en: { contains: title_en } },
+          { pos_name: { contains: title } },
           { kiotviet_name: { contains: title } },
         ];
       }
@@ -760,7 +764,7 @@ export class ProductService {
       if (orderBy === 'title') {
         orderByClause.title = isDesc ? 'desc' : 'asc';
       } else if (orderBy === 'price') {
-        orderByClause.kiotviet_price = isDesc ? 'desc' : 'asc';
+        orderByClause.pos_price = isDesc ? 'desc' : 'asc';
       } else {
         orderByClause[orderBy] = isDesc ? 'desc' : 'asc';
       }
@@ -787,24 +791,20 @@ export class ProductService {
       ]);
 
       const transformedProducts = products.map((product: any) => {
-        let imagesUrl: string[] = [];
-        if (product.images_url) {
-          imagesUrl = JSON.parse(product.images_url);
-        } else if (
-          product.kiotviet_images &&
-          Array.isArray(product.kiotviet_images) &&
-          product.kiotviet_images.length > 0
-        ) {
-          imagesUrl = [product.kiotviet_images[0]];
-        }
-
         return {
           id: Number(product.id),
-          title: product.title || product.kiotviet_name || 'Untitled Product',
+          title:
+            product.title ||
+            product.pos_name ||
+            product.kiotviet_name ||
+            'Untitled Product',
           title_en:
-            product.title_en || product.kiotviet_name || 'Untitled Product',
+            product.title_en ||
+            product.pos_name ||
+            product.kiotviet_name ||
+            'Untitled Product',
           title_meta: product.title_meta ?? '',
-          price: product.kiotviet_price ? Number(product.kiotviet_price) : null,
+          price: this.getEffectivePrice(product),
           general_description: product.general_description,
           description: product.description,
           instruction: product.instruction,
@@ -813,11 +813,7 @@ export class ProductService {
           rate: product.rate,
           isFeatured: product.is_featured === true,
           isVisible: product.is_visible === true,
-          imagesUrl: product.kiotviet_images
-            ? Array.isArray(product.kiotviet_images)
-              ? product.kiotviet_images
-              : []
-            : [],
+          imagesUrl: this.getProductImages(product),
 
           categoryId: product.category_id ? Number(product.category_id) : null,
           category: product.category
@@ -864,14 +860,13 @@ export class ProductService {
   private transformProduct(product: any) {
     const productTitle =
       product.title ||
+      product.pos_name ||
       product.kiotviet_name ||
       product.title_meta ||
       product.title_en ||
       'Untitled Product';
 
-    const productPrice = product.kiotviet_price
-      ? Number(product.kiotviet_price)
-      : null;
+    const productPrice = this.getEffectivePrice(product);
 
     const ofCategories = product.category
       ? [
@@ -898,16 +893,7 @@ export class ProductService {
         }
       : null;
 
-    let imagesUrl: string[] = [];
-    if (product.images_url) {
-      imagesUrl = JSON.parse(product.images_url);
-    } else if (
-      product.kiotviet_images &&
-      Array.isArray(product.kiotviet_images) &&
-      product.kiotviet_images.length > 0
-    ) {
-      imagesUrl = [product.kiotviet_images[0]];
-    }
+    const imagesUrl = this.getProductImages(product);
 
     return {
       id: Number(product.id),
@@ -942,8 +928,88 @@ export class ProductService {
         images: product.kiotviet_images,
         kiotviet_description: product.kiotviet_description,
       },
+      posCode: product.pos_code,
+      posName: product.pos_name,
+      posImages: this.getPosImages(product),
+      posPrice:
+        product.pos_price === null || product.pos_price === undefined
+          ? null
+          : Number(product.pos_price),
+      isFromPos: product.pos_code !== null && product.pos_code !== undefined,
       isFromKiotViet: product.is_from_kiotviet === true,
     };
+  }
+
+  private getEffectivePrice(product: any): number | null {
+    if (product.pos_price !== null && product.pos_price !== undefined) {
+      return Number(product.pos_price);
+    }
+
+    if (
+      product.kiotviet_price !== null &&
+      product.kiotviet_price !== undefined
+    ) {
+      return Number(product.kiotviet_price);
+    }
+
+    return null;
+  }
+
+  private getPosImages(product: any): string[] {
+    return Array.isArray(product.pos_images)
+      ? product.pos_images.filter(
+          (image: unknown): image is string => typeof image === 'string',
+        )
+      : [];
+  }
+
+  private getLegacyImages(product: any): string[] {
+    return Array.isArray(product.kiotviet_images)
+      ? product.kiotviet_images.filter(
+          (image: unknown): image is string => typeof image === 'string',
+        )
+      : [];
+  }
+
+  private parseImages(value: unknown): string[] {
+    if (!value) {
+      return [];
+    }
+
+    if (Array.isArray(value)) {
+      return value.filter(
+        (image: unknown): image is string => typeof image === 'string',
+      );
+    }
+
+    if (typeof value !== 'string') {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed)
+        ? parsed.filter(
+            (image: unknown): image is string => typeof image === 'string',
+          )
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private getProductImages(product: any): string[] {
+    const configuredImages = this.parseImages(product.images_url);
+    if (configuredImages.length) {
+      return configuredImages;
+    }
+
+    const posImages = this.getPosImages(product);
+    if (posImages.length) {
+      return posImages;
+    }
+
+    return this.getLegacyImages(product);
   }
 
   async create(createProductDto: CreateProductDto) {
@@ -1556,6 +1622,7 @@ export class ProductService {
     if (title) {
       where.OR = [
         { title: { contains: title } },
+        { pos_name: { contains: title } },
         { kiotviet_name: { contains: title } },
         { title_en: { contains: title } },
       ];
@@ -1567,13 +1634,15 @@ export class ProductService {
 
     const skip = pageNumber * pageSize;
     const take = pageSize;
+    const sortByEffectivePrice = orderBy === 'kiotviet_price';
 
     const [products, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
-        skip,
-        take,
-        orderBy: this.buildSortClause(orderBy, isDesc),
+        ...(sortByEffectivePrice ? {} : { skip, take }),
+        orderBy: sortByEffectivePrice
+          ? { id: isDesc ? 'desc' : 'asc' }
+          : this.buildSortClause(orderBy, isDesc),
         include: {
           site_configs: {
             where: { site_code: siteCode },
@@ -1598,9 +1667,23 @@ export class ProductService {
       this.prisma.product.count({ where }),
     ]);
 
-    const content = products.map((product) =>
+    const mergedProducts = products.map((product) =>
       this.mergeProductWithSiteConfig(product, siteCode),
     );
+    const content = sortByEffectivePrice
+      ? mergedProducts
+          .sort((left, right) => {
+            const leftPrice = left.price;
+            const rightPrice = right.price;
+
+            if (leftPrice === null && rightPrice === null) return 0;
+            if (leftPrice === null) return 1;
+            if (rightPrice === null) return -1;
+
+            return isDesc ? rightPrice - leftPrice : leftPrice - rightPrice;
+          })
+          .slice(skip, skip + take)
+      : mergedProducts;
 
     return {
       content,
@@ -1621,7 +1704,7 @@ export class ProductService {
       case 'title':
         return { title: direction };
       case 'kiotviet_price':
-        return { kiotviet_price: direction };
+        return { pos_price: direction };
       case 'id':
       default:
         return { id: direction };
@@ -1629,9 +1712,7 @@ export class ProductService {
   }
 
   private transformProductForCMS(product: any) {
-    const imagesUrl: string[] = product.images_url
-      ? JSON.parse(product.images_url)
-      : [];
+    const imagesUrl = this.getProductImages(product);
 
     return {
       id: Number(product.id),
@@ -1645,6 +1726,15 @@ export class ProductService {
         : null,
       kiotviet_images: product.kiotviet_images,
       kiotviet_description: product.kiotviet_description,
+      posCode: product.pos_code,
+      posName: product.pos_name,
+      posImages: this.getPosImages(product),
+      posPrice:
+        product.pos_price === null || product.pos_price === undefined
+          ? null
+          : Number(product.pos_price),
+      isFromPos: product.pos_code !== null && product.pos_code !== undefined,
+      price: this.getEffectivePrice(product),
 
       imagesUrl,
 
@@ -1694,6 +1784,13 @@ export class ProductService {
         name: product.kiotviet_name,
         price: product.kiotviet_price ? Number(product.kiotviet_price) : null,
         synced_at: product.kiotviet_synced_at,
+      },
+      pos_data: {
+        id: product.pos_product_id,
+        code: product.pos_code,
+        name: product.pos_name,
+        price: this.getEffectivePrice(product),
+        synced_at: product.pos_synced_at,
       },
     };
   }
@@ -1746,6 +1843,10 @@ export class ProductService {
           instruction_en: true,
           title: true,
           title_en: true,
+          pos_code: true,
+          pos_name: true,
+          pos_price: true,
+          pos_images: true,
           kiotviet_name: true,
           kiotviet_images: true,
           kiotviet_price: true,
@@ -1767,6 +1868,16 @@ export class ProductService {
           kiotviet_price: product.kiotviet_price
             ? Number(product.kiotviet_price)
             : null,
+          price: this.getEffectivePrice(product),
+          posCode: product.pos_code,
+          posName: product.pos_name,
+          posImages: this.getPosImages(product),
+          posPrice:
+            product.pos_price === null || product.pos_price === undefined
+              ? null
+              : Number(product.pos_price),
+          isFromPos:
+            product.pos_code !== null && product.pos_code !== undefined,
         }),
       );
 
@@ -2165,45 +2276,22 @@ export class ProductService {
     const productTitle =
       sc?.title ||
       product.title ||
+      product.pos_name ||
       product.kiotviet_name ||
       product.title_en ||
       'Untitled';
 
-    const productPrice = product.kiotviet_price
-      ? Number(product.kiotviet_price)
-      : null;
+    const productPrice = this.getEffectivePrice(product);
+    const legacyPrice =
+      product.kiotviet_price === null ||
+      product.kiotviet_price === undefined
+        ? null
+        : Number(product.kiotviet_price);
 
-    let imagesUrl: string[] = [];
-    const scImages = sc?.images_url;
-    const hasScImages =
-      scImages != null &&
-      scImages !== '' &&
-      scImages !== '[]' &&
-      scImages !== '""';
-
-    if (hasScImages) {
-      try {
-        imagesUrl =
-          typeof scImages === 'string' ? JSON.parse(scImages) : scImages;
-      } catch {
-        imagesUrl = [];
-      }
-    } else {
-      // NẾU site_config không có images:
-      // - Nếu product này chưa có site_config NÀO → dùng kiotviet_images làm default
-      // - Nếu đã có site_config nhưng rỗng → trả về []
-      const hasAnySiteConfig = product.site_configs?.length > 0;
-      if (
-        !hasAnySiteConfig &&
-        product.kiotviet_images &&
-        Array.isArray(product.kiotviet_images) &&
-        product.kiotviet_images.length > 0
-      ) {
-        imagesUrl = [product.kiotviet_images[0]];
-      } else {
-        imagesUrl = [];
-      }
-    }
+    const imagesUrl =
+      this.parseImages(sc?.images_url).length > 0
+        ? this.parseImages(sc?.images_url)
+        : this.getProductImages(product);
 
     // embedUrl: nếu product đã có site_config thì tôn trọng giá trị của nó
     // (kể cả null — cho phép clear video). Chỉ fallback về product.embed_url
@@ -2255,9 +2343,17 @@ export class ProductService {
 
       kiotviet_name: product.kiotviet_name,
       kiotviet_code: product.kiotviet_code,
-      kiotviet_price: productPrice,
+      kiotviet_price: legacyPrice,
       kiotviet_images: product.kiotviet_images,
       kiotviet_description: product.kiotviet_description,
+      posCode: product.pos_code,
+      posName: product.pos_name,
+      posImages: this.getPosImages(product),
+      posPrice:
+        product.pos_price === null || product.pos_price === undefined
+          ? null
+          : Number(product.pos_price),
+      isFromPos: product.pos_code !== null && product.pos_code !== undefined,
       isFromKiotViet: product.is_from_kiotviet === true,
       hasSiteConfig: !!sc,
     };
@@ -2580,7 +2676,11 @@ export class ProductService {
     // Nếu không tìm được theo sc.slug thì fallback theo title
     if (!match) {
       match = allProductsForSite.find((p) => {
-        const title = p.site_configs?.[0]?.title || p.title || p.kiotviet_name;
+        const title =
+          p.site_configs?.[0]?.title ||
+          p.title ||
+          p.pos_name ||
+          p.kiotviet_name;
         return title && this.convertToSlug(title) === slug;
       });
     }
@@ -2620,6 +2720,18 @@ export class ProductService {
         type: product.kiotviet_type,
         images: product.kiotviet_images,
         kiotviet_description: product.kiotviet_description,
+      },
+      pos: {
+        id: product.pos_product_id,
+        code: product.pos_code,
+        name: product.pos_name,
+        price:
+          product.pos_price === null || product.pos_price === undefined
+            ? null
+            : Number(product.pos_price),
+        images: this.getPosImages(product),
+        isActive: product.pos_is_active,
+        syncedAt: product.pos_synced_at,
       },
     };
   }
@@ -2783,6 +2895,10 @@ export class ProductService {
             id: true,
             title: true,
             title_en: true,
+            pos_code: true,
+            pos_name: true,
+            pos_price: true,
+            pos_images: true,
             kiotviet_name: true,
             kiotviet_price: true,
             kiotviet_images: true,
@@ -2801,29 +2917,32 @@ export class ProductService {
     const data = configs.map((sc) => {
       const p = sc.product;
       const productTitle =
-        p.title || p.kiotviet_name || p.title_en || 'Untitled';
-      const price = p.kiotviet_price ? Number(p.kiotviet_price) : null;
-
-      let imagesUrl: string[] = [];
-      if (p.images_url) {
-        try {
-          imagesUrl = JSON.parse(p.images_url as string);
-        } catch {
-          imagesUrl = [];
-        }
-      } else if (p.kiotviet_images && Array.isArray(p.kiotviet_images)) {
-        imagesUrl = (p.kiotviet_images as unknown[]).filter(
-          (img): img is string => typeof img === 'string',
-        );
-      }
+        p.title || p.pos_name || p.kiotviet_name || p.title_en || 'Untitled';
+      const price = this.getEffectivePrice(p);
+      const imagesUrl =
+        this.parseImages(sc.images_url).length > 0
+          ? this.parseImages(sc.images_url)
+          : this.getProductImages(p);
 
       return {
         id: Number(p.id),
         title: productTitle,
         title_en: sc.title_en || p.title_en,
         slug: sc.slug || this.convertToSlug(productTitle),
-        kiotviet_price: price,
+        price,
+        kiotviet_price:
+          p.kiotviet_price === null || p.kiotviet_price === undefined
+            ? null
+            : Number(p.kiotviet_price),
         kiotviet_images: p.kiotviet_images,
+        posCode: p.pos_code,
+        posName: p.pos_name,
+        posImages: this.getPosImages(p),
+        posPrice:
+          p.pos_price === null || p.pos_price === undefined
+            ? null
+            : Number(p.pos_price),
+        isFromPos: p.pos_code !== null && p.pos_code !== undefined,
         imagesUrl,
         rate: sc.rate ?? p.rate,
         price_on: sc.price_on ?? p.price_on ?? false,
@@ -2860,7 +2979,14 @@ export class ProductService {
     const configs = await this.prisma.product_site_config.findMany({
       where,
       include: {
-        product: { select: { id: true, title: true, kiotviet_name: true } },
+        product: {
+          select: {
+            id: true,
+            title: true,
+            pos_name: true,
+            kiotviet_name: true,
+          },
+        },
         category: { select: { slug: true, name: true } },
       },
     });
@@ -2871,7 +2997,11 @@ export class ProductService {
     // Fallback: match bằng convertToSlug(title)
     if (!match) {
       match = configs.find((sc) => {
-        const title = sc.title || sc.product.title || sc.product.kiotviet_name;
+        const title =
+          sc.title ||
+          sc.product.title ||
+          sc.product.pos_name ||
+          sc.product.kiotviet_name;
         return title && this.convertToSlug(title) === slug;
       });
     }
@@ -2882,7 +3012,11 @@ export class ProductService {
 
     return {
       id: Number(match.product.id),
-      title: match.title || match.product.title || match.product.kiotviet_name,
+      title:
+        match.title ||
+        match.product.title ||
+        match.product.pos_name ||
+        match.product.kiotviet_name,
       slug,
       category: match.category
         ? { slug: match.category.slug, name: match.category.name }

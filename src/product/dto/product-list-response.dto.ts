@@ -29,6 +29,24 @@ export class ProductListItemDto {
   @ApiProperty({ description: 'KiotViet product price', nullable: true })
   kiotviet_price: number | null;
 
+  @ApiProperty({ description: 'Effective product price', nullable: true })
+  price?: number | null;
+
+  @ApiProperty({ description: 'POS product code', nullable: true })
+  posCode?: string | null;
+
+  @ApiProperty({ description: 'POS product name', nullable: true })
+  posName?: string | null;
+
+  @ApiProperty({ description: 'POS pricebook price', nullable: true })
+  posPrice?: number | null;
+
+  @ApiProperty({ description: 'POS product images', nullable: true })
+  posImages?: string[] | null;
+
+  @ApiProperty({ description: 'Whether product is mapped to POS' })
+  isFromPos?: boolean;
+
   @ApiProperty({ description: 'KiotViet product description', nullable: true })
   kiotviet_description: string | null;
 }

@@ -28,6 +28,24 @@ export class ProductCMSResponseDto {
   @ApiProperty({ required: false })
   kiotviet_price?: number;
 
+  @ApiProperty({ required: false })
+  price?: number;
+
+  @ApiProperty({ required: false })
+  posCode?: string;
+
+  @ApiProperty({ required: false })
+  posName?: string;
+
+  @ApiProperty({ required: false })
+  posPrice?: number;
+
+  @ApiProperty({ required: false })
+  posImages?: string[];
+
+  @ApiProperty({ required: false })
+  isFromPos?: boolean;
+
   @ApiProperty()
   is_visible: boolean;
 

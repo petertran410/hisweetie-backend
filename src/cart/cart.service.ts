@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AddToCartDto } from './dto/add-to-cart.dto';
 import { UpdateCartDto } from './dto/update-cart.dto';
+import { getEffectiveProductPrice } from '../product/utils/effective-product-price.util';
 
 @Injectable()
 export class CartService {
@@ -23,6 +24,9 @@ export class CartService {
             kiotviet_name: true,
             kiotviet_price: true,
             kiotviet_images: true,
+            pos_name: true,
+            pos_price: true,
+            pos_images: true,
             images_url: true,
             is_visible: true,
           },
@@ -37,11 +41,16 @@ export class CartService {
       productId: item.product_id.toString(), // Convert BigInt to String
       quantity: item.quantity,
       product: {
-        title: item.product.title || item.product.kiotviet_name,
-        price: item.product.kiotviet_price
-          ? Number(item.product.kiotviet_price)
-          : 0,
-        image: item.product.kiotviet_images
+        title:
+          item.product.title ||
+          item.product.pos_name ||
+          item.product.kiotviet_name,
+        price: getEffectiveProductPrice(item.product),
+        image: item.product.pos_images
+          ? Array.isArray(item.product.pos_images)
+            ? item.product.pos_images[0]
+            : null
+          : item.product.kiotviet_images
           ? Array.isArray(item.product.kiotviet_images)
             ? item.product.kiotviet_images[0]
             : null

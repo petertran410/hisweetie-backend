@@ -6,6 +6,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { getEffectiveProductPrice } from '../product/utils/effective-product-price.util';
 import * as bcrypt from 'bcrypt';
 import { ClientUserType } from './dto/create-client-user.dto';
 import { KiotVietService } from '../kiotviet/kiotviet.service';
@@ -205,6 +206,9 @@ export class ClientUserService {
                   kiotviet_name: true,
                   kiotviet_price: true,
                   kiotviet_images: true,
+                  pos_name: true,
+                  pos_price: true,
+                  pos_images: true,
                   images_url: true,
                 },
               },
@@ -243,14 +247,18 @@ export class ClientUserService {
           return {
             productId: item.product_id?.toString(),
             productName:
-              item.product?.title || item.product?.kiotviet_name || 'Sản phẩm',
+              item.product?.title ||
+              item.product?.pos_name ||
+              item.product?.kiotviet_name ||
+              'Sản phẩm',
             productNameEn:
               item.product?.title_en ||
+              item.product?.pos_name ||
               item.product?.kiotviet_name ||
               'Product',
             quantity: item.quantity,
-            price: item.product?.kiotviet_price
-              ? Number(item.product.kiotviet_price)
+            price: item.product
+              ? getEffectiveProductPrice(item.product)
               : 0,
             image: item.product?.images_url
               ? typeof item.product.images_url === 'string'
@@ -265,7 +273,11 @@ export class ClientUserService {
                 : Array.isArray(item.product.images_url)
                   ? item.product.images_url[0]
                   : null
-              : item.product?.kiotviet_images &&
+              : item.product?.pos_images &&
+                  Array.isArray(item.product.pos_images) &&
+                  item.product.pos_images.length > 0
+                ? item.product.pos_images[0]
+                : item.product?.kiotviet_images &&
                   Array.isArray(item.product.kiotviet_images) &&
                   item.product.kiotviet_images.length > 0
                 ? item.product.kiotviet_images[0]
@@ -327,11 +339,17 @@ export class ClientUserService {
       items: order.orders.map((item) => ({
         productId: item.product_id?.toString(),
         productName:
-          item.product?.title || item.product?.kiotviet_name || 'Sản phẩm',
+          item.product?.title ||
+          item.product?.pos_name ||
+          item.product?.kiotviet_name ||
+          'Sản phẩm',
         productNameEn:
-          item.product?.title_en || item.product?.kiotviet_name || 'Product',
+          item.product?.title_en ||
+          item.product?.pos_name ||
+          item.product?.kiotviet_name ||
+          'Product',
         quantity: item.quantity,
-        price: Number(item.product?.kiotviet_price || 0),
+        price: item.product ? getEffectiveProductPrice(item.product) : 0,
         image: item.product?.images_url
           ? typeof item.product.images_url === 'string'
             ? (() => {
@@ -345,7 +363,11 @@ export class ClientUserService {
             : Array.isArray(item.product.images_url)
               ? item.product.images_url[0]
               : null
-          : item.product?.kiotviet_images &&
+          : item.product?.pos_images &&
+              Array.isArray(item.product.pos_images) &&
+              item.product.pos_images.length > 0
+            ? item.product.pos_images[0]
+            : item.product?.kiotviet_images &&
               Array.isArray(item.product.kiotviet_images) &&
               item.product.kiotviet_images.length > 0
             ? item.product.kiotviet_images[0]

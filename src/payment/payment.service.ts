@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SepayService } from './sepay.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { KiotVietService } from 'src/kiotviet/kiotviet.service';
+import { getEffectiveProductPrice } from '../product/utils/effective-product-price.util';
 import { CartService } from '../cart/cart.service';
 
 @Injectable()
@@ -244,7 +245,7 @@ export class PaymentService {
           productName:
             item.product!.kiotviet_name || item.product!.title || 'Sản phẩm',
           quantity: item.quantity!,
-          price: Number(item.product!.kiotviet_price || 0),
+          price: getEffectiveProductPrice(item.product!),
         }));
 
         const cleanedProvince = orderData.province
@@ -516,7 +517,7 @@ export class PaymentService {
             orderItem.product!.kiotviet_name ||
             'Sản phẩm',
           quantity: orderItem.quantity!,
-          price: Number(orderItem.product!.kiotviet_price || 0),
+          price: getEffectiveProductPrice(orderItem.product!),
         }));
 
         // const kiotOrderItems = validOrderItems.map((item) => ({
