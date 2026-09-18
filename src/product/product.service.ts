@@ -14,6 +14,7 @@ import { KiotVietAuthService } from 'src/auth/kiotviet-auth/auth.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { async, firstValueFrom } from 'rxjs';
 import { ProductListItemDto } from './dto/product-list-response.dto';
+import { RevalidateService } from '../common/revalidate.service';
 
 interface CategoryHierarchyItem {
   id: number;
@@ -160,6 +161,7 @@ export class ProductService {
     private readonly configService: ConfigService,
     private readonly prismaService: PrismaService,
     private readonly authService: KiotVietAuthService,
+    private readonly revalidate: RevalidateService,
   ) {
     const baseUrl = this.configService.get<string>('KIOT_BASE_URL');
     if (!baseUrl) {
@@ -1012,7 +1014,10 @@ export class ProductService {
     return this.getLegacyImages(product);
   }
 
-  async create(createProductDto: CreateProductDto) {
+  async create(
+    createProductDto: CreateProductDto,
+    siteCode: string = 'dieptra',
+  ) {
     try {
       let imagesUrlString: string | null = null;
       if (createProductDto.images_url) {
@@ -1057,6 +1062,7 @@ export class ProductService {
       this.logger.log(
         `Created custom product: ${product.title} (ID: ${product.id})`,
       );
+      this.revalidate.revalidateSite(siteCode);
       return this.transformProduct(product);
     } catch (error) {
       this.logger.error('Failed to create product:', error.message);
@@ -1066,7 +1072,11 @@ export class ProductService {
     }
   }
 
-  async update(id: number, updateProductDto: UpdateProductDto) {
+  async update(
+    id: number,
+    updateProductDto: UpdateProductDto,
+    siteCode: string = 'dieptra',
+  ) {
     try {
       const existingProduct = await this.prisma.product.findUnique({
         where: { id: BigInt(id) },
@@ -1186,6 +1196,7 @@ export class ProductService {
         `Updated product: ${result.title || result.kiotviet_name} (ID: ${result.id}) - Category: ${oldCategoryId} - Title_en: ${result.title_en} → ${newCategoryId}`,
       );
 
+      this.revalidate.revalidateSite(siteCode);
       return this.transformProduct(result);
     } catch (error) {
       if (error instanceof NotFoundException) {
@@ -1267,7 +1278,7 @@ export class ProductService {
     }
   }
 
-  async remove(id: number) {
+  async remove(id: number, siteCode: string = 'dieptra') {
     try {
       const existingProduct = await this.prisma.product.findUnique({
         where: { id: BigInt(id) },
@@ -1290,6 +1301,7 @@ export class ProductService {
       this.logger.log(
         `Deleted product: ${existingProduct.title || existingProduct.kiotviet_name} (ID: ${id})`,
       );
+      this.revalidate.revalidateSite(siteCode);
       return { message: `Product ${id} deleted successfully` };
     } catch (error) {
       if (error instanceof NotFoundException) {
@@ -1358,7 +1370,11 @@ export class ProductService {
     }
   }
 
-  async bulkUpdateVisibility(productIds: number[], isVisible: boolean) {
+  async bulkUpdateVisibility(
+    productIds: number[],
+    isVisible: boolean,
+    siteCode: string = 'dieptra',
+  ) {
     try {
       const result = await this.prisma.product.updateMany({
         where: {
@@ -1372,6 +1388,7 @@ export class ProductService {
       this.logger.log(
         `Bulk updated visibility for ${result.count} products to ${isVisible}`,
       );
+      this.revalidate.revalidateSite(siteCode);
       return { updated: result.count, isVisible };
     } catch (error) {
       this.logger.error('Failed to bulk update visibility:', error.message);
@@ -1381,7 +1398,7 @@ export class ProductService {
     }
   }
 
-  async toggleVisibility(id: number) {
+  async toggleVisibility(id: number, siteCode: string = 'dieptra') {
     try {
       const existingProduct = await this.prisma.product.findUnique({
         where: { id: BigInt(id) },
@@ -1406,6 +1423,7 @@ export class ProductService {
 
       this.logger.log(`Product ${id} visibility toggled to: ${newVisibility}`);
 
+      this.revalidate.revalidateSite(siteCode);
       return {
         id: Number(updatedProduct.id),
         title: updatedProduct.title,
@@ -1426,7 +1444,11 @@ export class ProductService {
     }
   }
 
-  async bulkToggleVisibility(productIds: number[], targetVisibility: boolean) {
+  async bulkToggleVisibility(
+    productIds: number[],
+    targetVisibility: boolean,
+    siteCode: string = 'dieptra',
+  ) {
     try {
       const bigIntIds = productIds.map((id) => BigInt(id));
 
@@ -1447,6 +1469,7 @@ export class ProductService {
         `Bulk updated ${updateResult.count} products visibility to: ${targetVisibility}`,
       );
 
+      this.revalidate.revalidateSite(siteCode);
       return {
         updated: updateResult.count,
         failed: notFoundIds.length,
@@ -1893,7 +1916,11 @@ export class ProductService {
     }
   }
 
-  async updateProductCategory(productId: number, categoryId: number | null) {
+  async updateProductCategory(
+    productId: number,
+    categoryId: number | null,
+    siteCode: string = 'dieptra',
+  ) {
     let categorySlug: string | null = null;
 
     if (categoryId) {
@@ -1918,6 +1945,7 @@ export class ProductService {
       include: { category: true },
     });
 
+    this.revalidate.revalidateSite(siteCode);
     return this.transformProduct(updatedProduct);
   }
 
@@ -2044,6 +2072,11 @@ export class ProductService {
           );
           failed++;
         }
+      }
+
+      if (updated > 0) {
+        this.revalidate.revalidateSite('dieptra');
+        this.revalidate.revalidateSite('lermao');
       }
 
       return {
@@ -2385,7 +2418,12 @@ export class ProductService {
   ) {
     const product = await this.prisma.product.findUnique({
       where: { id: BigInt(productId) },
-      select: { id: true, title: true, kiotviet_name: true },
+      select: {
+        id: true,
+        title: true,
+        pos_name: true,
+        kiotviet_name: true,
+      },
     });
 
     if (!product)
@@ -2406,12 +2444,32 @@ export class ProductService {
       categorySlug = category?.slug ?? null;
     }
 
-    let slug = data.slug;
-    if (!slug) {
-      const titleForSlug =
-        data.title || product.title || product.kiotviet_name || '';
-      slug = this.convertToSlug(titleForSlug);
-    }
+    const existingSiteConfig = await this.prisma.product_site_config.findUnique(
+      {
+        where: {
+          product_id_site_code: {
+            product_id: BigInt(productId),
+            site_code: siteCode,
+          },
+        },
+        select: { id: true, slug: true },
+      },
+    );
+
+    const requestedSlug =
+      typeof data.slug === 'string' && data.slug.trim()
+        ? this.convertToSlug(data.slug.trim())
+        : '';
+    const titleForSlug =
+      data.title ||
+      product.title ||
+      product.pos_name ||
+      product.kiotviet_name ||
+      '';
+    const slug =
+      requestedSlug ||
+      existingSiteConfig?.slug ||
+      this.convertToSlug(titleForSlug);
 
     let imagesUrlString: string | null | undefined = undefined;
     if (data.images_url !== undefined) {
@@ -2493,25 +2551,45 @@ export class ProductService {
       throw new BadRequestException('No valid fields to update');
     }
 
-    const result = await this.prisma.product_site_config.upsert({
-      where: {
-        product_id_site_code: {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const savedSiteConfig = await tx.product_site_config.upsert({
+        where: {
+          product_id_site_code: {
+            product_id: BigInt(productId),
+            site_code: siteCode,
+          },
+        },
+        update: { ...upsertData, updated_date: new Date() },
+        create: {
           product_id: BigInt(productId),
           site_code: siteCode,
+          ...upsertData,
+          created_date: new Date(),
+          updated_date: new Date(),
         },
-      },
-      update: { ...upsertData, updated_date: new Date() },
-      create: {
-        product_id: BigInt(productId),
-        site_code: siteCode,
-        ...upsertData,
-        created_date: new Date(),
-        updated_date: new Date(),
-      },
-      include: {
-        category: { select: { id: true, name: true, slug: true } },
-      },
+        include: {
+          category: { select: { id: true, name: true, slug: true } },
+        },
+      });
+
+      if (
+        existingSiteConfig?.slug &&
+        savedSiteConfig.slug &&
+        existingSiteConfig.slug !== savedSiteConfig.slug
+      ) {
+        await this.upsertProductSlugRedirect(
+          tx,
+          siteCode,
+          existingSiteConfig.slug,
+          savedSiteConfig.slug,
+          productId,
+        );
+      }
+
+      return savedSiteConfig;
     });
+
+    this.revalidate.revalidateSite(siteCode);
 
     return {
       success: true,
@@ -2564,6 +2642,7 @@ export class ProductService {
         },
       });
 
+      this.revalidate.revalidateSite(siteCode);
       return {
         id: productId,
         site_code: siteCode,
@@ -2584,12 +2663,80 @@ export class ProductService {
       data: { is_visible: newVisibility, updated_date: new Date() },
     });
 
+    this.revalidate.revalidateSite(siteCode);
     return {
       id: productId,
       site_code: siteCode,
       is_visible: newVisibility,
       message: `Product visibility ${newVisibility ? 'enabled' : 'disabled'} for "${siteCode}"`,
     };
+  }
+
+  private buildProductDetailPath(
+    siteCode: string,
+    slug: string,
+  ): string | null {
+    if (!slug) return null;
+
+    if (siteCode === 'dieptra') {
+      return `/san-pham/diep-tra/${slug}`;
+    }
+    if (siteCode === 'lermao') {
+      return `/nguyen-lieu-pha-che/lermao/${slug}`;
+    }
+    return null;
+  }
+
+  private async upsertProductSlugRedirect(
+    tx: any,
+    siteCode: string,
+    oldSlug: string,
+    newSlug: string,
+    productId: number,
+  ): Promise<void> {
+    const sourcePath = this.buildProductDetailPath(siteCode, oldSlug);
+    const targetPath = this.buildProductDetailPath(siteCode, newSlug);
+    if (!sourcePath || !targetPath || sourcePath === targetPath) return;
+
+    // A -> B then B -> A would create a redirect loop.
+    const reverseRedirect = await tx.url_redirect.findUnique({
+      where: {
+        site_code_source_path: {
+          site_code: siteCode,
+          source_path: targetPath,
+        },
+      },
+    });
+    if (reverseRedirect?.target_path === sourcePath) {
+      await tx.url_redirect.delete({
+        where: { id: reverseRedirect.id },
+      });
+    }
+
+    await tx.url_redirect.upsert({
+      where: {
+        site_code_source_path: {
+          site_code: siteCode,
+          source_path: sourcePath,
+        },
+      },
+      update: {
+        target_path: targetPath,
+        status_code: 301,
+        match_type: 'exact',
+        is_active: true,
+        updated_date: new Date(),
+      },
+      create: {
+        source_path: sourcePath,
+        target_path: targetPath,
+        status_code: 301,
+        match_type: 'exact',
+        is_active: true,
+        site_code: siteCode,
+        note: `Tự động chuyển URL khi đổi slug sản phẩm #${productId}`,
+      },
+    });
   }
 
   // ============================================================

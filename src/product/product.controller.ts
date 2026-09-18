@@ -314,8 +314,13 @@ export class ProductController {
   updateCategory(
     @Param('id') id: string,
     @Body() body: { category_id: number },
+    @CurrentSiteCode() siteCode?: string,
   ) {
-    return this.productService.update(+id, { category_id: body.category_id });
+    return this.productService.update(
+      +id,
+      { category_id: body.category_id },
+      siteCode,
+    );
   }
 
   @Get('search')
@@ -366,27 +371,37 @@ export class ProductController {
   @Post()
   @ApiOperation({ summary: 'Create product' })
   @UsePipes(new ValidationPipe({ transform: true }))
-  create(@Body() createProductDto: CreateProductDto) {
-    return this.productService.create(createProductDto);
+  create(
+    @Body() createProductDto: CreateProductDto,
+    @CurrentSiteCode() siteCode?: string,
+  ) {
+    return this.productService.create(createProductDto, siteCode);
   }
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update product (shared fields)' })
   @UsePipes(new ValidationPipe({ transform: true }))
-  update(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto) {
-    return this.productService.update(+id, updateProductDto);
+  update(
+    @Param('id') id: string,
+    @Body() updateProductDto: UpdateProductDto,
+    @CurrentSiteCode() siteCode?: string,
+  ) {
+    return this.productService.update(+id, updateProductDto, siteCode);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete product' })
-  remove(@Param('id') id: string) {
-    return this.productService.remove(+id);
+  remove(@Param('id') id: string, @CurrentSiteCode() siteCode?: string) {
+    return this.productService.remove(+id, siteCode);
   }
 
   @Patch('toggle-visibility/:id')
   @ApiOperation({ summary: 'Toggle product visibility (legacy)' })
-  toggleVisibility(@Param('id') id: string) {
-    return this.productService.toggleVisibility(+id);
+  toggleVisibility(
+    @Param('id') id: string,
+    @CurrentSiteCode() siteCode?: string,
+  ) {
+    return this.productService.toggleVisibility(+id, siteCode);
   }
 
   @Post('generate-slugs')

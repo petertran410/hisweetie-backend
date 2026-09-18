@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 import { isAxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
+import { RevalidateService } from '../common/revalidate.service';
 
 const POS_PRODUCT_SYNC_SOURCE = 'pos-products';
 const POS_PRICE_BOOK_ID = 22;
@@ -89,6 +90,7 @@ export class PosProductSyncService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly revalidate?: RevalidateService,
   ) {}
 
   async syncProducts() {
@@ -123,6 +125,7 @@ export class PosProductSyncService {
       const completedAt = new Date();
 
       await this.completeSync(status, summary, completedAt, null);
+      this.revalidateStorefronts();
 
       return {
         success: status === 'SUCCESS',
@@ -143,6 +146,7 @@ export class PosProductSyncService {
 
       this.logger.error(`POS product sync failed: ${message}`);
       await this.completeSync('FAILED', summary, completedAt, message);
+      this.revalidateStorefronts();
 
       throw error;
     }
@@ -542,6 +546,11 @@ export class PosProductSyncService {
         error_message: errorMessage,
       },
     });
+  }
+
+  private revalidateStorefronts(): void {
+    this.revalidate?.revalidateSite('dieptra');
+    this.revalidate?.revalidateSite('lermao');
   }
 
   private async request<T>(

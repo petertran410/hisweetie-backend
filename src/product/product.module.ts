@@ -8,6 +8,7 @@ import { PosProductSyncService } from './pos-product-sync.service';
 import { HttpModule } from '@nestjs/axios';
 import { AuthModule } from 'src/auth/auth.module';
 import { PrismaModule } from 'src/prisma/prisma.module';
+import { RevalidateService } from '../common/revalidate.service';
 
 @Module({
   imports: [
@@ -21,7 +22,12 @@ import { PrismaModule } from 'src/prisma/prisma.module';
     CategoryModule,
   ],
   controllers: [ProductController],
-  providers: [ProductService, KiotVietService, PosProductSyncService],
+  providers: [
+    ProductService,
+    KiotVietService,
+    PosProductSyncService,
+    RevalidateService,
+  ],
   exports: [ProductService, KiotVietService, PosProductSyncService],
 })
 export class ProductModule {}
