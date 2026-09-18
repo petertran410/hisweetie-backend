@@ -17,7 +17,6 @@ import {
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { KiotVietService } from './kiotviet.service';
 import { PosProductSyncService } from './pos-product-sync.service';
 import {
   ApiOperation,
@@ -38,7 +37,6 @@ export class ProductController {
 
   constructor(
     private readonly productService: ProductService,
-    private readonly kiotVietService: KiotVietService,
     private readonly posProductSyncService: PosProductSyncService,
     private readonly categoryService: CategoryService,
   ) {}
@@ -102,130 +100,56 @@ export class ProductController {
 
   @Post('kiotviet/sync/trademarks')
   @ApiOperation({
-    summary: 'Sync trademarks from KiotViet',
+    summary: 'Deprecated KiotViet trademark sync endpoint',
     description:
-      'Syncs KiotViet trademarks to separate kiotviet_trademarks table',
+      'KiotViet product synchronization is disabled. Use the POS product sync endpoint.',
   })
-  async syncTrademarksFromKiotViet() {
-    try {
-      this.logger.log('Starting KiotViet trademark sync');
+  syncTrademarksFromKiotViet() {
+    this.logger.warn(
+      'Deprecated KiotViet trademark sync requested; KiotViet product integration is disabled',
+    );
 
-      const result = await this.kiotVietService.syncTrademarks();
-
-      const response = {
-        success: result.success,
-        message: result.success
-          ? `Successfully synced ${result.totalSynced + result.totalUpdated} trademarks from KiotViet`
-          : `Trademark sync completed with ${result.errors.length} errors`,
-        summary: result.summary,
-        errors: result.errors,
-        timestamp: new Date().toISOString(),
-      };
-
-      return response;
-    } catch (error) {
-      this.logger.error('KiotViet trademark sync failed:', error.message);
-      throw new BadRequestException(`Trademark sync failed: ${error.message}`);
-    }
+    return {
+      success: false,
+      disabled: true,
+      message:
+        'KiotViet product synchronization is disabled. Use POS product synchronization instead.',
+      timestamp: new Date().toISOString(),
+    };
   }
 
   @Get('kiotviet/test-connection')
   @ApiOperation({
-    summary: 'Test KiotViet API connection',
-    description: 'Test the connection to KiotViet API and authentication',
+    summary: 'Deprecated KiotViet connection test endpoint',
+    description:
+      'KiotViet product synchronization is disabled; this endpoint no longer calls KiotViet.',
   })
-  async testKiotVietConnection() {
-    try {
-      const result = await this.kiotVietService.testConnection();
+  testKiotVietConnection() {
+    this.logger.warn(
+      'Deprecated KiotViet connection test requested; no external KiotViet request was made',
+    );
 
-      if (result.success) {
-        this.logger.log('KiotViet connection test successful');
-      } else {
-        this.logger.warn('KiotViet connection test failed:', result.message);
-      }
-
-      return {
-        ...result,
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      this.logger.error('KiotViet connection test error:', error.message);
-      throw new BadRequestException(`Connection test failed: ${error.message}`);
-    }
+    return {
+      success: false,
+      disabled: true,
+      message:
+        'KiotViet product integration is disabled. Use POS product synchronization instead.',
+      timestamp: new Date().toISOString(),
+    };
   }
 
   @Get('kiotviet/sync/status')
   @ApiOperation({
-    summary: 'Get KiotViet sync status',
-    description: 'Get current synchronization status and statistics',
+    summary: 'Deprecated KiotViet sync status endpoint',
+    description:
+      'Returns POS product sync status for backward compatibility and does not call KiotViet.',
   })
-  async getKiotVietSyncStatus() {
-    try {
-      const [
-        totalProducts,
-        kiotVietProducts,
-        customProducts,
-        kiotVietCategories,
-        kiotVietTrademarks,
-        customCategories,
-      ] = await Promise.all([
-        this.productService.prisma.product.count(),
-        this.productService.prisma.product.count({
-          where: { is_from_kiotviet: true },
-        }),
-        this.productService.prisma.product.count({
-          where: { is_from_kiotviet: false },
-        }),
-        this.productService.prisma.kiotviet_category.count(),
-        this.productService.prisma.kiotviet_trademark.count(),
-        this.productService.prisma.category.count(),
-      ]);
+  getKiotVietSyncStatus() {
+    this.logger.warn(
+      'Deprecated KiotViet sync status requested; returning POS sync status',
+    );
 
-      let connectionStatus = { success: false, message: 'Not tested' };
-      try {
-        connectionStatus = await this.kiotVietService.testConnection();
-      } catch (error) {
-        connectionStatus = { success: false, message: error.message };
-      }
-
-      return {
-        connected: connectionStatus.success,
-        connectionMessage: connectionStatus.message,
-        statistics: {
-          products: {
-            total: totalProducts,
-            fromKiotViet: kiotVietProducts,
-            custom: customProducts,
-          },
-          categories: {
-            kiotViet: kiotVietCategories,
-            custom: customCategories,
-          },
-          trademarks: {
-            kiotViet: kiotVietTrademarks,
-          },
-        },
-        syncConfig: {
-          syncedFields: [
-            'kiotviet_id',
-            'code',
-            'name',
-            'image',
-            'price',
-            'type',
-            'category',
-          ],
-          separateTables: ['kiotviet_categories', 'kiotviet_trademarks'],
-          productTable: 'product (enhanced with KiotViet fields)',
-        },
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      this.logger.error('Failed to get KiotViet sync status:', error.message);
-      throw new BadRequestException(
-        `Failed to get sync status: ${error.message}`,
-      );
-    }
+    return this.posProductSyncService.getStatus();
   }
 
   // ============================
