@@ -70,7 +70,6 @@ describe('ProductService site config slug handling', () => {
 
     await service.upsertProductSiteConfig(7, 'dieptra', {
       title: 'Tên mới',
-      is_visible: true,
     });
 
     expect(tx.product_site_config.upsert).toHaveBeenCalledWith(
@@ -78,6 +77,9 @@ describe('ProductService site config slug handling', () => {
         update: expect.objectContaining({ slug: 'ten-cu' }),
       }),
     );
+    expect(
+      tx.product_site_config.upsert.mock.calls[0][0].update,
+    ).not.toHaveProperty('is_visible');
     expect(tx.url_redirect.upsert).not.toHaveBeenCalled();
     expect(revalidate.revalidateSite).toHaveBeenCalledWith('dieptra');
   });
