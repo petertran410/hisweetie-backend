@@ -77,17 +77,25 @@ export class ProductController {
     @Query('pageNumber') pageNumber: string = '0',
     @Query('title') title?: string,
     @Query('categoryId') categoryId?: string,
+    @Query('categoryIds') categoryIds?: string | string[],
     @Query('is_visible') is_visible?: string,
     @Query('orderBy') orderBy?: string,
     @Query('isDesc') isDesc?: string,
     @CurrentSiteCode() siteCode?: string,
   ) {
+    const parsedCategoryIds = categoryIds
+      ? (Array.isArray(categoryIds) ? categoryIds : categoryIds.split(','))
+          .map((id) => Number(id))
+          .filter((id) => Number.isInteger(id) && id > 0)
+      : undefined;
+
     return this.productService.searchForCMSWithSiteConfig(
       {
         pageSize: +pageSize,
         pageNumber: +pageNumber,
         title,
         categoryId: categoryId ? +categoryId : undefined,
+        categoryIds: parsedCategoryIds,
         visibilityFilter:
           is_visible !== undefined ? is_visible === 'true' : undefined,
         orderBy,
