@@ -21,9 +21,11 @@ export class CreateProductDto {
   @ApiProperty({
     description: 'Product title',
     example: 'Brown Sugar Pearl Milk Tea',
+    required: false,
   })
+  @IsOptional()
   @IsString()
-  title_en: string;
+  title_en?: string;
 
   @ApiProperty({
     description: 'Product title_meta',

@@ -810,8 +810,6 @@ export class ProductService {
           general_description: product.general_description,
           description: product.description,
           instruction: product.instruction,
-          description_en: product.description_en,
-          instruction_en: product.instruction_en,
           rate: product.rate,
           isFeatured: product.is_featured === true,
           isVisible: product.is_visible === true,
@@ -911,8 +909,6 @@ export class ProductService {
       ofCategories: ofCategories,
       description: product.description,
       instruction: product.instruction,
-      description_en: product.description_en,
-      instruction_en: product.instruction_en,
       embedUrl: product.embed_url,
       rate: product.rate,
       isFeatured: product.is_featured === true,
@@ -1052,15 +1048,88 @@ export class ProductService {
           : undefined,
       };
 
-      const product = await this.prisma.product.create({
-        data: productData,
-        include: {
-          category: true,
-        },
+      // Danh mục là theo site → chỉ nhận danh mục của site đang tạo
+      let categorySlug: string | null = null;
+      if (createProductDto.category_id) {
+        const category = await this.prisma.category.findUnique({
+          where: { id: BigInt(createProductDto.category_id) },
+          select: { slug: true, site_code: true },
+        });
+        if (!category) {
+          throw new BadRequestException('Category not found');
+        }
+        if (category.site_code !== siteCode) {
+          throw new BadRequestException(
+            `Category belongs to site "${category.site_code}", not "${siteCode}"`,
+          );
+        }
+        categorySlug = category.slug ?? null;
+      }
+
+      const otherSiteCode = siteCode === 'lermao' ? 'dieptra' : 'lermao';
+
+      // Tạo product + config 2 site trong 1 transaction để không sinh product mồ côi
+      const product = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.product.create({
+          data: productData,
+          include: {
+            category: true,
+          },
+        });
+
+        let slug = this.convertToSlug(createProductDto.title) || null;
+        if (slug) {
+          const taken = await tx.product_site_config.findFirst({
+            where: { site_code: siteCode, slug },
+            select: { id: true },
+          });
+          if (taken) slug = `${slug}-${created.id}`;
+        }
+
+        // Site đang chọn: có nội dung, ẩn cho tới khi editor bật hiển thị
+        await tx.product_site_config.create({
+          data: {
+            product_id: created.id,
+            site_code: siteCode,
+            slug,
+            title: createProductDto.title,
+            title_meta: createProductDto.title_meta,
+            description: createProductDto.description,
+            general_description: createProductDto.general_description,
+            instruction: createProductDto.instruction,
+            embed_url: createProductDto.embed_url,
+            images_url: imagesUrlString,
+            featured_thumbnail: createProductDto.featured_thumbnail,
+            is_featured: createProductDto.is_featured ?? false,
+            price_on: createProductDto.price_on ?? false,
+            category_id: createProductDto.category_id
+              ? BigInt(createProductDto.category_id)
+              : null,
+            category_slug: categorySlug,
+            is_visible: false,
+            created_date: new Date(),
+            updated_date: new Date(),
+          },
+        });
+
+        // Site còn lại: dòng rỗng, ẩn (giống POS sync) — không copy nội dung
+        await tx.product_site_config.create({
+          data: {
+            product_id: created.id,
+            site_code: otherSiteCode,
+            is_visible: false,
+            is_featured: false,
+            price_on: false,
+            created_date: new Date(),
+            updated_date: new Date(),
+          },
+        });
+
+        return created;
       });
 
       this.logger.log(
-        `Created custom product: ${product.title} (ID: ${product.id})`,
+        `Created custom product: ${product.title} (ID: ${product.id}) for site ${siteCode}`,
       );
       this.revalidate.revalidateSite(siteCode);
       return this.transformProduct(product);
@@ -1762,10 +1831,8 @@ export class ProductService {
       imagesUrl,
 
       description: product.description,
-      description_en: product.description_en,
       general_description: product.general_description,
       instruction: product.instruction,
-      instruction_en: product.instruction_en,
 
       category_slug: product.category_slug,
       slug: product.slug,
@@ -1860,10 +1927,8 @@ export class ProductService {
           category_id: true,
           category_slug: true,
           description: true,
-          description_en: true,
           general_description: true,
           instruction: true,
-          instruction_en: true,
           title: true,
           title_en: true,
           pos_code: true,
@@ -2347,8 +2412,6 @@ export class ProductService {
       description: sc?.description ?? null,
       general_description: sc?.general_description ?? null,
       instruction: sc?.instruction ?? null,
-      description_en: sc?.description_en ?? null,
-      instruction_en: sc?.instruction_en ?? null,
       embedUrl,
 
       isVisible: sc?.is_visible ?? false,
