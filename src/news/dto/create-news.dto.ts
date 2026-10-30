@@ -1,5 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsArray, IsEnum } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsArray,
+  IsEnum,
+  IsDateString,
+} from 'class-validator';
 
 export enum ContentType {
   NEWS = 'NEWS',
@@ -86,4 +92,14 @@ export class CreateNewsDto {
   })
   @IsEnum(ContentType)
   type: ContentType;
+
+  @ApiProperty({
+    description:
+      'Ngày tạo bài viết (ISO 8601). Bỏ trống khi tạo mới = thời điểm hiện tại; không được ở tương lai.',
+    required: false,
+    example: '2026-10-01T03:00:00.000Z',
+  })
+  @IsDateString()
+  @IsOptional()
+  createdDate?: string;
 }

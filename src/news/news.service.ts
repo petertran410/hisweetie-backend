@@ -233,6 +233,21 @@ export class NewsService {
     }
   }
 
+  // Ngày tạo do CMS chọn: bỏ trống -> undefined; sai định dạng hoặc ở tương lai -> 400.
+  // Cho lệch 5 phút để tránh lỗi do đồng hồ máy CMS và server lệch nhau.
+  private parseCreatedDate(value?: string | null): Date | undefined {
+    if (value === undefined || value === null || value === '') return undefined;
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('Ngày tạo không hợp lệ');
+    }
+    if (date.getTime() > Date.now() + 5 * 60 * 1000) {
+      throw new BadRequestException('Ngày tạo không được ở tương lai');
+    }
+    return date;
+  }
+
   async create(createNewsDto: CreateNewsDto, siteCode: string = 'dieptra') {
     try {
       const {
@@ -246,6 +261,7 @@ export class NewsService {
         type,
         embedUrl,
         titleMeta,
+        createdDate,
       } = createNewsDto;
 
       const newsData: any = {
@@ -259,7 +275,7 @@ export class NewsService {
         images_url: imagesUrl ? JSON.stringify(imagesUrl) : null,
         type: type || 'NEWS',
         embed_url: embedUrl,
-        created_date: new Date(),
+        created_date: this.parseCreatedDate(createdDate) ?? new Date(),
         updated_date: new Date(),
         is_visible: true,
         site_code: siteCode,
@@ -397,6 +413,9 @@ export class NewsService {
     }
 
     const updateData: any = { updated_date: new Date() };
+
+    const createdDate = this.parseCreatedDate(updateNewsDto.createdDate);
+    if (createdDate) updateData.created_date = createdDate;
 
     if (updateNewsDto.title !== undefined)
       updateData.title = updateNewsDto.title;
