@@ -140,6 +140,8 @@ model product_site_config {
   title               String?   @db.VarChar(255)
   title_en            String?   @db.VarChar(255)
   images_url          String?   @db.LongText
+  // false = site này không dùng hình đồng bộ từ POS/KiotViet
+  use_pos_images      Boolean   @default(dbgenerated("b'1'")) @db.Bit(1)
   rate                Float?
 
   created_date        DateTime? @default(now()) @db.DateTime(6)
@@ -423,7 +425,7 @@ model client_user {
   kiot_code                String?
   verification_code        String?         @db.VarChar(6)
   verification_code_expires DateTime?      @db.DateTime(6)
-  is_verified              Boolean         @default(false) @db.Bit(1)
+  is_verified              Boolean         @default(dbgenerated("b'0'")) @db.Bit(1)
   oauth_provider           String?         @db.VarChar(50)
   oauth_provider_id        String?         @db.VarChar(255)
   avatar_url               String?         @db.Text

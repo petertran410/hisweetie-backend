@@ -1010,6 +1010,39 @@ export class ProductService {
     return this.getLegacyImages(product);
   }
 
+  // Hình bên thứ ba: ưu tiên POS, không có thì dùng hình KiotViet cũ
+  private getThirdPartyImages(product: any): string[] {
+    const posImages = this.getPosImages(product);
+    return posImages.length ? posImages : this.getLegacyImages(product);
+  }
+
+  /**
+   * Tách hình CMS và hình bên thứ ba cho 1 site.
+   * - cmsImages: hình CMS tự upload, đã bỏ URL trùng hình bên thứ ba
+   *   (form cũ từng copy URL POS vào images_url mỗi lần lưu).
+   * - usePosImages = true  → web hiển thị hình CMS trước, hình bên thứ ba sau.
+   * - usePosImages = false → web chỉ hiển thị hình CMS.
+   */
+  private resolveSiteImages(product: any, sc: any) {
+    const thirdPartyImages = this.getThirdPartyImages(product);
+    const thirdPartySet = new Set(thirdPartyImages);
+    const siteImages = this.parseImages(sc?.images_url);
+    const ownImages = siteImages.length
+      ? siteImages
+      : this.parseImages(product.images_url);
+    const cmsImages = ownImages.filter((image) => !thirdPartySet.has(image));
+    const usePosImages = sc?.use_pos_images ?? true;
+
+    return {
+      cmsImages,
+      thirdPartyImages,
+      usePosImages,
+      imagesUrl: usePosImages
+        ? [...cmsImages, ...thirdPartyImages]
+        : cmsImages,
+    };
+  }
+
   async create(
     createProductDto: CreateProductDto,
     siteCode: string = 'dieptra',
@@ -2386,10 +2419,7 @@ export class ProductService {
         ? null
         : Number(product.kiotviet_price);
 
-    const imagesUrl =
-      this.parseImages(sc?.images_url).length > 0
-        ? this.parseImages(sc?.images_url)
-        : this.getProductImages(product);
+    const { imagesUrl, usePosImages } = this.resolveSiteImages(product, sc);
 
     // embedUrl: nếu product đã có site_config thì tôn trọng giá trị của nó
     // (kể cả null — cho phép clear video). Chỉ fallback về product.embed_url
@@ -2440,15 +2470,17 @@ export class ProductService {
       kiotviet_name: product.kiotviet_name,
       kiotviet_code: product.kiotviet_code,
       kiotviet_price: legacyPrice,
-      kiotviet_images: product.kiotviet_images,
+      // Tắt hình POS → ẩn luôn các field hình bên thứ ba để web client không fallback
+      kiotviet_images: usePosImages ? product.kiotviet_images : null,
       kiotviet_description: product.kiotviet_description,
       posCode: product.pos_code,
       posName: product.pos_name,
-      posImages: this.getPosImages(product),
+      posImages: usePosImages ? this.getPosImages(product) : [],
       posPrice:
         product.pos_price === null || product.pos_price === undefined
           ? null
           : Number(product.pos_price),
+      usePosImages,
       isFromPos: product.pos_code !== null && product.pos_code !== undefined,
       isFromKiotViet: product.is_from_kiotviet === true,
       hasSiteConfig: !!sc,
@@ -2476,6 +2508,7 @@ export class ProductService {
       title?: string;
       title_en?: string;
       images_url?: string | string[];
+      use_pos_images?: boolean;
       rate?: number;
     },
   ) {
@@ -2575,6 +2608,10 @@ export class ProductService {
       title: data.title,
       title_en: data.title_en,
       images_url: imagesUrlString,
+      use_pos_images:
+        typeof data.use_pos_images === 'boolean'
+          ? data.use_pos_images
+          : undefined,
       rate: data.rate,
     };
 
@@ -2928,7 +2965,7 @@ export class ProductService {
         name: product.kiotviet_name,
         price: product.kiotviet_price ? Number(product.kiotviet_price) : null,
         type: product.kiotviet_type,
-        images: product.kiotviet_images,
+        images: merged.usePosImages ? product.kiotviet_images : null,
         kiotviet_description: product.kiotviet_description,
       },
       pos: {
@@ -2939,7 +2976,7 @@ export class ProductService {
           product.pos_price === null || product.pos_price === undefined
             ? null
             : Number(product.pos_price),
-        images: this.getPosImages(product),
+        images: merged.usePosImages ? this.getPosImages(product) : [],
         isActive: product.pos_is_active,
         syncedAt: product.pos_synced_at,
       },
@@ -3129,10 +3166,7 @@ export class ProductService {
       const productTitle =
         p.title || p.pos_name || p.kiotviet_name || p.title_en || 'Untitled';
       const price = this.getEffectivePrice(p);
-      const imagesUrl =
-        this.parseImages(sc.images_url).length > 0
-          ? this.parseImages(sc.images_url)
-          : this.getProductImages(p);
+      const { imagesUrl, usePosImages } = this.resolveSiteImages(p, sc);
 
       return {
         id: Number(p.id),
@@ -3144,10 +3178,10 @@ export class ProductService {
           p.kiotviet_price === null || p.kiotviet_price === undefined
             ? null
             : Number(p.kiotviet_price),
-        kiotviet_images: p.kiotviet_images,
+        kiotviet_images: usePosImages ? p.kiotviet_images : null,
         posCode: p.pos_code,
         posName: p.pos_name,
-        posImages: this.getPosImages(p),
+        posImages: usePosImages ? this.getPosImages(p) : [],
         posPrice:
           p.pos_price === null || p.pos_price === undefined
             ? null
@@ -3263,6 +3297,13 @@ export class ProductService {
     if (!product)
       throw new NotFoundException(`Product with ID ${id} not found`);
 
-    return this.buildProductDetailResponse(product, siteCode);
+    const detail = await this.buildProductDetailResponse(product, siteCode);
+    const { cmsImages, thirdPartyImages } = this.resolveSiteImages(
+      product,
+      product.site_configs?.[0],
+    );
+
+    // Chỉ CMS cần: hình tự upload (sửa/xoá được) tách riêng hình POS (chỉ xem)
+    return { ...detail, cmsImagesUrl: cmsImages, thirdPartyImages };
   }
 }
