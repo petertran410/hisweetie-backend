@@ -9,6 +9,12 @@ import { CreateCategoryDto, CategoryTreeDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { RevalidateService } from '../common/revalidate.service';
 
+// Tiền tố URL trang danh mục trên từng web client (redirect khi gộp danh mục dùng đúng site)
+const CATEGORY_URL_PREFIX: Record<string, string> = {
+  dieptra: '/san-pham',
+  lermao: '/nguyen-lieu-pha-che',
+};
+
 @Injectable()
 export class CategoryService {
   private readonly logger = new Logger(CategoryService.name);
@@ -572,12 +578,18 @@ export class CategoryService {
     }
   }
 
-  // Dựng URL danh mục theo chuỗi slug cha→con: "/san-pham/<slug-cha>/<slug-con>".
-  // Trả null nếu thiếu slug ở bất kỳ tầng nào (không dựng được URL hợp lệ).
+  // Dựng URL danh mục theo chuỗi slug cha→con, đúng tiền tố của từng site:
+  //   dieptra: "/san-pham/<slug-cha>/<slug-con>"
+  //   lermao:  "/nguyen-lieu-pha-che/<slug-cha>/<slug-con>"
+  // Trả null nếu site lạ hoặc thiếu slug ở bất kỳ tầng nào (không dựng được URL hợp lệ).
   private buildCategoryUrl(
     categoryId: bigint,
     allCategories: { id: bigint; slug: string | null; parent_id: bigint | null }[],
+    siteCode: string,
   ): string | null {
+    const prefix = CATEGORY_URL_PREFIX[siteCode];
+    if (!prefix) return null;
+
     const slugs: string[] = [];
     let current = allCategories.find((c) => c.id === categoryId);
     const guard = new Set<string>();
@@ -591,7 +603,7 @@ export class CategoryService {
       current = allCategories.find((c) => c.id === parentId);
     }
     if (!slugs.length) return null;
-    return `/san-pham/${slugs.join('/')}`;
+    return `${prefix}/${slugs.join('/')}`;
   }
 
   // Gộp danh mục "from" vào "to" trong 1 transaction:
@@ -637,8 +649,8 @@ export class CategoryService {
       );
     }
 
-    const sourceUrl = this.buildCategoryUrl(fromCat.id, allForSite);
-    const targetUrl = this.buildCategoryUrl(toCat.id, allForSite);
+    const sourceUrl = this.buildCategoryUrl(fromCat.id, allForSite, siteCode);
+    const targetUrl = this.buildCategoryUrl(toCat.id, allForSite, siteCode);
 
     if (!sourceUrl || !targetUrl) {
       throw new BadRequestException(
