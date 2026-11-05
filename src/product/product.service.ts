@@ -1031,7 +1031,8 @@ export class ProductService {
       ? siteImages
       : this.parseImages(product.images_url);
     const cmsImages = ownImages.filter((image) => !thirdPartySet.has(image));
-    const usePosImages = sc?.use_pos_images ?? true;
+    // Khớp DEFAULT b'0' của DB: chưa có dòng cấu hình site thì không dùng hình POS
+    const usePosImages = sc?.use_pos_images ?? false;
 
     return {
       cmsImages,

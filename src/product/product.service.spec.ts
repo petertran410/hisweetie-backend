@@ -166,12 +166,13 @@ describe('ProductService POS image toggle', () => {
     expect(result.usePosImages).toBe(true);
   });
 
-  it('defaults to using POS images when the site has no config row', () => {
+  it('does not use POS images by default when the site has no config row', () => {
     const { service } = createService();
-    expect(merge(service, null).imagesUrl).toEqual([
-      'https://pos/a.jpg',
-      'https://pos/b.jpg',
-    ]);
+    const result = merge(service, null);
+
+    expect(result.usePosImages).toBe(false);
+    expect(result.imagesUrl).toEqual([]);
+    expect(result.posImages).toEqual([]);
   });
 
   it('hides every third-party image field when the toggle is off', () => {
